@@ -506,7 +506,7 @@ Result summary: the fixture test copies mutable input strings before publication
 
 Risk: these DTOs are bridge contracts and fixture-tested value validation only; the real facade is not linked, backend snapshots are not converted, observation tokens are not registered, and task errors are not translated until later M3 units. No CMake command was required because this unit does not modify launcher backend sources or build configuration. Existing AppIntents metadata and prior non-blocking CMake warnings remain unchanged.
 
-Commit: pending implementation commit hash; record it in the follow-up progress synchronization commit.
+Commit: `65a044abe`
 
 Next after completion: `M3-W3`, add explicitly cancellable observation tokens and callback registration.
 
@@ -543,6 +543,7 @@ Next after completion: `M3-W4`, add error translation and main-actor delivery.
 | `78d8354be` | Added a standalone compile contract for every current facade public header | Facade and public-header tests 2/2; selected C++ tests 6/6; existing Prism target; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; public-header scan; `git diff --check` |
 | `7bfb98353` | Preserved the Qt Prism executable link and facade independence with configure-time assertions | Qt composition configure contract; facade/public-header and selected C++ tests 6/6; existing Prism target; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; Ninja link inspection; `git diff --check` |
 | `17258dae9` | Added the Foundation-only Objective-C++ lifecycle root with explicit fixture data and callback release contracts | Native Debug XCTest 9/9; Debug/Release builds; Objective-C public-header syntax; forbidden bridge scan; Debug/Release `plutil`; `git diff --check` |
+| `65a044abe` | Added immutable Foundation instance and task DTOs with progress and cancellation contracts | Native Debug XCTest 11/11; Debug/Release builds; Objective-C public-header syntax; forbidden bridge and Swift boundary scans; Debug/Release `plutil`; `git diff --check` |
 
 ## Current architecture findings
 
