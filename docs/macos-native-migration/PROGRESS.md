@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 2, QWidget-free backend facade
 
-Active work unit: none (M2-W1 complete; activate M2-W2 at next round start)
+Active work unit: none (M2-W2 complete; activate M2-W3 at next round start)
 
-Next ready work unit: M2-W2
+Next ready work unit: M2-W3
 
 ## Safety baseline
 
@@ -206,21 +206,43 @@ Risk: the UI/application partition uses an explicit path/name classification rul
 
 Non-blocking limits: the default CMake path could not resolve Homebrew `libarchive`, the vcpkg manifest path attempted registry/cache access, and the default macOS configure attempted to download Sparkle. Verification therefore used the already-present repository package artifacts, pkg-config transitive dependencies, `CMAKE_DISABLE_FIND_PACKAGE_LibArchive=TRUE`, and empty temporary Sparkle key/feed cache values. The existing AutoUIC layout-name warning and missing `clang-format` warning remain unchanged.
 
-Commit: not created; record the exact hash in the next ledger update.
+Commit: `19b45a465`
 
 Next after completion: `M2-W2`, introduce the frontend facade target or library under `launcher/frontend`.
 
 ### M2-W2: Introduce the frontend facade target
 
-Status: ready
+Status: complete
 
 Outcome: introduce the first `launcher/frontend` target or library as the QWidget-free backend facade boundary, without changing the existing Qt executable's link or runtime behavior.
 
-Scope: `launcher/frontend` and directly required CMake/test files only. The public facade must not include `launcher/ui`, return QWidget/QDialog objects, or expose Qt model ownership; fixture-driven tests must remain temporary-root and non-networked.
+Files changed: `launcher/frontend/CMakeLists.txt`, `launcher/frontend/FrontendFacade.h`, `launcher/frontend/FrontendFacade.cpp`, `launcher/frontend/FrontendFacadeContractTest.cpp`, `launcher/CMakeLists.txt`, and this progress file.
 
-Required evidence: the new facade target configures and builds, its public headers compile without `launcher/ui`, fixture tests exercise the intended initial contract, the existing Qt target remains buildable, and the native Xcode target remains independent.
+Design: add an independent static `Launcher_frontend` target with no Qt or `launcher/ui` link dependency. Its initial public contract is an inert, non-copyable and non-movable facade root; explicit data-root and runtime-dependency construction remains the next work unit. The contract test creates a uniquely named temporary fixture, writes only a local marker, constructs and destroys the facade, and verifies that the fixture remains unchanged.
 
-Commit: not created.
+Tests and exact commands:
+
+- `git diff --check` — passed.
+- `env PKG_CONFIG_PATH="/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/libarchive_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/bzip2_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/liblzma_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/lzo_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/lz4_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/zstd_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/tomlplusplus_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/libqrencode_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/zlib_arm64-osx/lib/pkgconfig:/opt/homebrew/lib/pkgconfig" cmake -S . -B /private/tmp/prism-m2-cmake-pkgconfig -G Ninja -DCMAKE_PREFIX_PATH="/opt/homebrew/opt/qt;/opt/homebrew/opt/cmark;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/ecm_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/cmark_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/libarchive_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/tomlplusplus_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/zlib_arm64-osx" -DVCPKG_MANIFEST_MODE=OFF -DCMAKE_DISABLE_FIND_PACKAGE_LibArchive=TRUE -DBUILD_TESTING=ON -DLauncher_USE_PCH=OFF -DLauncher_ENABLE_JAVA_DOWNLOADER=OFF -DMACOSX_SPARKLE_UPDATE_PUBLIC_KEY="" -DMACOSX_SPARKLE_UPDATE_FEED_URL=""` — passed; existing clang-format and AutoUIC warnings remain non-blocking.
+- `cmake --build /private/tmp/prism-m2-cmake-pkgconfig --target Launcher_frontend Launcher_frontend_contract_test --parallel 2` — passed; independent facade library and contract executable linked.
+- `ctest --test-dir /private/tmp/prism-m2-cmake-pkgconfig --output-on-failure -R '^FrontendFacadeContract$'` — passed; 1/1.
+- `cmake --build /private/tmp/prism-m2-cmake-pkgconfig --target Prism --parallel 2` — passed; existing Qt launcher target linked without a frontend dependency.
+- `ctest --test-dir /private/tmp/prism-m2-cmake-pkgconfig --output-on-failure -R '^(FrontendFacadeContract|FileSystem|Task|JavaVersion|Version)$'` — passed; 5/5.
+- `rg -n "launcher/ui|QWidget|QDialog|QtWidgets|QAbstractItemModel|QAbstractListModel|QObject|QModelIndex" launcher/frontend --glob '*.h'` — passed with no public-header matches.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed; 6 tests, 0 failures.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO build` — passed.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native-release/Build/Products/Release/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `git diff --check` — passed after verification.
+
+Result summary: the new facade and fixture test configure and build without UI headers, the facade target has no Qt or launcher-core link dependency, and the existing Qt `Prism` target remains buildable and linked. The native target remains independent; both native configurations and all 6 standalone native tests pass. No application or launcher executable was launched, and no upstream application, Application Support data, account, Keychain, production API, signing, installation, or publishing state was accessed.
+
+HIG decision: this is a backend-only boundary unit, so it adds no SwiftUI/AppKit control or custom drawing. Future native surfaces remain governed by the system-component policy in `PLAN.md`.
+
+Risk: the facade is intentionally inert until M2-W3 adds explicit data-root and runtime-dependency construction; instance snapshots, events, and lifecycle semantics are not claimed by this unit. The existing AutoUIC duplicate-layout-name warning and missing `clang-format` warning remain unchanged.
+
+Commit: to be recorded after this work-unit commit.
 
 Next after completion: `M2-W3`, make the facade accept an explicit data root and runtime dependencies.
 
@@ -233,6 +255,7 @@ Next after completion: `M2-W3`, make the facade accept an explicit data root and
 | `3308191dd` | Added shared native scheme and Bundle ID/data-root contract tests | Debug and Release builds; 2 native tests; Debug/Release `plutil`; `git diff --check` |
 | `2158ad5db` | Completed the legacy UI feature inventory and native destination ledger | Source-directory, Qt-form, class-ownership, Debug/Release build, native-test, `plutil`, and `git diff --check` verification |
 | `5a9e80e3e` | Enforced public bridge and isolated fixture contracts | Debug and Release builds; 6 native tests; Debug/Release `plutil`; `git diff --check` |
+| `19b45a465` | Classified launcher source ownership without changing Qt composition | Isolated CMake configure/build; Launcher_logic and selected C++ tests; existing Prism target link; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; `git diff --check` |
 
 ## Current architecture findings
 
@@ -243,6 +266,8 @@ Next after completion: `M2-W3`, make the facade accept an explicit data root and
 5. The native Xcode target does not yet link a backend library.
 6. The first backend task is separation and characterization, not Swift reimplementation.
 7. M2-W1 keeps the existing Qt composition in `Launcher_logic` while exposing domain, UI, application, and executable-entry source ownership for the upcoming facade target.
+8. M2-W2 is the first independent `launcher/frontend` target; it must remain compilable without `launcher/ui` and must not alter the existing Qt target's link graph.
+9. M2-W2's facade root is deliberately inert; M2-W3 owns the first explicit data-root and runtime-dependency contract.
 
 ## Custom rendering exceptions
 
@@ -256,4 +281,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then mark only ready `M2-W2` active. Do not begin `M2-W3` or native visual implementation until the frontend facade target is committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M2-W3`. Do not begin native visual implementation or M2-W4 event work before the explicit root/dependency contract is committed.

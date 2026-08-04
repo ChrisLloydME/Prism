@@ -1307,6 +1307,11 @@ endif()
 
 ####### Targets ########
 
+# Keep the first native facade target independent from the combined Qt target.
+# Later work units may add narrowly scoped domain dependencies after their
+# contracts and fixture tests are established.
+add_subdirectory(frontend)
+
 # Add executable
 add_library(Launcher_logic STATIC ${LAUNCHER_RUNTIME_SOURCES})
 target_include_directories(Launcher_logic PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
