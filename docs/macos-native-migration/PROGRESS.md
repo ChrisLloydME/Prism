@@ -396,7 +396,7 @@ Result summary: the current facade public header compiles and runs through an is
 
 Risk: the public-header list is explicit and must be updated with any future public facade header; the standalone test proves the current header boundary but does not claim that backend adapters are already QWidget-free. Existing AutoUIC and missing `clang-format` warnings remain unchanged.
 
-Commit: to be recorded after this work-unit commit.
+Commit: `78d8354be`
 
 Next after completion: `M2-W7`, preserve the existing Qt executable link and behavior while keeping the facade target independent.
 
@@ -430,6 +430,7 @@ Next after completion: Milestone 3 M3-W1, replace the identity-only bridge compo
 | `6d1b08f3b` | Required explicit data-root and runtime dependency inputs for the facade | Facade fixture contract; selected C++ tests 5/5; existing Prism target; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; public-header scan; `git diff --check` |
 | `d19b2144f` | Added immutable instance snapshots and Added/Updated/Removed change contracts | Empty and fixture facade contracts; selected C++ tests 5/5; existing Prism target; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; public-header scan; `git diff --check` |
 | `4b466150b` | Added explicit facade lifecycle, shutdown, cancellation, and resource-release contracts | Lifecycle fixture contract 1/1; selected C++ tests 5/5; existing Prism target; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; public-header scan; `git diff --check` |
+| `78d8354be` | Added a standalone compile contract for every current facade public header | Facade and public-header tests 2/2; selected C++ tests 6/6; existing Prism target; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; public-header scan; `git diff --check` |
 
 ## Current architecture findings
 
