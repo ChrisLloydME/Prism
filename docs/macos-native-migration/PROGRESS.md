@@ -890,7 +890,7 @@ Result summary: the shared command manifest now has stable cross-surface accessi
 
 Risk: the command handler still terminates at the injected model callback until later units connect fixture-safe facade mutations; the current context menu remains attached to the detail boundary while native instance rows are a later shell/content unit. The localization resource and runtime accessibility-tree inspection remain later non-launch contracts; system controls own their roles and keyboard focus by design. No custom rendering exception was added.
 
-Commit: pending implementation commit.
+Commit: `b7d53cf84`
 
 Next after completion: `M4-W7`, add bounded native instance artwork loading as content rather than control chrome.
 
@@ -921,6 +921,7 @@ Next after completion: `M4-W7`, add bounded native instance artwork loading as c
 | `1774904a8` | Added stable instance collection state for selection, grouping, sorting, search, deterministic sections, and ten-times fixture coverage | Focused shell-state tests 11/11; native Debug XCTest 48/48; Debug/Release builds; search/selection/accessibility/localization-shape and forbidden API scans; Debug/Release `plutil`; `git diff --check` |
 | `19490eac9` | Added explicit native loading, empty, failed, and content states with deterministic retry recovery metadata | Focused shell-state tests 12/12; native Debug XCTest 49/49; Debug/Release builds; state/accessibility/localization-shape and forbidden API scans; Debug/Release `plutil`; `git diff --check` |
 | `d5249dd8a` | Routed native toolbar and detail context-menu actions through the shared command model and system command button | Focused command tests 7/7; native Debug XCTest 51/51; Debug/Release builds; toolbar/context-menu, shortcut/accessibility, localization-shape, and forbidden API scans; Debug/Release `plutil`; `git diff --check` |
+| `b7d53cf84` | Hardened cross-surface accessibility identity, localized values, enabled-state, shortcut, and List selection/focus contracts | Focused command and shell tests 21/21; native Debug XCTest 53/53; Debug/Release builds; native API, localization-shape, boundary, no-drawing, Debug/Release `plutil`, and `git diff --check` validations |
 
 ## Current architecture findings
 
@@ -951,6 +952,7 @@ Next after completion: `M4-W7`, add bounded native instance artwork loading as c
 25. M4-W3 keeps instance collection behavior in a main-actor Swift state seam: immutable stable-ID rows feed deterministic search, grouping, sorting, and section identity, while `ContentView` uses system `.searchable` and the existing selection metadata without introducing custom cells or backend mutations.
 26. M4-W4 keeps failure presentation in the main-actor Swift state seam: stable Foundation-only failure/recovery metadata drives system `ContentUnavailableView` actions, while retry remains an injected intent and no asynchronous or backend ownership crosses into the view.
 27. M4-W5 routes app menus, toolbar buttons, and the detail context menu through one `PrismCommandButton`/`PrismCommandModel` invocation path; shortcut mapping is compiled in the shared command-model source so app and test targets have the same contract.
+28. M4-W6 gives every shared command a stable accessibility identifier and validates it across menus, toolbar, and context-menu surfaces; sidebar rows use localized values and typed `List(selection:)`/`.tag` semantics so system accessibility roles and keyboard focus remain native rather than manually recreated.
 
 ## Custom rendering exceptions
 
