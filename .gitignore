@@ -9,6 +9,7 @@ html/
 
 # Project Files
 *.pro.user
+xcuserdata/
 CMakeLists.txt.user
 CMakeLists.txt.user.*
 CMakeSettings.json
@@ -47,6 +48,7 @@ run/
 
 .cache/
 .deps/
+.deriveddata-*/
 
 # Nix/NixOS
 .direnv/
