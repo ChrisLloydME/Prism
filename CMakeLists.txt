@@ -391,7 +391,10 @@ if(UNIX AND APPLE)
     # Mac bundle settings
     set(MACOSX_BUNDLE_BUNDLE_NAME "${Launcher_DisplayName}")
     set(MACOSX_BUNDLE_INFO_STRING "${Launcher_DisplayName}: A custom launcher for Minecraft that allows you to easily manage multiple installations of Minecraft at once.")
-    set(MACOSX_BUNDLE_GUI_IDENTIFIER "${Launcher_AppID}")
+    # Keep this fork isolated from the upstream Prism Launcher installation.
+    # Do not derive the identifier from Launcher_AppID: that value is also used
+    # by non-macOS packaging and Java launcher resources.
+    set(MACOSX_BUNDLE_GUI_IDENTIFIER "com.lloydME.Prism")
     set(MACOSX_BUNDLE_BUNDLE_VERSION "${Launcher_VERSION_NAME}")
     set(MACOSX_BUNDLE_SHORT_VERSION_STRING "${Launcher_VERSION_NAME}")
     set(MACOSX_BUNDLE_LONG_VERSION_STRING "${Launcher_VERSION_NAME}")
