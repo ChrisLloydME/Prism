@@ -3,8 +3,27 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <string>
+#include <vector>
+
+struct FrontendInstanceSnapshot final {
+    std::string id;
+    std::string name;
+    std::string iconKey;
+    std::string groupId;
+
+    bool hasStableIdentifier() const noexcept { return !id.empty(); }
+};
+
+enum class FrontendInstanceChangeKind : std::uint8_t { Added, Updated, Removed };
+
+struct FrontendInstanceChange final {
+    FrontendInstanceChangeKind kind = FrontendInstanceChangeKind::Updated;
+    FrontendInstanceSnapshot instance;
+};
 
 /// Runtime ports are supplied by the owning composition root so the facade
 /// does not discover global application state or create hidden workers.
@@ -12,9 +31,13 @@ struct FrontendRuntimeDependencies final {
     using Work = std::function<void()>;
     using Dispatch = std::function<void(Work)>;
     using Clock = std::function<std::chrono::system_clock::time_point()>;
+    using InstanceSnapshotLoader = std::function<std::vector<FrontendInstanceSnapshot>(const std::filesystem::path&)>;
+    using InstanceChangeLoader = std::function<std::vector<FrontendInstanceChange>(const std::filesystem::path&)>;
 
     Dispatch dispatch;
     Clock now;
+    InstanceSnapshotLoader loadInstanceSnapshots;
+    InstanceChangeLoader loadInstanceChanges;
 
     bool isComplete() const noexcept { return static_cast<bool>(dispatch) && static_cast<bool>(now); }
 };
@@ -36,6 +59,8 @@ class FrontendFacade final {
 
     const std::filesystem::path& dataRoot() const noexcept { return m_dataRoot; }
     bool hasRuntimeDependencies() const noexcept { return m_runtimeDependencies.isComplete(); }
+    std::vector<FrontendInstanceSnapshot> instanceSnapshots() const;
+    std::vector<FrontendInstanceChange> instanceChanges() const;
 
    private:
     std::filesystem::path m_dataRoot;

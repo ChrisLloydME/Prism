@@ -79,6 +79,62 @@ int main()
         }
     }
 
+    auto emptyDependencies = makeFixtureDependencies();
+    emptyDependencies.loadInstanceSnapshots = [](const std::filesystem::path&) {
+        return std::vector<FrontendInstanceSnapshot>{};
+    };
+    emptyDependencies.loadInstanceChanges = [](const std::filesystem::path&) {
+        return std::vector<FrontendInstanceChange>{};
+    };
+    FrontendFacade emptyFacade(fixtureRoot, std::move(emptyDependencies));
+    const bool emptyContract = emptyFacade.instanceSnapshots().empty() && emptyFacade.instanceChanges().empty();
+
+    const FrontendInstanceSnapshot firstInstance{ "fixture-one", "Fixture One", "grass", "group-a" };
+    const FrontendInstanceSnapshot secondInstance{ "fixture-two", "Fixture Two", "stone", "" };
+    bool snapshotRootMatches = false;
+    bool changeRootMatches = false;
+    auto fixtureDependencies = makeFixtureDependencies();
+    fixtureDependencies.loadInstanceSnapshots = [&](const std::filesystem::path& root) {
+        snapshotRootMatches = root == fixtureRoot.lexically_normal();
+        return std::vector<FrontendInstanceSnapshot>{ firstInstance, secondInstance };
+    };
+    fixtureDependencies.loadInstanceChanges = [&](const std::filesystem::path& root) {
+        changeRootMatches = root == fixtureRoot.lexically_normal();
+        return std::vector<FrontendInstanceChange>{
+            { FrontendInstanceChangeKind::Added, firstInstance },
+            { FrontendInstanceChangeKind::Updated, secondInstance },
+            { FrontendInstanceChangeKind::Removed, { secondInstance.id, {}, {}, {} } },
+        };
+    };
+    FrontendFacade fixtureFacade(fixtureRoot / "nested" / "..", std::move(fixtureDependencies));
+    const auto snapshots = fixtureFacade.instanceSnapshots();
+    const auto changes = fixtureFacade.instanceChanges();
+    const bool fixtureSnapshotContract = snapshots.size() == 2 && snapshots[0].id == "fixture-one"
+        && snapshots[1].groupId.empty() && snapshotRootMatches;
+    const bool fixtureChangeContract = changes.size() == 3 && changes[0].kind == FrontendInstanceChangeKind::Added
+        && changes[1].kind == FrontendInstanceChangeKind::Updated && changes[2].kind == FrontendInstanceChangeKind::Removed
+        && changes[2].instance.id == "fixture-two" && changeRootMatches;
+
+    auto invalidSnapshotDependencies = makeFixtureDependencies();
+    invalidSnapshotDependencies.loadInstanceSnapshots = [](const std::filesystem::path&) {
+        return std::vector<FrontendInstanceSnapshot>{ { "", "Invalid", "", "" } };
+    };
+    FrontendFacade invalidSnapshotFacade(fixtureRoot, std::move(invalidSnapshotDependencies));
+    const bool rejectedInvalidSnapshot = throwsInvalidArgument([&invalidSnapshotFacade] {
+        (void) invalidSnapshotFacade.instanceSnapshots();
+    });
+
+    auto invalidChangeDependencies = makeFixtureDependencies();
+    invalidChangeDependencies.loadInstanceChanges = [](const std::filesystem::path&) {
+        return std::vector<FrontendInstanceChange>{
+            { static_cast<FrontendInstanceChangeKind>(99), { "fixture-one", "", "", "" } },
+        };
+    };
+    FrontendFacade invalidChangeFacade(fixtureRoot, std::move(invalidChangeDependencies));
+    const bool rejectedInvalidChange = throwsInvalidArgument([&invalidChangeFacade] {
+        (void) invalidChangeFacade.instanceChanges();
+    });
+
     const bool fixtureWasPreserved = std::filesystem::exists(fixtureMarker);
     const bool rejectedEmptyRoot = throwsInvalidArgument([] {
         FrontendFacade facade({}, makeFixtureDependencies());
@@ -95,6 +151,8 @@ int main()
 
     std::filesystem::remove(fixtureMarker, error);
     std::filesystem::remove(fixtureRoot, error);
-    return fixtureWasPreserved && rejectedEmptyRoot && rejectedRelativeRoot && rejectedIncompleteDependencies && !error ? 0
-                                                                                                                       : 4;
+    return fixtureWasPreserved && emptyContract && fixtureSnapshotContract && fixtureChangeContract && rejectedInvalidSnapshot
+               && rejectedInvalidChange && rejectedEmptyRoot && rejectedRelativeRoot && rejectedIncompleteDependencies && !error
+        ? 0
+        : 4;
 }
