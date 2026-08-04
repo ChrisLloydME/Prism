@@ -725,7 +725,7 @@ Result summary: deterministic shell tests cover stable sidebar IDs, selection me
 
 Risk: the shell intentionally remains a fixture-free presentation boundary: it does not yet load real instance snapshots, apply selection/grouping/sorting/search policy, or route backend mutations. Those contracts belong to M4-W3 and later units. Existing AppIntents metadata and prior non-blocking CMake warnings remain unchanged.
 
-Commit: pending implementation commit; the final hash will be recorded by the follow-up progress commit.
+Commit: `b6007523e`
 
 Next after completion: `M4-W3`, implement selection, grouping, sorting, and search in testable Swift state.
 
@@ -768,6 +768,7 @@ Next after completion: `M4-W4`, implement loading, empty, failed, and content st
 | `6711968f7` | Added dedicated native bridge contract coverage for fixture initialization, empty state, immutable snapshots, cancellation, shutdown, released observers, and errors | Native Debug XCTest 27/27; Debug/Release builds; Objective-C public-header syntax; forbidden bridge and Swift boundary scans; Debug/Release `plutil`; `git diff --check` |
 | `4f3d62c21` | Linked the real QWidget-free frontend facade into the Objective-C++ bridge and converted fixture snapshots, changes, lifecycle, cancellation, and errors | CMake facade/Prism targets; selected C++ tests 6/6; universal facade tests 2/2; native Debug XCTest 32/32; Debug/Release builds; public-header and Swift-boundary scans; Debug/Release `plutil`; `git diff --check` |
 | `127ab52b7` | Added the native command manifest, main-actor command model, SwiftUI menu groups, system shortcuts, enabled-state routing, and accessibility/help metadata | Focused command tests 5/5; native Debug XCTest 37/37; Debug/Release builds; command/accessibility and forbidden API scans; Debug/Release `plutil`; `git diff --check` |
+| `b6007523e` | Added the native NavigationSplitView shell, sidebar selection model, detail loading/empty/content states, and accessibility metadata | Focused shell tests 5/5; native Debug XCTest 42/42; Debug/Release builds; shell API and Swift-boundary scans; Debug/Release `plutil`; `git diff --check` |
 
 ## Current architecture findings
 
