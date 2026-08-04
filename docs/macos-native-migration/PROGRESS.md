@@ -766,7 +766,7 @@ Result summary: focused and full native tests cover stable selection identity, c
 
 Risk: the state model remains backend-neutral and does not yet render real instance rows, load facade snapshots, expose sort/group controls, or handle failed/loading/content presentation beyond the existing shell boundary. Those contracts belong to M4-W4 and later units. Existing AppIntents metadata and prior non-blocking CMake warnings remain unchanged.
 
-Commit: pending implementation commit; the final hash will be recorded by the follow-up progress commit.
+Commit: `1774904a8`
 
 Next after completion: `M4-W4`, implement loading, empty, failed, and content states.
 
@@ -810,6 +810,7 @@ Next after completion: `M4-W5`, route contextual menus and toolbar commands thro
 | `4f3d62c21` | Linked the real QWidget-free frontend facade into the Objective-C++ bridge and converted fixture snapshots, changes, lifecycle, cancellation, and errors | CMake facade/Prism targets; selected C++ tests 6/6; universal facade tests 2/2; native Debug XCTest 32/32; Debug/Release builds; public-header and Swift-boundary scans; Debug/Release `plutil`; `git diff --check` |
 | `127ab52b7` | Added the native command manifest, main-actor command model, SwiftUI menu groups, system shortcuts, enabled-state routing, and accessibility/help metadata | Focused command tests 5/5; native Debug XCTest 37/37; Debug/Release builds; command/accessibility and forbidden API scans; Debug/Release `plutil`; `git diff --check` |
 | `b6007523e` | Added the native NavigationSplitView shell, sidebar selection model, detail loading/empty/content states, and accessibility metadata | Focused shell tests 5/5; native Debug XCTest 42/42; Debug/Release builds; shell API and Swift-boundary scans; Debug/Release `plutil`; `git diff --check` |
+| `1774904a8` | Added stable instance collection state for selection, grouping, sorting, search, deterministic sections, and ten-times fixture coverage | Focused shell-state tests 11/11; native Debug XCTest 48/48; Debug/Release builds; search/selection/accessibility/localization-shape and forbidden API scans; Debug/Release `plutil`; `git diff --check` |
 
 ## Current architecture findings
 
