@@ -182,6 +182,166 @@ int main()
                (void) commandFacade.stopInstance("fixture-one");
            });
 
+    auto taskSuccess = FrontendTaskTerminalResult{
+        FrontendTaskTerminalOutcome::Succeeded,
+        "task.completed",
+        { { "taskIdentifier", "task.success" } },
+        "",
+        false,
+    };
+    auto taskFailure = FrontendTaskTerminalResult{
+        FrontendTaskTerminalOutcome::Failed,
+        "task.failed",
+        { { "taskIdentifier", "task.failed" } },
+        "fixture failure",
+        true,
+    };
+    auto taskCancelled = FrontendTaskTerminalResult{
+        FrontendTaskTerminalOutcome::Cancelled,
+        "task.cancelled",
+        {},
+        "fixture cancelled",
+        false,
+    };
+    std::vector<std::string> taskSnapshotCalls;
+    std::vector<std::string> taskCancellationCalls;
+    bool taskRootMatches = true;
+    auto taskDependencies = makeFixtureDependencies();
+    taskDependencies.loadTaskSnapshot = [&](const std::filesystem::path& root, const std::string& identifier)
+        -> std::optional<FrontendTaskSnapshot> {
+        taskRootMatches = taskRootMatches && root == fixtureRoot.lexically_normal();
+        taskSnapshotCalls.push_back(identifier);
+        if (identifier == "task.queued") {
+            return FrontendTaskSnapshot{ identifier, "Queued Task", FrontendTaskState::Queued,
+                                         FrontendTaskProgressKind::None, 0.0, true, {}, std::nullopt };
+        }
+        if (identifier == "task.running") {
+            return FrontendTaskSnapshot{ identifier,
+                                         "Running Task",
+                                         FrontendTaskState::Running,
+                                         FrontendTaskProgressKind::Determinate,
+                                         0.5,
+                                         true,
+                                         { { "subtask.download", "Download", FrontendTaskState::Running,
+                                             FrontendTaskProgressKind::Determinate, 0.5 } },
+                                         std::nullopt };
+        }
+        if (identifier == "task.cancelling") {
+            return FrontendTaskSnapshot{ identifier, "Cancelling Task", FrontendTaskState::Cancelling,
+                                         FrontendTaskProgressKind::Indeterminate, 0.0, false, {}, std::nullopt };
+        }
+        if (identifier == "task.success") {
+            return FrontendTaskSnapshot{ identifier, "Succeeded Task", FrontendTaskState::Succeeded,
+                                         FrontendTaskProgressKind::Determinate, 1.0, false, {}, taskSuccess };
+        }
+        if (identifier == "task.failed") {
+            return FrontendTaskSnapshot{ identifier, "Failed Task", FrontendTaskState::Failed,
+                                         FrontendTaskProgressKind::Determinate, 1.0, false, {}, taskFailure };
+        }
+        if (identifier == "task.cancelled") {
+            return FrontendTaskSnapshot{ identifier, "Cancelled Task", FrontendTaskState::Cancelled,
+                                         FrontendTaskProgressKind::Indeterminate, 0.0, false, {}, taskCancelled };
+        }
+        return std::nullopt;
+    };
+    taskDependencies.cancelTask = [&](const std::filesystem::path& root, const std::string& identifier) {
+        taskRootMatches = taskRootMatches && root == fixtureRoot.lexically_normal();
+        taskCancellationCalls.push_back(identifier);
+        if (identifier == "task.running") {
+            return taskCancellationCalls.size() == 1 ? FrontendTaskCancellationResult::Requested
+                                                     : FrontendTaskCancellationResult::AlreadyTerminal;
+        }
+        if (identifier == "unknown-task") {
+            return FrontendTaskCancellationResult::UnknownTask;
+        }
+        return FrontendTaskCancellationResult::Rejected;
+    };
+    FrontendFacade taskFacade(fixtureRoot / "nested" / "..", std::move(taskDependencies));
+    const auto queuedTask = taskFacade.taskSnapshot("task.queued");
+    const auto runningTask = taskFacade.taskSnapshot("task.running");
+    const auto cancellingTask = taskFacade.taskSnapshot("task.cancelling");
+    const auto succeededTask = taskFacade.taskSnapshot("task.success");
+    const auto failedTask = taskFacade.taskSnapshot("task.failed");
+    const auto cancelledTask = taskFacade.taskSnapshot("task.cancelled");
+    const auto unknownTask = taskFacade.taskSnapshot("unknown-task");
+    const bool taskStateContract = queuedTask.has_value() && queuedTask->state == FrontendTaskState::Queued
+        && queuedTask->cancellationAllowed && runningTask.has_value()
+        && runningTask->subtasks.size() == 1 && runningTask->subtasks[0].id == "subtask.download"
+        && cancellingTask.has_value() && cancellingTask->state == FrontendTaskState::Cancelling
+        && succeededTask.has_value() && succeededTask->terminalResult.has_value()
+        && succeededTask->terminalResult->outcome == FrontendTaskTerminalOutcome::Succeeded
+        && failedTask.has_value() && failedTask->terminalResult.has_value()
+        && failedTask->terminalResult->outcome == FrontendTaskTerminalOutcome::Failed
+        && failedTask->terminalResult->partialChangesRolledBack
+        && cancelledTask.has_value() && cancelledTask->terminalResult.has_value()
+        && cancelledTask->terminalResult->outcome == FrontendTaskTerminalOutcome::Cancelled && !unknownTask.has_value();
+    const auto firstTaskCancellation = taskFacade.cancelTask("task.running");
+    const auto repeatedTaskCancellation = taskFacade.cancelTask("task.running");
+    const auto unknownTaskCancellation = taskFacade.cancelTask("unknown-task");
+    const auto rejectedTaskCancellation = taskFacade.cancelTask("task.success");
+    const bool taskCancellationContract = firstTaskCancellation == FrontendTaskCancellationResult::Requested
+        && repeatedTaskCancellation == FrontendTaskCancellationResult::AlreadyTerminal
+        && unknownTaskCancellation == FrontendTaskCancellationResult::UnknownTask
+        && rejectedTaskCancellation == FrontendTaskCancellationResult::Rejected
+        && taskCancellationCalls == std::vector<std::string>{ "task.running", "task.running", "unknown-task", "task.success" };
+    const bool taskForwardingContract = taskRootMatches
+        && taskSnapshotCalls == std::vector<std::string>{ "task.queued", "task.running", "task.cancelling", "task.success",
+                                                           "task.failed", "task.cancelled", "unknown-task" };
+    const bool rejectedInvalidTaskIdentifiers = throwsInvalidArgument([&taskFacade] {
+        (void) taskFacade.taskSnapshot("");
+    }) && throwsInvalidArgument([&taskFacade] {
+        (void) taskFacade.cancelTask("");
+    });
+    const bool missingTaskPortsAreSafe = !emptyFacade.taskSnapshot("task.fixture").has_value()
+        && emptyFacade.cancelTask("task.fixture") == FrontendTaskCancellationResult::Rejected;
+    const bool rejectedPostShutdownTaskWork = taskFacade.shutdown()
+        && throwsLogicError([&taskFacade] {
+               (void) taskFacade.taskSnapshot("task.running");
+           })
+        && throwsLogicError([&taskFacade] {
+               (void) taskFacade.cancelTask("task.running");
+           });
+
+    auto invalidTaskProgressDependencies = makeFixtureDependencies();
+    invalidTaskProgressDependencies.loadTaskSnapshot = [](const std::filesystem::path&, const std::string&)
+        -> std::optional<FrontendTaskSnapshot> {
+        return FrontendTaskSnapshot{ "invalid.task", "Invalid Task", FrontendTaskState::Running,
+                                     FrontendTaskProgressKind::Determinate, 1.5, true, {}, std::nullopt };
+    };
+    FrontendFacade invalidTaskProgressFacade(fixtureRoot, std::move(invalidTaskProgressDependencies));
+    const bool rejectedInvalidTaskProgress = throwsInvalidArgument([&invalidTaskProgressFacade] {
+        (void) invalidTaskProgressFacade.taskSnapshot("invalid.task");
+    });
+
+    auto invalidTaskSubtasksDependencies = makeFixtureDependencies();
+    invalidTaskSubtasksDependencies.loadTaskSnapshot = [](const std::filesystem::path&, const std::string&)
+        -> std::optional<FrontendTaskSnapshot> {
+        return FrontendTaskSnapshot{ "invalid.task", "Invalid Task", FrontendTaskState::Running,
+                                     FrontendTaskProgressKind::Determinate, 0.5, true,
+                                     { { "duplicate", "First", FrontendTaskState::Running,
+                                         FrontendTaskProgressKind::Determinate, 0.5 },
+                                       { "duplicate", "Second", FrontendTaskState::Running,
+                                         FrontendTaskProgressKind::Determinate, 0.75 } },
+                                     std::nullopt };
+    };
+    FrontendFacade invalidTaskSubtasksFacade(fixtureRoot, std::move(invalidTaskSubtasksDependencies));
+    const bool rejectedInvalidTaskSubtasks = throwsInvalidArgument([&invalidTaskSubtasksFacade] {
+        (void) invalidTaskSubtasksFacade.taskSnapshot("invalid.task");
+    });
+
+    auto invalidTaskTerminalDependencies = makeFixtureDependencies();
+    invalidTaskTerminalDependencies.loadTaskSnapshot = [](const std::filesystem::path&, const std::string&)
+        -> std::optional<FrontendTaskSnapshot> {
+        return FrontendTaskSnapshot{ "invalid.task", "Invalid Task", FrontendTaskState::Failed,
+                                     FrontendTaskProgressKind::Determinate, 1.0, false, {},
+                                     FrontendTaskTerminalResult{ FrontendTaskTerminalOutcome::Succeeded,
+                                                                 "task.completed", {}, "", false } };
+    };
+    FrontendFacade invalidTaskTerminalFacade(fixtureRoot, std::move(invalidTaskTerminalDependencies));
+    const bool rejectedInvalidTaskTerminalResult = throwsInvalidArgument([&invalidTaskTerminalFacade] {
+        (void) invalidTaskTerminalFacade.taskSnapshot("invalid.task");
+    });
+
     auto invalidSnapshotDependencies = makeFixtureDependencies();
     invalidSnapshotDependencies.loadInstanceSnapshots = [](const std::filesystem::path&) {
         return std::vector<FrontendInstanceSnapshot>{ { "", "Invalid", "", "" } };
@@ -279,7 +439,10 @@ int main()
     std::filesystem::remove(fixtureMarker, error);
     std::filesystem::remove(fixtureRoot, error);
     return fixtureWasPreserved && emptyContract && fixtureSnapshotContract && fixtureChangeContract && commandRootContract
-               && missingCommandPortsAreRejected && rejectedPostShutdownCommands && rejectedInvalidSnapshot
+               && missingCommandPortsAreRejected && rejectedPostShutdownCommands && taskStateContract
+               && taskCancellationContract && taskForwardingContract && rejectedInvalidTaskIdentifiers
+               && missingTaskPortsAreSafe && rejectedPostShutdownTaskWork && rejectedInvalidTaskProgress
+               && rejectedInvalidTaskSubtasks && rejectedInvalidTaskTerminalResult && rejectedInvalidSnapshot
                && rejectedInvalidChange && rejectedEmptyRoot && rejectedRelativeRoot && rejectedIncompleteDependencies
                && lifecycleContract && callbacksRanExactlyOnce && destructorShutdownContract && !error
         ? 0

@@ -229,6 +229,161 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     XCTAssertEqualObjects([NSString stringWithUTF8String:launchCalls->back().c_str()], @"rejected-instance");
 }
 
+- (void)testFacadeTaskSnapshotsAndCancellationConvertFoundationContracts
+{
+    auto taskRootMatches = std::make_shared<std::atomic<bool>>(true);
+    auto taskSnapshotCalls = std::make_shared<std::vector<std::string>>();
+    auto taskCancellationCalls = std::make_shared<std::vector<std::string>>();
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.loadTaskSnapshot = [taskRootMatches, taskSnapshotCalls, fixtureRoot = self.fixtureRootURL.path.UTF8String](
+                                       const std::filesystem::path& root,
+                                       const std::string& identifier) -> std::optional<FrontendTaskSnapshot> {
+        *taskRootMatches = *taskRootMatches && root == std::filesystem::path(fixtureRoot).lexically_normal();
+        taskSnapshotCalls->push_back(identifier);
+        if (identifier == "task.running") {
+            return FrontendTaskSnapshot{ identifier,
+                                         "Fixture Task",
+                                         FrontendTaskState::Running,
+                                         FrontendTaskProgressKind::Determinate,
+                                         0.75,
+                                         true,
+                                         { { "subtask.fixture", "Download fixture", FrontendTaskState::Running,
+                                             FrontendTaskProgressKind::Determinate, 0.25 } },
+                                         std::nullopt };
+        }
+        if (identifier == "task.failed") {
+            return FrontendTaskSnapshot{
+                identifier,
+                "Failed Fixture Task",
+                FrontendTaskState::Failed,
+                FrontendTaskProgressKind::Determinate,
+                1.0,
+                false,
+                {},
+                FrontendTaskTerminalResult{ FrontendTaskTerminalOutcome::Failed,
+                                            "task.failed",
+                                            { { "taskIdentifier", identifier } },
+                                            "fixture failure",
+                                            true },
+            };
+        }
+        return std::nullopt;
+    };
+    dependencies.cancelTask = [taskRootMatches, taskCancellationCalls, fixtureRoot = self.fixtureRootURL.path.UTF8String](
+                                  const std::filesystem::path& root,
+                                  const std::string& identifier) {
+        *taskRootMatches = *taskRootMatches && root == std::filesystem::path(fixtureRoot).lexically_normal();
+        taskCancellationCalls->push_back(identifier);
+        if (identifier == "task.running") {
+            return taskCancellationCalls->size() == 1 ? FrontendTaskCancellationResult::Requested
+                                                      : FrontendTaskCancellationResult::AlreadyTerminal;
+        }
+        if (identifier == "unknown-task") {
+            return FrontendTaskCancellationResult::UnknownTask;
+        }
+        return FrontendTaskCancellationResult::Rejected;
+    };
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    XCTestExpectation *runningCompletion = [self expectationWithDescription:@"Running task loaded"];
+    XCTestExpectation *failedCompletion = [self expectationWithDescription:@"Failed task loaded"];
+    XCTestExpectation *unknownCompletion = [self expectationWithDescription:@"Unknown task rejected"];
+    __block PRTaskStatus *runningStatus = nil;
+    __block PRTaskStatus *failedStatus = nil;
+    __block PRBridgeError *unknownError = nil;
+    PRBridgeObservationToken *runningToken = [bridge loadTaskStatusWithIdentifier:@"task.running"
+                                                                        completion:^(PRTaskStatus *status, PRBridgeError *error) {
+        XCTAssertTrue([NSThread isMainThread]);
+        runningStatus = status;
+        XCTAssertNil(error);
+        [runningCompletion fulfill];
+    }];
+    PRBridgeObservationToken *failedToken = [bridge loadTaskStatusWithIdentifier:@"task.failed"
+                                                                       completion:^(PRTaskStatus *status, PRBridgeError *error) {
+        XCTAssertTrue([NSThread isMainThread]);
+        failedStatus = status;
+        XCTAssertNil(error);
+        [failedCompletion fulfill];
+    }];
+    PRBridgeObservationToken *unknownToken = [bridge loadTaskStatusWithIdentifier:@"unknown-task"
+                                                                        completion:^(PRTaskStatus *status, PRBridgeError *error) {
+        XCTAssertNil(status);
+        unknownError = error;
+        [unknownCompletion fulfill];
+    }];
+    XCTAssertNotNil(runningToken);
+    XCTAssertNotNil(failedToken);
+    XCTAssertNotNil(unknownToken);
+    [self waitForExpectations:@[ runningCompletion, failedCompletion, unknownCompletion ] timeout:2.0];
+
+    XCTAssertEqualObjects(runningStatus.identifier, @"task.running");
+    XCTAssertEqualObjects(runningStatus.title, @"Fixture Task");
+    XCTAssertEqual(runningStatus.state, PRTaskStateRunning);
+    XCTAssertEqual(runningStatus.progressKind, PRTaskProgressKindDeterminate);
+    XCTAssertEqual(runningStatus.progressFraction, 0.75);
+    XCTAssertTrue(runningStatus.cancellationAllowed);
+    XCTAssertEqual(runningStatus.subtasks.count, (NSUInteger)1);
+    XCTAssertEqualObjects(runningStatus.subtasks.firstObject.identifier, @"subtask.fixture");
+    XCTAssertEqualObjects(runningStatus.subtasks.firstObject.name, @"Download fixture");
+    XCTAssertEqualObjects(failedStatus.terminalResult.localizationKey, @"task.failed");
+    XCTAssertEqual(failedStatus.terminalResult.outcome, PRTaskTerminalOutcomeFailed);
+    XCTAssertEqualObjects(failedStatus.terminalResult.substitutionValues, (@{ @"taskIdentifier": @"task.failed" }));
+    XCTAssertTrue(failedStatus.terminalResult.partialChangesRolledBack);
+    XCTAssertNotNil(unknownError);
+    XCTAssertEqual(unknownError.code, PRBridgeErrorCodeDataUnavailable);
+    XCTAssertEqual(unknownError.recoveryKind, PRBridgeErrorRecoveryKindRetry);
+    XCTAssertEqualObjects(unknownError.substitutionValues, (@{ @"taskIdentifier": @"unknown-task" }));
+
+    void (^runCancellation)(NSString *, PRTaskCancellationOutcome) = ^(NSString *identifier,
+                                                                         PRTaskCancellationOutcome expectedOutcome) {
+        XCTestExpectation *completion = [self expectationWithDescription:@"Task cancellation completed"];
+        __block PRTaskCancellationResult *receivedResult = nil;
+        __block PRBridgeError *receivedError = nil;
+        PRBridgeObservationToken *token = [bridge cancelTaskWithIdentifier:identifier
+                                                                   completion:^(PRTaskCancellationResult *result,
+                                                                                PRBridgeError *error) {
+            XCTAssertTrue([NSThread isMainThread]);
+            receivedResult = result;
+            receivedError = error;
+            [completion fulfill];
+        }];
+        XCTAssertNotNil(token);
+        [self waitForExpectations:@[ completion ] timeout:2.0];
+        XCTAssertNil(receivedError);
+        XCTAssertEqual(receivedResult.outcome, expectedOutcome);
+        NSString *normalizedIdentifier = [identifier stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        XCTAssertEqualObjects(receivedResult.identifier, normalizedIdentifier);
+    };
+
+    NSMutableString *mutableTaskIdentifier = [NSMutableString stringWithString:@" task.running "];
+    runCancellation(mutableTaskIdentifier, PRTaskCancellationOutcomeRequested);
+    [mutableTaskIdentifier setString:@"task.mutated.after-call"];
+    runCancellation(@"task.running", PRTaskCancellationOutcomeAlreadyTerminal);
+    runCancellation(@"unknown-task", PRTaskCancellationOutcomeUnknownTask);
+    runCancellation(@"task.failed", PRTaskCancellationOutcomeRejected);
+
+    XCTestExpectation *invalidInputCompletion = [self expectationWithDescription:@"Invalid task identifier rejected"];
+    __block PRTaskStatus *invalidStatus = nil;
+    __block PRBridgeError *invalidError = nil;
+    PRBridgeObservationToken *invalidToken = [bridge loadTaskStatusWithIdentifier:@"   "
+                                                                        completion:^(PRTaskStatus *status, PRBridgeError *error) {
+        invalidStatus = status;
+        invalidError = error;
+        [invalidInputCompletion fulfill];
+    }];
+    XCTAssertNotNil(invalidToken);
+    [self waitForExpectations:@[ invalidInputCompletion ] timeout:2.0];
+    XCTAssertNil(invalidStatus);
+    XCTAssertEqual(invalidError.code, PRBridgeErrorCodeInvalidInput);
+    XCTAssertTrue(taskRootMatches->load());
+    XCTAssertTrue((*taskSnapshotCalls == std::vector<std::string>{ "task.running", "task.failed", "unknown-task" }));
+    XCTAssertTrue((*taskCancellationCalls
+                   == std::vector<std::string>{ "task.running", "task.running", "unknown-task", "task.failed" }));
+}
+
 - (void)testFacadeChangesAreConvertedAndPublishedInOrder
 {
     FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
@@ -379,6 +534,11 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     XCTAssertEqualObjects(lifecycleEvents, (@[ @"cancel", @"shutdown" ]));
     XCTAssertNil([bridge loadInstanceSummariesWithCompletion:^(NSArray<PRInstanceSummary *> *, PRBridgeError *) {
     }]);
+    XCTAssertNil([bridge loadTaskStatusWithIdentifier:@"task.fixture" completion:^(PRTaskStatus *, PRBridgeError *) {
+    }]);
+    XCTAssertNil([bridge cancelTaskWithIdentifier:@"task.fixture"
+                                           completion:^(PRTaskCancellationResult *, PRBridgeError *) {
+                                           }]);
     XCTAssertNil([bridge launchInstanceWithIdentifier:@"fixture.one" completion:^(PRInstanceCommandResult *, PRBridgeError *) {
     }]);
 }

@@ -2,6 +2,7 @@
 
 #include "FrontendFacade.h"
 
+#include <cmath>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -47,6 +48,133 @@ void validateInstanceChanges(const std::vector<FrontendInstanceChange>& changes)
     }
 }
 
+bool isKnownTaskState(FrontendTaskState state) noexcept
+{
+    switch (state) {
+        case FrontendTaskState::Queued:
+        case FrontendTaskState::Running:
+        case FrontendTaskState::Cancelling:
+        case FrontendTaskState::Succeeded:
+        case FrontendTaskState::Failed:
+        case FrontendTaskState::Cancelled:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownTaskProgressKind(FrontendTaskProgressKind progressKind) noexcept
+{
+    switch (progressKind) {
+        case FrontendTaskProgressKind::None:
+        case FrontendTaskProgressKind::Indeterminate:
+        case FrontendTaskProgressKind::Determinate:
+            return true;
+    }
+    return false;
+}
+
+bool isValidTaskProgress(FrontendTaskProgressKind progressKind, double progressFraction) noexcept
+{
+    if (!std::isfinite(progressFraction) || !isKnownTaskProgressKind(progressKind)) {
+        return false;
+    }
+
+    if (progressKind == FrontendTaskProgressKind::Determinate) {
+        return progressFraction >= 0.0 && progressFraction <= 1.0;
+    }
+    return progressFraction == 0.0;
+}
+
+bool isTerminalTaskState(FrontendTaskState state) noexcept
+{
+    return state == FrontendTaskState::Succeeded || state == FrontendTaskState::Failed
+        || state == FrontendTaskState::Cancelled;
+}
+
+bool isKnownTaskTerminalOutcome(FrontendTaskTerminalOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendTaskTerminalOutcome::Succeeded:
+        case FrontendTaskTerminalOutcome::Failed:
+        case FrontendTaskTerminalOutcome::Cancelled:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownTaskCancellationResult(FrontendTaskCancellationResult result) noexcept
+{
+    switch (result) {
+        case FrontendTaskCancellationResult::Requested:
+        case FrontendTaskCancellationResult::AlreadyTerminal:
+        case FrontendTaskCancellationResult::UnknownTask:
+        case FrontendTaskCancellationResult::Rejected:
+            return true;
+    }
+    return false;
+}
+
+void validateTaskTerminalResult(const FrontendTaskTerminalResult& result)
+{
+    if (!isKnownTaskTerminalOutcome(result.outcome) || result.localizationKey.empty()) {
+        throw std::invalid_argument("Task terminal results require a known outcome and localization key");
+    }
+
+    for (const auto& [key, value] : result.substitutionValues) {
+        if (key.empty()) {
+            throw std::invalid_argument("Task terminal substitutions require non-empty keys");
+        }
+        (void)value;
+    }
+}
+
+void validateTaskSubtask(const FrontendTaskSubtaskSnapshot& subtask)
+{
+    if (!subtask.hasStableIdentifier() || subtask.name.empty() || !isKnownTaskState(subtask.state)
+        || !isValidTaskProgress(subtask.progressKind, subtask.progressFraction)) {
+        throw std::invalid_argument("Task subtasks require valid identifiers, names, states, and progress");
+    }
+}
+
+void validateTaskSnapshot(const FrontendTaskSnapshot& snapshot)
+{
+    if (!snapshot.hasStableIdentifier() || !isKnownTaskState(snapshot.state)
+        || !isValidTaskProgress(snapshot.progressKind, snapshot.progressFraction)) {
+        throw std::invalid_argument("Task snapshots require a valid identifier, state, and progress");
+    }
+
+    if ((snapshot.state == FrontendTaskState::Cancelling || isTerminalTaskState(snapshot.state))
+        && snapshot.cancellationAllowed) {
+        throw std::invalid_argument("Task cancellation is not allowed after cancellation or termination");
+    }
+
+    std::set<std::string> identifiers;
+    for (const auto& subtask : snapshot.subtasks) {
+        validateTaskSubtask(subtask);
+        if (!identifiers.insert(subtask.id).second) {
+            throw std::invalid_argument("Task subtasks require unique stable identifiers");
+        }
+    }
+
+    if (!snapshot.terminalResult.has_value()) {
+        if (isTerminalTaskState(snapshot.state)) {
+            throw std::invalid_argument("Terminal task snapshots require a terminal result");
+        }
+        return;
+    }
+
+    const auto& terminalResult = *snapshot.terminalResult;
+    validateTaskTerminalResult(terminalResult);
+    const bool matchingOutcome = (snapshot.state == FrontendTaskState::Succeeded
+                                     && terminalResult.outcome == FrontendTaskTerminalOutcome::Succeeded)
+        || (snapshot.state == FrontendTaskState::Failed && terminalResult.outcome == FrontendTaskTerminalOutcome::Failed)
+        || (snapshot.state == FrontendTaskState::Cancelled
+            && terminalResult.outcome == FrontendTaskTerminalOutcome::Cancelled);
+    if (!matchingOutcome) {
+        throw std::invalid_argument("Task terminal results must match the task state");
+    }
+}
+
 void ensureRunning(FrontendLifecycleState state)
 {
     if (state != FrontendLifecycleState::Running) {
@@ -80,6 +208,44 @@ FrontendInstanceCommandResult executeInstanceCommand(
     const auto result = command(dataRoot, instanceIdentifier);
     if (!isKnownInstanceCommandResult(result)) {
         throw std::invalid_argument("Instance command returned an unknown result");
+    }
+    return result;
+}
+
+std::optional<FrontendTaskSnapshot> executeTaskSnapshot(
+    const FrontendRuntimeDependencies::TaskSnapshotLoader& loader,
+    const std::filesystem::path& dataRoot,
+    const std::string& taskIdentifier)
+{
+    if (taskIdentifier.empty()) {
+        throw std::invalid_argument("Task operations require a stable identifier");
+    }
+    if (!loader) {
+        return std::nullopt;
+    }
+
+    auto snapshot = loader(dataRoot, taskIdentifier);
+    if (snapshot.has_value()) {
+        validateTaskSnapshot(*snapshot);
+    }
+    return snapshot;
+}
+
+FrontendTaskCancellationResult executeTaskCancellation(
+    const FrontendRuntimeDependencies::TaskCancellation& cancellation,
+    const std::filesystem::path& dataRoot,
+    const std::string& taskIdentifier)
+{
+    if (taskIdentifier.empty()) {
+        throw std::invalid_argument("Task operations require a stable identifier");
+    }
+    if (!cancellation) {
+        return FrontendTaskCancellationResult::Rejected;
+    }
+
+    const auto result = cancellation(dataRoot, taskIdentifier);
+    if (!isKnownTaskCancellationResult(result)) {
+        throw std::invalid_argument("Task cancellation returned an unknown result");
     }
     return result;
 }
@@ -162,4 +328,16 @@ FrontendInstanceCommandResult FrontendFacade::stopInstance(const std::string& in
 {
     ensureRunning(m_lifecycleState);
     return executeInstanceCommand(m_runtimeDependencies.stopInstance, m_dataRoot, instanceIdentifier);
+}
+
+std::optional<FrontendTaskSnapshot> FrontendFacade::taskSnapshot(const std::string& taskIdentifier) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeTaskSnapshot(m_runtimeDependencies.loadTaskSnapshot, m_dataRoot, taskIdentifier);
+}
+
+FrontendTaskCancellationResult FrontendFacade::cancelTask(const std::string& taskIdentifier) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeTaskCancellation(m_runtimeDependencies.cancelTask, m_dataRoot, taskIdentifier);
 }

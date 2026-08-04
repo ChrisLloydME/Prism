@@ -17,6 +17,19 @@ typedef NS_ENUM(NSInteger, PRTaskProgressKind) {
     PRTaskProgressKindDeterminate,
 };
 
+typedef NS_ENUM(NSInteger, PRTaskTerminalOutcome) {
+    PRTaskTerminalOutcomeSucceeded = 0,
+    PRTaskTerminalOutcomeFailed,
+    PRTaskTerminalOutcomeCancelled,
+};
+
+typedef NS_ENUM(NSInteger, PRTaskCancellationOutcome) {
+    PRTaskCancellationOutcomeRequested = 0,
+    PRTaskCancellationOutcomeAlreadyTerminal,
+    PRTaskCancellationOutcomeUnknownTask,
+    PRTaskCancellationOutcomeRejected,
+};
+
 typedef NS_ENUM(NSInteger, PRInstanceChangeKind) {
     PRInstanceChangeKindAdded = 0,
     PRInstanceChangeKindUpdated,
@@ -64,7 +77,43 @@ typedef NS_ENUM(NSInteger, PRInstanceCommandOutcome) {
 
 @end
 
-/// Immutable task state that carries progress without exposing a launcher model.
+/// Immutable progress state for one task subtask.
+@interface PRTaskSubtaskStatus : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithIdentifier:(NSString *)identifier
+                                        name:(NSString *)name
+                                       state:(PRTaskState)state
+                                progressKind:(PRTaskProgressKind)progressKind
+                            progressFraction:(double)progressFraction NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, copy, readonly) NSString *name;
+@property(nonatomic, assign, readonly) PRTaskState state;
+@property(nonatomic, assign, readonly) PRTaskProgressKind progressKind;
+@property(nonatomic, assign, readonly) double progressFraction;
+
+@end
+
+/// Immutable terminal metadata that stays separate from user-facing error rendering.
+@interface PRTaskTerminalResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithOutcome:(PRTaskTerminalOutcome)outcome
+                         localizationKey:(NSString *)localizationKey
+                     substitutionValues:(NSDictionary<NSString *, NSString *> *)substitutionValues
+                         diagnosticText:(nullable NSString *)diagnosticText
+                partialChangesRolledBack:(BOOL)partialChangesRolledBack NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, assign, readonly) PRTaskTerminalOutcome outcome;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly) NSDictionary<NSString *, NSString *> *substitutionValues;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL partialChangesRolledBack;
+
+@end
+
+/// Immutable task state that carries progress, subtasks, and terminal metadata without exposing a launcher model.
 @interface PRTaskStatus : NSObject
 
 - (instancetype)init NS_UNAVAILABLE;
@@ -72,13 +121,36 @@ typedef NS_ENUM(NSInteger, PRInstanceCommandOutcome) {
                                        state:(PRTaskState)state
                                 progressKind:(PRTaskProgressKind)progressKind
                             progressFraction:(double)progressFraction
-                         cancellationAllowed:(BOOL)cancellationAllowed NS_DESIGNATED_INITIALIZER;
+                         cancellationAllowed:(BOOL)cancellationAllowed;
+- (nullable instancetype)initWithIdentifier:(NSString *)identifier
+                                       title:(nullable NSString *)title
+                                       state:(PRTaskState)state
+                                progressKind:(PRTaskProgressKind)progressKind
+                            progressFraction:(double)progressFraction
+                         cancellationAllowed:(BOOL)cancellationAllowed
+                                   subtasks:(NSArray<PRTaskSubtaskStatus *> *)subtasks
+                              terminalResult:(nullable PRTaskTerminalResult *)terminalResult NS_DESIGNATED_INITIALIZER;
 
 @property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, copy, readonly, nullable) NSString *title;
 @property(nonatomic, assign, readonly) PRTaskState state;
 @property(nonatomic, assign, readonly) PRTaskProgressKind progressKind;
 @property(nonatomic, assign, readonly) double progressFraction;
 @property(nonatomic, assign, readonly) BOOL cancellationAllowed;
+@property(nonatomic, copy, readonly) NSArray<PRTaskSubtaskStatus *> *subtasks;
+@property(nonatomic, strong, readonly, nullable) PRTaskTerminalResult *terminalResult;
+
+@end
+
+/// Immutable outcome for a cancellation request on a stable task identifier.
+@interface PRTaskCancellationResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithIdentifier:(NSString *)identifier
+                                     outcome:(PRTaskCancellationOutcome)outcome NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, assign, readonly) PRTaskCancellationOutcome outcome;
 
 @end
 

@@ -13,6 +13,22 @@ static_assert(static_cast<std::uint8_t>(FrontendLifecycleState::Stopped) == 2);
 static_assert(static_cast<std::uint8_t>(FrontendInstanceCommandResult::Succeeded) == 0);
 static_assert(static_cast<std::uint8_t>(FrontendInstanceCommandResult::UnknownInstance) == 1);
 static_assert(static_cast<std::uint8_t>(FrontendInstanceCommandResult::Rejected) == 2);
+static_assert(static_cast<std::uint8_t>(FrontendTaskState::Queued) == 0);
+static_assert(static_cast<std::uint8_t>(FrontendTaskState::Running) == 1);
+static_assert(static_cast<std::uint8_t>(FrontendTaskState::Cancelling) == 2);
+static_assert(static_cast<std::uint8_t>(FrontendTaskState::Succeeded) == 3);
+static_assert(static_cast<std::uint8_t>(FrontendTaskState::Failed) == 4);
+static_assert(static_cast<std::uint8_t>(FrontendTaskState::Cancelled) == 5);
+static_assert(static_cast<std::uint8_t>(FrontendTaskProgressKind::None) == 0);
+static_assert(static_cast<std::uint8_t>(FrontendTaskProgressKind::Indeterminate) == 1);
+static_assert(static_cast<std::uint8_t>(FrontendTaskProgressKind::Determinate) == 2);
+static_assert(static_cast<std::uint8_t>(FrontendTaskTerminalOutcome::Succeeded) == 0);
+static_assert(static_cast<std::uint8_t>(FrontendTaskTerminalOutcome::Failed) == 1);
+static_assert(static_cast<std::uint8_t>(FrontendTaskTerminalOutcome::Cancelled) == 2);
+static_assert(static_cast<std::uint8_t>(FrontendTaskCancellationResult::Requested) == 0);
+static_assert(static_cast<std::uint8_t>(FrontendTaskCancellationResult::AlreadyTerminal) == 1);
+static_assert(static_cast<std::uint8_t>(FrontendTaskCancellationResult::UnknownTask) == 2);
+static_assert(static_cast<std::uint8_t>(FrontendTaskCancellationResult::Rejected) == 3);
 
 int main()
 {

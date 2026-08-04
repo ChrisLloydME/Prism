@@ -33,6 +33,10 @@ typedef void (^PRBridgeLifecycleHandler)(void);
 typedef void (^PRInstanceSummaryObservationHandler)(PRInstanceSummary *summary);
 typedef void (^PRInstanceChangeObservationHandler)(PRInstanceChange *change);
 typedef void (^PRTaskStatusObservationHandler)(PRTaskStatus *status);
+typedef void (^PRTaskStatusCompletionHandler)(PRTaskStatus * _Nullable status,
+                                               PRBridgeError * _Nullable error);
+typedef void (^PRTaskCancellationCompletionHandler)(PRTaskCancellationResult * _Nullable result,
+                                                     PRBridgeError * _Nullable error);
 typedef void (^PRInstanceSummariesCompletionHandler)(NSArray<PRInstanceSummary *> *summaries,
                                                       PRBridgeError * _Nullable error);
 typedef void (^PRInstanceChangesCompletionHandler)(NSArray<PRInstanceChange *> *changes,
@@ -82,6 +86,18 @@ typedef void (^PRInstanceCommandCompletionHandler)(PRInstanceCommandResult * _Nu
 /// before the backend result is delivered.
 - (nullable PRBridgeObservationToken *)loadInstanceSummariesWithCompletion:(PRInstanceSummariesCompletionHandler)completion;
 - (nullable PRBridgeObservationToken *)loadInstanceChangesWithCompletion:(PRInstanceChangesCompletionHandler)completion;
+
+/// Loads one immutable task snapshot by stable identifier. Unknown tasks and
+/// lifecycle failures are returned as stable bridge errors; the completion
+/// runs on the main actor.
+- (nullable PRBridgeObservationToken *)loadTaskStatusWithIdentifier:(NSString *)identifier
+                                                          completion:(PRTaskStatusCompletionHandler)completion;
+
+/// Requests cancellation through the injected facade port. The result is
+/// idempotent and distinguishes requested, already-terminal, unknown-task,
+/// and rejected outcomes; lifecycle and input failures use PRBridgeError.
+- (nullable PRBridgeObservationToken *)cancelTaskWithIdentifier:(NSString *)identifier
+                                                        completion:(PRTaskCancellationCompletionHandler)completion;
 
 /// Sends a fixture-controlled command for one stable instance identifier. The
 /// completion runs on the main actor with a Foundation result for success,

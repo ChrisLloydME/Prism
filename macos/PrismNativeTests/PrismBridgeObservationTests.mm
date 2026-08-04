@@ -107,13 +107,25 @@ typedef NS_ENUM(NSInteger, PRBridgeFixtureFailureKind) {
     PRBridgeObservationToken *token = [bridge observeTaskStatusWithHandler:^(PRTaskStatus *status) {
         [receivedIdentifiers addObject:status.identifier];
         [receivedFractions addObject:@(status.progressFraction)];
+        XCTAssertEqualObjects(status.title, @"Fixture Task");
+        XCTAssertEqual(status.subtasks.count, (NSUInteger)1);
+        XCTAssertEqualObjects(status.subtasks.firstObject.identifier, @"subtask.fixture");
+        XCTAssertEqualObjects(status.subtasks.firstObject.name, @"Download fixture");
         [delivery fulfill];
     }];
+    PRTaskSubtaskStatus *subtask = [[PRTaskSubtaskStatus alloc] initWithIdentifier:@"subtask.fixture"
+                                                                                  name:@"Download fixture"
+                                                                                 state:PRTaskStateRunning
+                                                                          progressKind:PRTaskProgressKindDeterminate
+                                                                      progressFraction:0.25];
     PRTaskStatus *status = [[PRTaskStatus alloc] initWithIdentifier:@"task.fixture"
+                                                               title:@"Fixture Task"
                                                                state:PRTaskStateRunning
                                                         progressKind:PRTaskProgressKindDeterminate
                                                     progressFraction:0.75
-                                                 cancellationAllowed:YES];
+                                                 cancellationAllowed:YES
+                                                           subtasks:@[ subtask ]
+                                                      terminalResult:nil];
 
     XCTAssertNotNil(token);
     XCTAssertNotNil(status);

@@ -6,7 +6,9 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 struct FrontendInstanceSnapshot final {
@@ -24,9 +26,48 @@ enum class FrontendLifecycleState : std::uint8_t { Running, ShuttingDown, Stoppe
 
 enum class FrontendInstanceCommandResult : std::uint8_t { Succeeded, UnknownInstance, Rejected };
 
+enum class FrontendTaskState : std::uint8_t { Queued, Running, Cancelling, Succeeded, Failed, Cancelled };
+
+enum class FrontendTaskProgressKind : std::uint8_t { None, Indeterminate, Determinate };
+
+enum class FrontendTaskTerminalOutcome : std::uint8_t { Succeeded, Failed, Cancelled };
+
+enum class FrontendTaskCancellationResult : std::uint8_t { Requested, AlreadyTerminal, UnknownTask, Rejected };
+
 struct FrontendInstanceChange final {
     FrontendInstanceChangeKind kind = FrontendInstanceChangeKind::Updated;
     FrontendInstanceSnapshot instance;
+};
+
+struct FrontendTaskTerminalResult final {
+    FrontendTaskTerminalOutcome outcome = FrontendTaskTerminalOutcome::Succeeded;
+    std::string localizationKey;
+    std::vector<std::pair<std::string, std::string>> substitutionValues;
+    std::string diagnosticText;
+    bool partialChangesRolledBack = false;
+};
+
+struct FrontendTaskSubtaskSnapshot final {
+    std::string id;
+    std::string name;
+    FrontendTaskState state = FrontendTaskState::Queued;
+    FrontendTaskProgressKind progressKind = FrontendTaskProgressKind::None;
+    double progressFraction = 0.0;
+
+    bool hasStableIdentifier() const noexcept { return !id.empty(); }
+};
+
+struct FrontendTaskSnapshot final {
+    std::string id;
+    std::string title;
+    FrontendTaskState state = FrontendTaskState::Queued;
+    FrontendTaskProgressKind progressKind = FrontendTaskProgressKind::None;
+    double progressFraction = 0.0;
+    bool cancellationAllowed = false;
+    std::vector<FrontendTaskSubtaskSnapshot> subtasks;
+    std::optional<FrontendTaskTerminalResult> terminalResult;
+
+    bool hasStableIdentifier() const noexcept { return !id.empty(); }
 };
 
 /// Runtime ports are supplied by the owning composition root so the facade
@@ -40,6 +81,8 @@ struct FrontendRuntimeDependencies final {
     using InstanceSnapshotLoader = std::function<std::vector<FrontendInstanceSnapshot>(const std::filesystem::path&)>;
     using InstanceChangeLoader = std::function<std::vector<FrontendInstanceChange>(const std::filesystem::path&)>;
     using InstanceCommand = std::function<FrontendInstanceCommandResult(const std::filesystem::path&, const std::string&)>;
+    using TaskSnapshotLoader = std::function<std::optional<FrontendTaskSnapshot>(const std::filesystem::path&, const std::string&)>;
+    using TaskCancellation = std::function<FrontendTaskCancellationResult(const std::filesystem::path&, const std::string&)>;
 
     Dispatch dispatch;
     Clock now;
@@ -49,6 +92,8 @@ struct FrontendRuntimeDependencies final {
     InstanceChangeLoader loadInstanceChanges;
     InstanceCommand launchInstance;
     InstanceCommand stopInstance;
+    TaskSnapshotLoader loadTaskSnapshot;
+    TaskCancellation cancelTask;
 
     bool isComplete() const noexcept
     {
@@ -80,6 +125,8 @@ class FrontendFacade final {
     std::vector<FrontendInstanceChange> instanceChanges() const;
     FrontendInstanceCommandResult launchInstance(const std::string& instanceIdentifier) const;
     FrontendInstanceCommandResult stopInstance(const std::string& instanceIdentifier) const;
+    std::optional<FrontendTaskSnapshot> taskSnapshot(const std::string& taskIdentifier) const;
+    FrontendTaskCancellationResult cancelTask(const std::string& taskIdentifier) const;
 
    private:
     std::filesystem::path m_dataRoot;

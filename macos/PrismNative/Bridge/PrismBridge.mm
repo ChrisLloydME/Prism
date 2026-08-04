@@ -248,6 +248,109 @@ NSArray<PRInstanceChange *> *changesFromFacadeChanges(const std::vector<Frontend
     return [converted copy];
 }
 
+PRTaskTerminalOutcome terminalOutcomeFromFacadeResult(FrontendTaskTerminalOutcome outcome);
+PRTaskCancellationOutcome cancellationOutcomeFromFacadeResult(FrontendTaskCancellationResult outcome);
+
+PRTaskState taskStateFromFacadeState(FrontendTaskState state)
+{
+    switch (state) {
+        case FrontendTaskState::Queued:
+            return PRTaskStateQueued;
+        case FrontendTaskState::Running:
+            return PRTaskStateRunning;
+        case FrontendTaskState::Cancelling:
+            return PRTaskStateCancelling;
+        case FrontendTaskState::Succeeded:
+            return PRTaskStateSucceeded;
+        case FrontendTaskState::Failed:
+            return PRTaskStateFailed;
+        case FrontendTaskState::Cancelled:
+            return PRTaskStateCancelled;
+    }
+    throw std::invalid_argument("Facade returned an unknown task state");
+}
+
+PRTaskProgressKind taskProgressKindFromFacadeKind(FrontendTaskProgressKind progressKind)
+{
+    switch (progressKind) {
+        case FrontendTaskProgressKind::None:
+            return PRTaskProgressKindNone;
+        case FrontendTaskProgressKind::Indeterminate:
+            return PRTaskProgressKindIndeterminate;
+        case FrontendTaskProgressKind::Determinate:
+            return PRTaskProgressKindDeterminate;
+    }
+    throw std::invalid_argument("Facade returned an unknown task progress kind");
+}
+
+NSDictionary<NSString *, NSString *> *substitutionValuesFromFacade(
+    const std::vector<std::pair<std::string, std::string>>& values)
+{
+    NSMutableDictionary<NSString *, NSString *> *converted = [NSMutableDictionary dictionaryWithCapacity:values.size()];
+    for (const auto& [key, value] : values) {
+        NSString *foundationKey = foundationStringFromUTF8(key);
+        NSString *foundationValue = foundationStringFromUTF8(value);
+        if (!foundationKey || !foundationValue) {
+            throw std::invalid_argument("Facade returned invalid task substitution values");
+        }
+        converted[foundationKey] = foundationValue;
+    }
+    return [converted copy];
+}
+
+PRTaskSubtaskStatus *subtaskFromFacadeSnapshot(const FrontendTaskSubtaskSnapshot& subtask)
+{
+    PRTaskSubtaskStatus *converted = [[PRTaskSubtaskStatus alloc]
+        initWithIdentifier:foundationStringFromUTF8(subtask.id)
+                       name:foundationStringFromUTF8(subtask.name)
+                      state:taskStateFromFacadeState(subtask.state)
+               progressKind:taskProgressKindFromFacadeKind(subtask.progressKind)
+           progressFraction:subtask.progressFraction];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid task subtask");
+    }
+    return converted;
+}
+
+PRTaskTerminalResult *terminalResultFromFacadeResult(const FrontendTaskTerminalResult& result)
+{
+    PRTaskTerminalResult *converted = [[PRTaskTerminalResult alloc]
+        initWithOutcome:terminalOutcomeFromFacadeResult(result.outcome)
+         localizationKey:foundationStringFromUTF8(result.localizationKey)
+     substitutionValues:substitutionValuesFromFacade(result.substitutionValues)
+         diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+partialChangesRolledBack:result.partialChangesRolledBack];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid task terminal result");
+    }
+    return converted;
+}
+
+PRTaskStatus *taskStatusFromFacadeSnapshot(const FrontendTaskSnapshot& snapshot)
+{
+    NSMutableArray<PRTaskSubtaskStatus *> *subtasks = [NSMutableArray arrayWithCapacity:snapshot.subtasks.size()];
+    for (const FrontendTaskSubtaskSnapshot& subtask : snapshot.subtasks) {
+        [subtasks addObject:subtaskFromFacadeSnapshot(subtask)];
+    }
+
+    PRTaskTerminalResult *terminalResult = snapshot.terminalResult.has_value()
+        ? terminalResultFromFacadeResult(*snapshot.terminalResult)
+        : nil;
+    PRTaskStatus *converted = [[PRTaskStatus alloc]
+        initWithIdentifier:foundationStringFromUTF8(snapshot.id)
+                      title:foundationStringFromUTF8(snapshot.title)
+                      state:taskStateFromFacadeState(snapshot.state)
+               progressKind:taskProgressKindFromFacadeKind(snapshot.progressKind)
+           progressFraction:snapshot.progressFraction
+        cancellationAllowed:snapshot.cancellationAllowed
+                  subtasks:subtasks
+             terminalResult:terminalResult];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid task snapshot");
+    }
+    return converted;
+}
+
 bool isKnownTaskState(PRTaskState state)
 {
     switch (state) {
@@ -283,6 +386,62 @@ bool isValidProgress(PRTaskProgressKind progressKind, double progressFraction)
         return progressFraction >= 0.0 && progressFraction <= 1.0;
     }
     return progressFraction == 0.0;
+}
+
+bool isTerminalTaskState(PRTaskState state)
+{
+    return state == PRTaskStateSucceeded || state == PRTaskStateFailed || state == PRTaskStateCancelled;
+}
+
+bool isKnownTaskTerminalOutcome(PRTaskTerminalOutcome outcome)
+{
+    switch (outcome) {
+        case PRTaskTerminalOutcomeSucceeded:
+        case PRTaskTerminalOutcomeFailed:
+        case PRTaskTerminalOutcomeCancelled:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownTaskCancellationOutcome(PRTaskCancellationOutcome outcome)
+{
+    switch (outcome) {
+        case PRTaskCancellationOutcomeRequested:
+        case PRTaskCancellationOutcomeAlreadyTerminal:
+        case PRTaskCancellationOutcomeUnknownTask:
+        case PRTaskCancellationOutcomeRejected:
+            return true;
+    }
+    return false;
+}
+
+PRTaskTerminalOutcome terminalOutcomeFromFacadeResult(FrontendTaskTerminalOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendTaskTerminalOutcome::Succeeded:
+            return PRTaskTerminalOutcomeSucceeded;
+        case FrontendTaskTerminalOutcome::Failed:
+            return PRTaskTerminalOutcomeFailed;
+        case FrontendTaskTerminalOutcome::Cancelled:
+            return PRTaskTerminalOutcomeCancelled;
+    }
+    throw std::invalid_argument("Facade returned an unknown task terminal outcome");
+}
+
+PRTaskCancellationOutcome cancellationOutcomeFromFacadeResult(FrontendTaskCancellationResult outcome)
+{
+    switch (outcome) {
+        case FrontendTaskCancellationResult::Requested:
+            return PRTaskCancellationOutcomeRequested;
+        case FrontendTaskCancellationResult::AlreadyTerminal:
+            return PRTaskCancellationOutcomeAlreadyTerminal;
+        case FrontendTaskCancellationResult::UnknownTask:
+            return PRTaskCancellationOutcomeUnknownTask;
+        case FrontendTaskCancellationResult::Rejected:
+            return PRTaskCancellationOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown task cancellation outcome");
 }
 
 bool isKnownBridgeErrorCode(PRBridgeErrorCode code)
@@ -545,6 +704,56 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@interface PRBridgeTaskStatusResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithStatus:(nullable PRTaskStatus *)status
+                           error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRTaskStatus *status;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeTaskStatusResult
+
+- (instancetype)initWithStatus:(PRTaskStatus *)status error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _status = status;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
+@interface PRBridgeTaskCancellationResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithResult:(nullable PRTaskCancellationResult *)result
+                           error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRTaskCancellationResult *result;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeTaskCancellationResult
+
+- (instancetype)initWithResult:(PRTaskCancellationResult *)result error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _result = result;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
 @interface PRBridgeObservationToken ()
 
 @property(nonatomic, strong) PRBridgeObservationState *state;
@@ -603,6 +812,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *taskObservationStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *snapshotRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *changeRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *taskRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *taskCancellationRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *commandRequestStates;
 @property(nonatomic, strong) NSLock *observationLock;
 
@@ -616,7 +827,13 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 - (void)removeTaskObservation:(PRBridgeObservationState *)observation;
 - (void)removeSnapshotRequest:(PRBridgeObservationState *)request;
 - (void)removeChangeRequest:(PRBridgeObservationState *)request;
+- (void)removeTaskRequest:(PRBridgeObservationState *)request;
+- (void)removeTaskCancellationRequest:(PRBridgeObservationState *)request;
 - (void)removeCommandRequest:(PRBridgeObservationState *)request;
+- (nullable PRBridgeObservationToken *)loadTaskStatusWithIdentifier:(NSString *)identifier
+                                                            completion:(PRTaskStatusCompletionHandler)completion;
+- (nullable PRBridgeObservationToken *)performTaskCancellationWithIdentifier:(NSString *)identifier
+                                                                     completion:(PRTaskCancellationCompletionHandler)completion;
 - (nullable PRBridgeObservationToken *)performInstanceCommand:(PRInstanceCommandKind)kind
                                                       identifier:(NSString *)identifier
                                                      completion:(PRInstanceCommandCompletionHandler)completion;
@@ -655,13 +872,44 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@interface PRTaskSubtaskStatus ()
+
+@property(nonatomic, copy, readwrite) NSString *identifier;
+@property(nonatomic, copy, readwrite) NSString *name;
+@property(nonatomic, assign, readwrite) PRTaskState state;
+@property(nonatomic, assign, readwrite) PRTaskProgressKind progressKind;
+@property(nonatomic, assign, readwrite) double progressFraction;
+
+@end
+
+@interface PRTaskTerminalResult ()
+
+@property(nonatomic, assign, readwrite) PRTaskTerminalOutcome outcome;
+@property(nonatomic, copy, readwrite) NSString *localizationKey;
+@property(nonatomic, copy, readwrite) NSDictionary<NSString *, NSString *> *substitutionValues;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readwrite) BOOL partialChangesRolledBack;
+
+@end
+
 @interface PRTaskStatus ()
 
 @property(nonatomic, copy, readwrite) NSString *identifier;
+@property(nonatomic, copy, readwrite, nullable) NSString *title;
 @property(nonatomic, assign, readwrite) PRTaskState state;
 @property(nonatomic, assign, readwrite) PRTaskProgressKind progressKind;
 @property(nonatomic, assign, readwrite) double progressFraction;
 @property(nonatomic, assign, readwrite) BOOL cancellationAllowed;
+@property(nonatomic, copy, readwrite) NSArray<PRTaskSubtaskStatus *> *subtasks;
+@property(nonatomic, strong, readwrite, nullable) PRTaskTerminalResult *terminalResult;
+
+
+@end
+
+@interface PRTaskCancellationResult ()
+
+@property(nonatomic, copy, readwrite) NSString *identifier;
+@property(nonatomic, assign, readwrite) PRTaskCancellationOutcome outcome;
 
 @end
 
@@ -765,6 +1013,58 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@implementation PRTaskSubtaskStatus
+
+- (instancetype)initWithIdentifier:(NSString *)identifier
+                               name:(NSString *)name
+                              state:(PRTaskState)state
+                       progressKind:(PRTaskProgressKind)progressKind
+                   progressFraction:(double)progressFraction
+{
+    if (!isNonEmptyString(identifier) || !isNonEmptyString(name) || !isKnownTaskState(state)
+        || !isValidProgress(progressKind, progressFraction)) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.identifier = [identifier copy];
+        self.name = [name copy];
+        self.state = state;
+        self.progressKind = progressKind;
+        self.progressFraction = progressFraction;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRTaskTerminalResult
+
+- (instancetype)initWithOutcome:(PRTaskTerminalOutcome)outcome
+                 localizationKey:(NSString *)localizationKey
+             substitutionValues:(NSDictionary<NSString *, NSString *> *)substitutionValues
+                 diagnosticText:(NSString *)diagnosticText
+        partialChangesRolledBack:(BOOL)partialChangesRolledBack
+{
+    NSDictionary<NSString *, NSString *> *copiedSubstitutionValues = copyStringDictionary(substitutionValues);
+    if (!isKnownTaskTerminalOutcome(outcome) || !isNonEmptyString(localizationKey) || !copiedSubstitutionValues) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.outcome = outcome;
+        self.localizationKey = [localizationKey copy];
+        self.substitutionValues = copiedSubstitutionValues;
+        self.diagnosticText = nullableStringCopy(diagnosticText);
+        self.partialChangesRolledBack = partialChangesRolledBack;
+    }
+    return self;
+}
+
+@end
+
 @implementation PRInstanceChange
 
 - (instancetype)initWithKind:(PRInstanceChangeKind)kind
@@ -801,17 +1101,89 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
                    progressFraction:(double)progressFraction
                 cancellationAllowed:(BOOL)cancellationAllowed
 {
-    if (!isNonEmptyString(identifier) || !isKnownTaskState(state) || !isValidProgress(progressKind, progressFraction)) {
+    return [self initWithIdentifier:identifier
+                               title:nil
+                               state:state
+                        progressKind:progressKind
+                    progressFraction:progressFraction
+                 cancellationAllowed:cancellationAllowed
+                           subtasks:@[]
+                      terminalResult:nil];
+}
+
+- (instancetype)initWithIdentifier:(NSString *)identifier
+                              title:(NSString *)title
+                              state:(PRTaskState)state
+                       progressKind:(PRTaskProgressKind)progressKind
+                   progressFraction:(double)progressFraction
+                cancellationAllowed:(BOOL)cancellationAllowed
+                          subtasks:(NSArray<PRTaskSubtaskStatus *> *)subtasks
+                     terminalResult:(PRTaskTerminalResult *)terminalResult
+{
+    if (!isNonEmptyString(identifier) || !isKnownTaskState(state) || !isValidProgress(progressKind, progressFraction)
+        || ![subtasks isKindOfClass:NSArray.class]) {
+        return nil;
+    }
+
+    if ((state == PRTaskStateCancelling || isTerminalTaskState(state)) && cancellationAllowed) {
+        return nil;
+    }
+
+    NSMutableSet<NSString *> *subtaskIdentifiers = [NSMutableSet setWithCapacity:subtasks.count];
+    for (id candidate in subtasks) {
+        if (![candidate isKindOfClass:PRTaskSubtaskStatus.class]) {
+            return nil;
+        }
+        PRTaskSubtaskStatus *subtask = (PRTaskSubtaskStatus *)candidate;
+        if ([subtaskIdentifiers containsObject:subtask.identifier]) {
+            return nil;
+        }
+        [subtaskIdentifiers addObject:subtask.identifier];
+    }
+
+    if (terminalResult && !isTerminalTaskState(state)) {
+        return nil;
+    }
+    if (isTerminalTaskState(state) && !terminalResult) {
+        return nil;
+    }
+    if (terminalResult) {
+        BOOL matchingOutcome = (state == PRTaskStateSucceeded && terminalResult.outcome == PRTaskTerminalOutcomeSucceeded)
+            || (state == PRTaskStateFailed && terminalResult.outcome == PRTaskTerminalOutcomeFailed)
+            || (state == PRTaskStateCancelled && terminalResult.outcome == PRTaskTerminalOutcomeCancelled);
+        if (!matchingOutcome) {
+            return nil;
+        }
+    }
+
+    self = [super init];
+    if (self) {
+        self.identifier = [identifier copy];
+        self.title = nullableStringCopy(title);
+        self.state = state;
+        self.progressKind = progressKind;
+        self.progressFraction = progressFraction;
+        self.cancellationAllowed = cancellationAllowed;
+        self.subtasks = [subtasks copy];
+        self.terminalResult = terminalResult;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRTaskCancellationResult
+
+- (instancetype)initWithIdentifier:(NSString *)identifier outcome:(PRTaskCancellationOutcome)outcome
+{
+    if (!isNonEmptyString(identifier) || !isKnownTaskCancellationOutcome(outcome)) {
         return nil;
     }
 
     self = [super init];
     if (self) {
         self.identifier = [identifier copy];
-        self.state = state;
-        self.progressKind = progressKind;
-        self.progressFraction = progressFraction;
-        self.cancellationAllowed = cancellationAllowed;
+        self.outcome = outcome;
     }
     return self;
 }
@@ -898,6 +1270,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.taskObservationStates = [NSMutableArray array];
         self.snapshotRequestStates = [NSMutableArray array];
         self.changeRequestStates = [NSMutableArray array];
+        self.taskRequestStates = [NSMutableArray array];
+        self.taskCancellationRequestStates = [NSMutableArray array];
         self.commandRequestStates = [NSMutableArray array];
         self.observationLock = [[NSLock alloc] init];
         _lifecycle = std::make_unique<NativeFacadeLifecycle>();
@@ -1154,6 +1528,184 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     return [[PRBridgeObservationToken alloc] initWithState:request];
 }
 
+- (PRBridgeObservationToken *)loadTaskStatusWithIdentifier:(NSString *)identifier
+                                                  completion:(PRTaskStatusCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    NSString *identifierCopy = [identifier copy];
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeTaskStatusResult *taskResult = (PRBridgeTaskStatusResult *)value;
+        [weakRequest cancel];
+        completion(taskResult.status, taskResult.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeTaskRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.taskRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRTaskStatus *status = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    const std::string taskIdentifier = stableIdentifierFromFoundation(identifierCopy);
+                    const std::optional<FrontendTaskSnapshot> snapshot = bridge->_facade->taskSnapshot(taskIdentifier);
+                    if (!snapshot.has_value()) {
+                        error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                                   diagnosticText:@"Task identifier is not available"
+                                               substitutionValues:@{ @"taskIdentifier": identifierCopy ?: @"" }];
+                    } else {
+                        status = taskStatusFromFacadeSnapshot(*snapshot);
+                    }
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid task identifier"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Task operation cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Task data unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown task failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeTaskStatusResult alloc] initWithStatus:status error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
+- (PRBridgeObservationToken *)performTaskCancellationWithIdentifier:(NSString *)identifier
+                                                            completion:(PRTaskCancellationCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    NSString *identifierCopy = [identifier copy];
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeTaskCancellationResult *taskResult = (PRBridgeTaskCancellationResult *)value;
+        [weakRequest cancel];
+        completion(taskResult.result, taskResult.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeTaskCancellationRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.taskCancellationRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRTaskCancellationResult *result = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    const std::string taskIdentifier = stableIdentifierFromFoundation(identifierCopy);
+                    const FrontendTaskCancellationResult cancellationResult = bridge->_facade->cancelTask(taskIdentifier);
+                    NSString *foundationIdentifier = [NSString stringWithUTF8String:taskIdentifier.c_str()];
+                    result = [[PRTaskCancellationResult alloc]
+                        initWithIdentifier:foundationIdentifier
+                                    outcome:cancellationOutcomeFromFacadeResult(cancellationResult)];
+                    if (!result) {
+                        throw std::invalid_argument("Facade returned an invalid task cancellation result");
+                    }
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid task identifier"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Task cancellation cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Task cancellation unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown task cancellation failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeTaskCancellationResult alloc] initWithResult:result error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
+- (PRBridgeObservationToken *)cancelTaskWithIdentifier:(NSString *)identifier
+                                               completion:(PRTaskCancellationCompletionHandler)completion
+{
+    return [self performTaskCancellationWithIdentifier:identifier completion:completion];
+}
+
 - (PRBridgeObservationToken *)performInstanceCommand:(PRInstanceCommandKind)kind
                                            identifier:(NSString *)identifier
                                           completion:(PRInstanceCommandCompletionHandler)completion
@@ -1306,6 +1858,26 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.observationLock unlock];
 }
 
+- (void)removeTaskRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.taskRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.taskRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
+- (void)removeTaskCancellationRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.taskCancellationRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.taskCancellationRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
 - (void)removeCommandRequest:(PRBridgeObservationState *)request
 {
     [self.observationLock lock];
@@ -1325,12 +1897,16 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [observations addObjectsFromArray:self.taskObservationStates];
     [observations addObjectsFromArray:self.snapshotRequestStates];
     [observations addObjectsFromArray:self.changeRequestStates];
+    [observations addObjectsFromArray:self.taskRequestStates];
+    [observations addObjectsFromArray:self.taskCancellationRequestStates];
     [observations addObjectsFromArray:self.commandRequestStates];
     [self.instanceObservationStates removeAllObjects];
     [self.instanceChangeObservationStates removeAllObjects];
     [self.taskObservationStates removeAllObjects];
     [self.snapshotRequestStates removeAllObjects];
     [self.changeRequestStates removeAllObjects];
+    [self.taskRequestStates removeAllObjects];
+    [self.taskCancellationRequestStates removeAllObjects];
     [self.commandRequestStates removeAllObjects];
     [self.observationLock unlock];
 

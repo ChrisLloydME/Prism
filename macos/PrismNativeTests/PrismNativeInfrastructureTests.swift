@@ -262,4 +262,170 @@ final class PrismNativeInfrastructureTests: XCTestCase {
             )
         )
     }
+
+    func testTaskDTOsCopySubtasksTerminalResultsAndCancellationOutcomes() throws {
+        let mutableSubtaskIdentifier = NSMutableString(string: "subtask.fixture")
+        let mutableSubtaskName = NSMutableString(string: "Download fixture")
+        let subtask = try XCTUnwrap(
+            PRTaskSubtaskStatus(
+                identifier: mutableSubtaskIdentifier as String,
+                name: mutableSubtaskName as String,
+                state: .succeeded,
+                progressKind: .determinate,
+                progressFraction: 1
+            )
+        )
+
+        let mutableLocalizationKey = NSMutableString(string: "task.failed")
+        let terminalResult = try XCTUnwrap(
+            PRTaskTerminalResult(
+                outcome: .failed,
+                localizationKey: mutableLocalizationKey as String,
+                substitutionValues: ["taskIdentifier": "task.fixture"],
+                diagnosticText: "fixture failure",
+                partialChangesRolledBack: true
+            )
+        )
+        mutableSubtaskIdentifier.append(".mutated")
+        mutableSubtaskName.append(" Mutated")
+        mutableLocalizationKey.append(".mutated")
+
+        XCTAssertEqual(subtask.identifier, "subtask.fixture")
+        XCTAssertEqual(subtask.name, "Download fixture")
+        XCTAssertEqual(terminalResult.localizationKey, "task.failed")
+        XCTAssertEqual(terminalResult.substitutionValues, ["taskIdentifier": "task.fixture"])
+        XCTAssertEqual(terminalResult.diagnosticText, "fixture failure")
+        XCTAssertTrue(terminalResult.partialChangesRolledBack)
+
+        let failedStatus = try XCTUnwrap(
+            PRTaskStatus(
+                identifier: "task.fixture",
+                title: "Fixture Task",
+                state: .failed,
+                progressKind: .determinate,
+                progressFraction: 1,
+                cancellationAllowed: false,
+                subtasks: [subtask],
+                terminalResult: terminalResult
+            )
+        )
+        XCTAssertEqual(failedStatus.title, "Fixture Task")
+        XCTAssertEqual(failedStatus.subtasks.map(\.identifier), ["subtask.fixture"])
+        XCTAssertEqual(failedStatus.terminalResult?.outcome, .failed)
+
+        let succeededResult = try XCTUnwrap(
+            PRTaskTerminalResult(
+                outcome: .succeeded,
+                localizationKey: "task.completed",
+                substitutionValues: [:],
+                diagnosticText: nil,
+                partialChangesRolledBack: false
+            )
+        )
+        let cancelledResult = try XCTUnwrap(
+            PRTaskTerminalResult(
+                outcome: .cancelled,
+                localizationKey: "task.cancelled",
+                substitutionValues: [:],
+                diagnosticText: nil,
+                partialChangesRolledBack: false
+            )
+        )
+        XCTAssertNotNil(
+            PRTaskStatus(
+                identifier: "task.succeeded",
+                title: nil,
+                state: .succeeded,
+                progressKind: .determinate,
+                progressFraction: 1,
+                cancellationAllowed: false,
+                subtasks: [],
+                terminalResult: succeededResult
+            )
+        )
+        XCTAssertNotNil(
+            PRTaskStatus(
+                identifier: "task.cancelled",
+                title: nil,
+                state: .cancelled,
+                progressKind: .indeterminate,
+                progressFraction: 0,
+                cancellationAllowed: false,
+                subtasks: [],
+                terminalResult: cancelledResult
+            )
+        )
+
+        XCTAssertEqual(
+            PRTaskCancellationResult(identifier: "task.fixture", outcome: .requested)?.outcome,
+            .requested
+        )
+        XCTAssertEqual(
+            PRTaskCancellationResult(identifier: "task.fixture", outcome: .alreadyTerminal)?.outcome,
+            .alreadyTerminal
+        )
+        XCTAssertEqual(
+            PRTaskCancellationResult(identifier: "task.fixture", outcome: .unknownTask)?.outcome,
+            .unknownTask
+        )
+        XCTAssertEqual(
+            PRTaskCancellationResult(identifier: "task.fixture", outcome: .rejected)?.outcome,
+            .rejected
+        )
+
+        XCTAssertNil(
+            PRTaskSubtaskStatus(
+                identifier: "",
+                name: "Download fixture",
+                state: .running,
+                progressKind: .indeterminate,
+                progressFraction: 0
+            )
+        )
+        XCTAssertNil(
+            PRTaskTerminalResult(
+                outcome: .failed,
+                localizationKey: "",
+                substitutionValues: [:],
+                diagnosticText: nil,
+                partialChangesRolledBack: false
+            )
+        )
+        XCTAssertNil(
+            PRTaskStatus(
+                identifier: "task.running-with-result",
+                title: nil,
+                state: .running,
+                progressKind: .determinate,
+                progressFraction: 0.5,
+                cancellationAllowed: true,
+                subtasks: [],
+                terminalResult: terminalResult
+            )
+        )
+        XCTAssertNil(
+            PRTaskStatus(
+                identifier: "task.failed-without-result",
+                title: nil,
+                state: .failed,
+                progressKind: .determinate,
+                progressFraction: 1,
+                cancellationAllowed: false,
+                subtasks: [],
+                terminalResult: nil
+            )
+        )
+        XCTAssertNil(
+            PRTaskStatus(
+                identifier: "task.duplicate-subtasks",
+                title: nil,
+                state: .running,
+                progressKind: .determinate,
+                progressFraction: 0.5,
+                cancellationAllowed: true,
+                subtasks: [subtask, subtask],
+                terminalResult: nil
+            )
+        )
+    }
 }
