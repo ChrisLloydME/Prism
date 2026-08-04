@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 4, Native application shell and instance library
 
-Active work unit: none (M4-W1 complete; activate M4-W2 at next round start)
+Active work unit: none (M4-W2 complete; activate M4-W3 at next round start)
 
-Next ready work unit: M4-W2
+Next ready work unit: M4-W3
 
 ## Safety baseline
 
@@ -694,7 +694,7 @@ Next after completion: `M4-W2`, implement the sidebar and instance content with 
 
 ### M4-W2: Sidebar and instance content with NavigationSplitView
 
-Status: ready
+Status: complete
 
 Outcome: replace the placeholder native hierarchy with a system `NavigationSplitView` shell containing the instance-library sidebar and a testable detail-content boundary, without duplicating toolbar actions or connecting unverified backend mutations.
 
@@ -704,9 +704,46 @@ Required evidence: structural SwiftUI API checks, deterministic sidebar/detail s
 
 HIG decision: use system `NavigationSplitView`, sidebar-styled `List`, and `ContentUnavailableView`; keep the sidebar hideable and defer toolbar/contextual command duplication to the shared command model. No custom navigation chrome or self-drawn control is allowed.
 
-Commit: not created.
+Files changed: `macos/PrismNative/App/PrismShellModel.swift`, `macos/PrismNative/App/ContentView.swift`, `macos/PrismNativeTests/PrismShellTests.swift`, `macos/PrismNative.xcodeproj/project.pbxproj`, and this progress file. The shell model and its tests are direct sources of the app and test targets; no backend or bridge source changed.
+
+Design: define a stable sidebar manifest with `Instances` and `Discover` identifiers, SF Symbols, localized title keys, accessibility labels, and hints. `PrismShellModel` is a main-actor observable state seam with optional sidebar selection and explicit `loading`, `empty`, and `content` detail states. `ContentView` binds that state to SwiftUI `List(selection:)` inside `NavigationSplitView`; the detail boundary renders `ProgressView` or system `ContentUnavailableView` placeholders. The shell no longer displays an application-support path and does not infer backend data, grouping, search, or mutation behavior.
+
+Tests and exact commands:
+
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO -only-testing:PrismNativeTests/PrismShellTests test` — passed; 5/5 focused shell tests.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed; 42 tests, 0 failures.
+- `rg -n 'NavigationSplitView|List\(|selection:|\.tag\(|\.listStyle\(\.sidebar\)|ContentUnavailableView\(|ProgressView\(|\.accessibilityLabel\(|\.accessibilityHint\(|\.accessibilityIdentifier\(' macos/PrismNative/App/ContentView.swift` — passed; all required system navigation, state, selection, and accessibility APIs are present.
+- `rg -n '\.toolbar\(|Canvas\(|draw\(|QWidget|QDialog|Qt|std::|#include' macos/PrismNative/App --glob '*.swift'` — returned no matches (exit 1 as expected); no custom chrome, drawing, or Qt/C++ tokens were introduced.
+- `rg -n '#import <Qt|#include|std::|QWidget|QDialog|QObject|QString|QVariant|QModelIndex|QList|QMap|QHash|QUrl|unique_ptr|shared_ptr|reinterpret_cast|static_cast|dynamic_cast' macos/PrismNative/App --glob '*.swift'` — returned no matches (exit 1 as expected); Swift remains outside the bridge ownership/type boundary.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native-release/Build/Products/Release/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `git diff --check` — passed.
+
+Result summary: deterministic shell tests cover stable sidebar IDs, selection metadata, model defaults, optional selection, and each detail state. Structural inspection confirms system navigation/list/content-state/accessibility APIs and no toolbar duplication or self-drawing. Debug and Release builds, the complete native suite, and both Bundle ID checks passed. No application or launcher executable was launched, and no upstream application, Application Support data, account, Keychain, production API, signing, installation, or publishing state was accessed. No CMake command was required because launcher backend sources and build configuration were unchanged.
+
+Risk: the shell intentionally remains a fixture-free presentation boundary: it does not yet load real instance snapshots, apply selection/grouping/sorting/search policy, or route backend mutations. Those contracts belong to M4-W3 and later units. Existing AppIntents metadata and prior non-blocking CMake warnings remain unchanged.
+
+Commit: pending implementation commit; the final hash will be recorded by the follow-up progress commit.
 
 Next after completion: `M4-W3`, implement selection, grouping, sorting, and search in testable Swift state.
+
+### M4-W3: Selection, grouping, sorting, and search state
+
+Status: ready
+
+Outcome: implement deterministic Swift state for instance selection, grouping, sorting, and search while preserving stable identifiers, keyboard operation, and a backend-neutral view-model boundary.
+
+Scope: `macos/PrismNative/App`, directly related native tests/Xcode/project/progress files, and no other platforms. Keep the unit focused on pure state and system `.searchable` integration; do not add launch, edit, delete, provider, or real-data mutations.
+
+Required evidence: fixture-volume state tests for selection, grouping, sorting, search matching, empty results, keyboard identity, and accessibility metadata; static checks for `.searchable` and system collection APIs; native Debug/Release builds, native tests, Bundle ID checks, and `git diff --check`.
+
+HIG decision: keep collection behavior in testable Swift state and consume system `List`/collection selection plus `.searchable`; do not introduce custom cells, custom filtering chrome, or self-drawn controls.
+
+Commit: not created.
+
+Next after completion: `M4-W4`, implement loading, empty, failed, and content states.
 
 ## Completed commit index
 
@@ -757,6 +794,7 @@ Next after completion: `M4-W3`, implement selection, grouping, sorting, and sear
 21. M3-W6 completes the Milestone 3 boundary: the Objective-C++ bridge consumes the existing QWidget-free `Launcher_frontend` target and keeps the Swift-facing bridge free of Qt, C++, and ownership types.
 22. M3-W6 proves the linker boundary without source copying: Xcode consumes the ignored universal `libLauncher_frontend.a` through `-lLauncher_frontend`, while `PRPrismBridge` alone owns `FrontendFacade` and converts C++ values into Foundation DTOs; the existing Qt `Prism` link remains unchanged and the public bridge/Swift surfaces remain free of Qt and C++.
 23. M4-W1 centralizes native shell actions in a main-actor command manifest; SwiftUI `Commands` consumes the same descriptors for menu placement, shortcuts, enabled state, accessibility labels, and help, while future toolbar and contextual actions must route through the same model.
+24. M4-W2 replaces the placeholder hierarchy with a system `NavigationSplitView` and sidebar `List`; `PrismShellModel` keeps sidebar selection and detail loading/empty/content states testable without backend mutations, search, grouping, or custom chrome.
 
 ## Custom rendering exceptions
 
@@ -770,4 +808,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M4-W2`. Do not begin M4-W3 or native visual implementation until the NavigationSplitView shell, sidebar/detail states, accessibility metadata, and structural tests are verified and committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M4-W3`. Do not begin M4-W4 or native visual implementation until selection, grouping, sorting, search, accessibility metadata, and structural tests are verified and committed.
