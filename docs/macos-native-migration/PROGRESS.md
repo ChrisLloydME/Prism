@@ -1,16 +1,16 @@
 # Prism macOS Native Migration Progress
 
-Last updated: 2026-08-04
+Last updated: 2026-08-05
 
 Branch: `macos-native`
 
 Plan: `docs/macos-native-migration/PLAN.md`
 
-Current milestone: Milestone 4, Native application shell and instance library
+Current milestone: Milestone 5, Launch, stop, tasks, and logs
 
-Active work unit: none (M4-W6 complete; activate M4-W7 at next round start)
+Active work unit: none (M4-W7 complete; activate M5-W1 at next round start)
 
-Next ready work unit: M4-W7
+Next ready work unit: M5-W1
 
 ## Safety baseline
 
@@ -894,6 +894,55 @@ Commit: `b7d53cf84`
 
 Next after completion: `M4-W7`, add bounded native instance artwork loading as content rather than control chrome.
 
+### M4-W7: Bounded native instance artwork content
+
+Status: complete
+
+Outcome: add a fixture-testable native artwork loader with deterministic count/byte bounds and a system SwiftUI image consumer. Artwork remains instance content and is never used to imitate toolbar, menu, sidebar, or window chrome.
+
+Scope: `macos/PrismNative/App`, directly related native tests/Xcode/project/progress files, and no other platforms. Accept only explicit file URLs supplied by the caller; tests must use temporary fixture files and must not discover or read upstream application data. No backend mutation, bridge contract change, or visual snapshot acceptance.
+
+Required evidence: valid/missing/invalid artwork tests, stable-ID cache hits, deterministic least-recently-used eviction, count and byte limits, oversized-file rejection, ten-times fixture pressure, system `Image` content semantics, accessibility labels, localization shape, Debug/Release builds, native tests, Bundle ID checks, forbidden boundary/drawing checks, and `git diff --check`.
+
+HIG decision: use `NSImage` for file decoding and SwiftUI `Image(nsImage:)`/`resizable`/`scaledToFit` for content only. No Canvas, Core Graphics, custom control, bitmap replica of system chrome, third-party cache, or custom accessibility container is permitted. Apple guidance: [icons](https://developer.apple.com/design/human-interface-guidelines/icons), [images](https://developer.apple.com/design/human-interface-guidelines/images), and [accessibility](https://developer.apple.com/documentation/swiftui/accessibility).
+
+Domain-rendering record required by `PLAN.md` §6.2:
+
+1. User need: instance artwork is user data that identifies an installed instance in the native library; the image itself is the content being presented, not a replacement for an Apple-provided control.
+2. Apple APIs investigated: `NSImage(data:)` for AppKit decoding and SwiftUI `Image(nsImage:)`, `resizable`, `scaledToFit`, and accessibility modifiers for presentation; `NSCache` was considered, but deterministic LRU state is required for fixture verification and explicit byte accounting.
+3. System-view composition is insufficient for the image payload itself; system `Image` remains sufficient for presentation, so no custom drawing is needed.
+4. Accessibility: every rendered artwork view receives a caller-provided localized label; missing artwork has a localized fallback label and never removes the surrounding instance identity.
+5. Limits: reject non-file URLs, missing/invalid files, empty files, and files larger than the configured byte budget before decoding; keep at most 32 entries and 8 MiB by default, with deterministic lower limits in tests.
+6. Test strategy: use temporary PNG fixture bytes, assert decode/miss/invalid behavior and LRU/count/byte eviction, exercise ten-times fixture volume, and inspect source/API contracts without launching the app or using screenshots.
+
+Files changed: `macos/PrismNative/App/PrismShellModel.swift`, `macos/PrismNative/App/ContentView.swift`, `macos/PrismNativeTests/PrismShellTests.swift`, and this progress file. No Xcode project, bridge, backend, or other-platform file changed because the existing native app/test target membership already covers the modified Swift sources.
+
+Design: add a main-actor `PrismInstanceArtworkStore` that accepts only caller-supplied file URLs, validates file size and `NSImage` decoding, normalizes stable instance IDs, and evicts least-recently-used entries until both count and encoded-byte limits hold. Add `PrismInstanceArtworkView` using system `Image(nsImage:)`, `resizable`, `scaledToFit`, localized accessibility labels, and a localized missing-artwork fallback. No custom drawing or control chrome is introduced.
+
+Architecture: keep artwork state in a Swift-only, main-actor cache seam. The loader does not derive paths, inspect Application Support, call the bridge, or cross into C++/Qt; a later shell/store unit can resolve the bridge's `iconKey` to an explicit fixture-safe file URL and call the store. `removeArtwork` and `removeAll` provide deterministic invalidation for instance updates and lifecycle cleanup.
+
+Tests and exact commands:
+
+- The first focused compile failed with `Covariant 'Self' type cannot be referenced from a default argument expression` for the artwork-store defaults. Source and compiler-log inspection identified the issue; the defaults now reference `PrismInstanceArtworkStore` explicitly, and no blind retry or unrelated change was made.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO -only-testing:PrismNativeTests/PrismShellTests test` — passed; 17/17 focused shell/artwork tests after the evidence-driven correction and final localization-key adjustment.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed; 57 tests, 0 failures.
+- `rg -n 'PrismInstanceArtworkStore|NSImage\(data:|Image\(nsImage:|\.resizable\(\)|\.scaledToFit\(\)|\.fileSizeKey|cachedByteCount|defaultItemLimit|defaultTotalByteLimit|prism\.instance-artwork' macos/PrismNative/App macos/PrismNativeTests` — passed; bounded decoding and system content presentation are explicit.
+- `rg -n 'LocalizedStringKey|No Instance Artwork|accessibilityLabelKey|titleKey|Text\(' macos/PrismNative/App/ContentView.swift macos/PrismNative/App/PrismShellModel.swift macos/PrismNativeTests/PrismShellTests.swift` — passed; artwork and fallback accessibility copy retain localization-key shape. `if rg --files macos/PrismNative | rg -q 'Localizable\.strings$'; then exit 1; else exit 0; fi` — passed; no resource was added prematurely.
+- `if rg -n 'QWidget|QDialog|QtWidgets|QAbstractItemModel|QAbstractListModel|QObject|QModelIndex|std::|#include|Unmanaged|UnsafeMutable|UnsafeRaw' macos/PrismNative/App --glob '*.swift'; then exit 1; else exit 0; fi`, `if rg -n 'Canvas\(|draw\(|Path\(|Shape|CGContext|NSBezierPath' macos/PrismNative/App --glob '*.swift'; then exit 1; else exit 0; fi`, and `if rg -n 'PrismLauncher|homeDirectoryForCurrentUser|Application Support|URLSession|AsyncImage' macos/PrismNative/App --glob '*.swift'; then exit 1; else exit 0; fi` — passed with no forbidden Swift boundary, ownership, Qt/C++, custom drawing, upstream-data discovery, or implicit network image loading.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native-release/Build/Products/Release/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `git diff --check` — passed. No CMake command was required because this unit changes only native SwiftUI/AppKit content and fixture tests; launcher backend, bridge, and build configuration were unchanged.
+
+Result summary: native artwork content now has explicit file-boundary validation, valid image decoding, deterministic stable-ID LRU behavior, count/encoded-byte limits, invalidation, 10× fixture pressure coverage, and system SwiftUI presentation/accessibility metadata. Debug and Release builds, full native tests, structural API checks, localization shape, forbidden-boundary/drawing/data scans, Bundle ID checks, and diff validation passed. No application or launcher executable was launched; no screenshots, visual snapshots, upstream application data, accounts, Keychain, production services, signing, installation, or publishing state were accessed.
+
+Risk: the store and view are reusable seams; live `PRInstanceSummary.iconKey` resolution and instance-row integration remain future shell/store work. The cache bounds encoded file bytes and entry count; decoded `NSImage` pixel memory can vary, so a later performance audit may refine pixel-cost accounting without changing the public file-boundary contract. No custom rendering exception was added.
+
+Commit: pending implementation commit.
+
+Next after completion: `M5-W1`, add fixture-controlled launch and stop facade commands using stable instance identifiers.
+
 ## Completed commit index
 
 | Commit | Outcome | Verification |
@@ -953,6 +1002,7 @@ Next after completion: `M4-W7`, add bounded native instance artwork loading as c
 26. M4-W4 keeps failure presentation in the main-actor Swift state seam: stable Foundation-only failure/recovery metadata drives system `ContentUnavailableView` actions, while retry remains an injected intent and no asynchronous or backend ownership crosses into the view.
 27. M4-W5 routes app menus, toolbar buttons, and the detail context menu through one `PrismCommandButton`/`PrismCommandModel` invocation path; shortcut mapping is compiled in the shared command-model source so app and test targets have the same contract.
 28. M4-W6 gives every shared command a stable accessibility identifier and validates it across menus, toolbar, and context-menu surfaces; sidebar rows use localized values and typed `List(selection:)`/`.tag` semantics so system accessibility roles and keyboard focus remain native rather than manually recreated.
+29. M4-W7 keeps instance artwork behind an explicit file-URL input and a main-actor deterministic LRU store with 32-entry/8 MiB defaults; SwiftUI `Image` owns presentation and accessibility, while bridge icon-key resolution and live row integration remain downstream of this isolated content seam.
 
 ## Custom rendering exceptions
 

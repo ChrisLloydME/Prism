@@ -180,6 +180,125 @@ final class PrismShellTests: XCTestCase {
         XCTAssertEqual(model.selectedInstanceID, "fixture.042")
     }
 
+    func testArtworkStoreLoadsOnlyValidTemporaryFileArtwork() throws {
+        let fixtureRoot = try PrismTemporaryFixtureRoot()
+        let artworkURL = fixtureRoot.urlForRelativePath("artwork/fixture.png")
+        try FileManager.default.createDirectory(
+            at: artworkURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try fixturePNG().write(to: artworkURL, options: .atomic)
+
+        let invalidURL = fixtureRoot.urlForRelativePath("artwork/invalid.png")
+        try Data("not an image".utf8).write(to: invalidURL, options: .atomic)
+
+        let store = try XCTUnwrap(
+            PrismInstanceArtworkStore(maxItemCount: 2, maxTotalBytes: fixturePNG().count * 2)
+        )
+
+        XCTAssertNotNil(store.image(for: " fixture.one ", from: artworkURL))
+        XCTAssertEqual(store.cachedIdentifiers, ["fixture.one"])
+        XCTAssertNotNil(store.image(for: "fixture.one", from: artworkURL))
+        XCTAssertNil(store.image(for: "", from: artworkURL))
+        XCTAssertNil(store.image(for: "fixture.invalid", from: invalidURL))
+        XCTAssertNil(store.image(for: "fixture.missing", from: fixtureRoot.urlForRelativePath("missing.png")))
+        XCTAssertNil(
+            store.image(
+                for: "fixture.remote",
+                from: URL(string: "https://example.invalid/fixture.png")!
+            )
+        )
+        XCTAssertTrue(fixtureRoot.isInsideTemporaryDirectory)
+        XCTAssertTrue(fixtureRoot.isOutsideUpstreamApplicationSupport)
+    }
+
+    func testArtworkStoreEvictsLeastRecentlyUsedEntriesWithinCountAndByteLimits() throws {
+        let fixtureRoot = try PrismTemporaryFixtureRoot()
+        let artworkURL = fixtureRoot.urlForRelativePath("artwork/fixture.png")
+        try FileManager.default.createDirectory(
+            at: artworkURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let artworkData = fixturePNG()
+        try artworkData.write(to: artworkURL, options: .atomic)
+
+        let store = try XCTUnwrap(
+            PrismInstanceArtworkStore(maxItemCount: 2, maxTotalBytes: artworkData.count * 2)
+        )
+        XCTAssertNotNil(store.image(for: "fixture.one", from: artworkURL))
+        XCTAssertNotNil(store.image(for: "fixture.two", from: artworkURL))
+        XCTAssertNotNil(store.image(for: "fixture.one", from: artworkURL))
+        XCTAssertNotNil(store.image(for: "fixture.three", from: artworkURL))
+
+        XCTAssertEqual(store.cachedIdentifiers, ["fixture.one", "fixture.three"])
+        XCTAssertLessThanOrEqual(store.cachedIdentifiers.count, 2)
+        XCTAssertLessThanOrEqual(store.cachedByteCount, artworkData.count * 2)
+
+        store.removeArtwork(for: " fixture.one ")
+        XCTAssertEqual(store.cachedIdentifiers, ["fixture.three"])
+        store.removeAll()
+        XCTAssertTrue(store.cachedIdentifiers.isEmpty)
+        XCTAssertEqual(store.cachedByteCount, 0)
+    }
+
+    func testArtworkStoreStaysBoundedAtTenTimesDefaultFixtureVolume() throws {
+        let fixtureRoot = try PrismTemporaryFixtureRoot()
+        let artworkURL = fixtureRoot.urlForRelativePath("artwork/fixture.png")
+        try FileManager.default.createDirectory(
+            at: artworkURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try fixturePNG().write(to: artworkURL, options: .atomic)
+
+        let store = try XCTUnwrap(PrismInstanceArtworkStore())
+        for index in 0..<(PrismInstanceArtworkStore.defaultItemLimit * 10) {
+            XCTAssertNotNil(store.image(for: "fixture.\(index)", from: artworkURL))
+        }
+
+        XCTAssertEqual(store.cachedIdentifiers.count, PrismInstanceArtworkStore.defaultItemLimit)
+        XCTAssertLessThanOrEqual(store.cachedByteCount, PrismInstanceArtworkStore.defaultTotalByteLimit)
+        XCTAssertEqual(
+            store.cachedIdentifiers.first,
+            "fixture.\(PrismInstanceArtworkStore.defaultItemLimit * 9)"
+        )
+    }
+
+    func testArtworkStoreRejectsInvalidBoundsAndUsesSystemImageContentAPIs() throws {
+        XCTAssertNil(PrismInstanceArtworkStore(maxItemCount: 0, maxTotalBytes: 1))
+        XCTAssertNil(PrismInstanceArtworkStore(maxItemCount: 1, maxTotalBytes: 0))
+
+        let contentSource = try contentSource()
+        let shellModelSource = try shellModelSource()
+
+        for requiredToken in [
+            "PrismInstanceArtworkView",
+            "Image(nsImage:",
+            ".resizable()",
+            ".scaledToFit()",
+            ".accessibilityLabel(",
+            "prism.instance-artwork"
+        ] {
+            XCTAssertTrue(contentSource.contains(requiredToken), "Missing native artwork API: \(requiredToken)")
+        }
+
+        for requiredToken in [
+            "PrismInstanceArtworkStore",
+            "NSImage(data:",
+            ".fileSizeKey",
+            "maxItemCount",
+            "maxTotalBytes",
+            "cachedByteCount",
+            "trimToLimits()",
+            "accessOrder"
+        ] {
+            XCTAssertTrue(shellModelSource.contains(requiredToken), "Missing bounded artwork contract: \(requiredToken)")
+        }
+
+        XCTAssertFalse(contentSource.contains("Canvas("))
+        XCTAssertFalse(contentSource.contains("draw("))
+        XCTAssertFalse(contentSource.contains("Path("))
+    }
+
     func testContentSourceUsesSystemSidebarDetailAndContentStateAPIs() throws {
         let source = try contentSource()
 
@@ -256,6 +375,12 @@ final class PrismShellTests: XCTestCase {
             PrismInstanceRow(id: "fixture.alpha-lower", name: "alpha", group: "Alpha"),
             PrismInstanceRow(id: "fixture.moon", name: "Moon")
         ].compactMap { $0 }
+    }
+
+    private func fixturePNG() -> Data {
+        Data(
+            base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        )!
     }
 
     private func contentSource() throws -> String {

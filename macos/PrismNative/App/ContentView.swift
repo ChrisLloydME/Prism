@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ContentView: View {
@@ -57,6 +58,27 @@ struct ContentView: View {
                 PrismCommandButton(model: commandModel, command: .stopSelected)
             }
         }
+    }
+}
+
+@MainActor
+struct PrismInstanceArtworkView: View {
+    let image: NSImage?
+    let accessibilityLabelKey: String
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .accessibilityLabel(Text(LocalizedStringKey(accessibilityLabelKey)))
+            } else {
+                Image(systemName: "square.grid.2x2")
+                    .accessibilityLabel(Text(LocalizedStringKey("No Instance Artwork")))
+            }
+        }
+        .accessibilityIdentifier("prism.instance-artwork")
     }
 }
 

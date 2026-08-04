@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import SwiftUI
 
 struct PrismInstanceRow: Identifiable, Equatable, Hashable, Sendable {
@@ -18,6 +19,109 @@ struct PrismInstanceRow: Identifiable, Equatable, Hashable, Sendable {
         self.id = normalizedID
         self.name = normalizedName
         self.group = normalizedGroup?.isEmpty == true ? nil : normalizedGroup
+    }
+}
+
+@MainActor
+final class PrismInstanceArtworkStore {
+    static let defaultItemLimit = 32
+    static let defaultTotalByteLimit = 8 * 1024 * 1024
+
+    let itemLimit: Int
+    let totalByteLimit: Int
+
+    private struct Entry {
+        let image: NSImage
+        let byteCount: Int
+    }
+
+    private var entries: [String: Entry] = [:]
+    private var accessOrder: [String] = []
+    private(set) var cachedByteCount = 0
+
+    var cachedIdentifiers: [String] {
+        accessOrder
+    }
+
+    init?(
+        maxItemCount: Int = PrismInstanceArtworkStore.defaultItemLimit,
+        maxTotalBytes: Int = PrismInstanceArtworkStore.defaultTotalByteLimit
+    ) {
+        guard maxItemCount > 0, maxTotalBytes > 0 else {
+            return nil
+        }
+
+        itemLimit = maxItemCount
+        totalByteLimit = maxTotalBytes
+    }
+
+    func image(for instanceID: String, from url: URL) -> NSImage? {
+        guard let normalizedID = Self.normalizedIdentifier(instanceID), url.isFileURL else {
+            return nil
+        }
+
+        if let cachedEntry = entries[normalizedID] {
+            touch(normalizedID)
+            return cachedEntry.image
+        }
+
+        guard let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey]),
+              let fileSize = resourceValues.fileSize,
+              fileSize > 0,
+              fileSize <= totalByteLimit,
+              let data = try? Data(contentsOf: url, options: [.mappedIfSafe]),
+              !data.isEmpty,
+              data.count <= totalByteLimit,
+              let image = NSImage(data: data) else {
+            return nil
+        }
+
+        entries[normalizedID] = Entry(image: image, byteCount: data.count)
+        cachedByteCount += data.count
+        touch(normalizedID)
+        trimToLimits()
+        return image
+    }
+
+    func removeArtwork(for instanceID: String) {
+        guard let normalizedID = Self.normalizedIdentifier(instanceID) else {
+            return
+        }
+
+        guard let removedEntry = entries.removeValue(forKey: normalizedID) else {
+            return
+        }
+
+        cachedByteCount -= removedEntry.byteCount
+        accessOrder.removeAll { $0 == normalizedID }
+    }
+
+    func removeAll() {
+        entries.removeAll(keepingCapacity: true)
+        accessOrder.removeAll(keepingCapacity: true)
+        cachedByteCount = 0
+    }
+
+    private func touch(_ identifier: String) {
+        accessOrder.removeAll { $0 == identifier }
+        accessOrder.append(identifier)
+    }
+
+    private func trimToLimits() {
+        while entries.count > itemLimit || cachedByteCount > totalByteLimit {
+            guard let leastRecentlyUsed = accessOrder.first else {
+                return
+            }
+            accessOrder.removeFirst()
+            if let removedEntry = entries.removeValue(forKey: leastRecentlyUsed) {
+                cachedByteCount -= removedEntry.byteCount
+            }
+        }
+    }
+
+    private static func normalizedIdentifier(_ identifier: String) -> String? {
+        let normalized = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
     }
 }
 
