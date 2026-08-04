@@ -27,6 +27,13 @@ struct ContentView: View {
         } detail: {
             PrismShellDetailView(state: shellModel.detailState)
         }
+        .searchable(
+            text: Binding<String>(
+                get: { shellModel.searchText },
+                set: { shellModel.setSearchText($0) }
+            ),
+            prompt: Text("Search Instances")
+        )
     }
 }
 

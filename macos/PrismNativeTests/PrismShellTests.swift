@@ -24,7 +24,7 @@ final class PrismShellTests: XCTestCase {
         XCTAssertEqual(model.detailState, .empty)
     }
 
-    func testShellModelTracksSidebarSelectionWithoutApplyingGroupingPolicy() {
+    func testShellModelTracksSidebarSelectionWithoutChangingDetailState() {
         let model = PrismShellModel()
 
         model.selectSidebarItem(.discover)
@@ -48,6 +48,99 @@ final class PrismShellTests: XCTestCase {
         }
     }
 
+    func testSelectionUsesStableInstanceIdentifiersAcrossSortingAndSearch() {
+        let model = PrismShellModel()
+        model.setInstances(fixtureInstances())
+
+        model.selectInstanceID(" fixture.zeta ")
+        XCTAssertEqual(model.selectedInstanceID, "fixture.zeta")
+
+        model.setSortOrder(.nameDescending)
+        model.setSearchText("alpha")
+        XCTAssertEqual(model.selectedInstanceID, "fixture.zeta")
+
+        model.selectInstanceID("missing")
+        XCTAssertNil(model.selectedInstanceID)
+    }
+
+    func testSortingIsCaseInsensitiveWithStableIdentifierTieBreakers() {
+        let model = PrismShellModel()
+        model.setInstances(fixtureInstances())
+
+        XCTAssertEqual(
+            model.visibleInstances.map(\.id),
+            ["fixture.alpha", "fixture.alpha-lower", "fixture.moon", "fixture.zeta"]
+        )
+
+        model.setSortOrder(.nameDescending)
+        XCTAssertEqual(
+            model.visibleInstances.map(\.id),
+            ["fixture.zeta", "fixture.moon", "fixture.alpha", "fixture.alpha-lower"]
+        )
+    }
+
+    func testGroupingProducesDeterministicSectionsAndUngroupedBucket() {
+        let model = PrismShellModel()
+        model.setInstances(fixtureInstances())
+        model.setGrouping(.group)
+
+        XCTAssertEqual(
+            model.visibleInstanceSections.map(\.title),
+            ["Alpha", "Beta", "Ungrouped"]
+        )
+        XCTAssertEqual(
+            model.visibleInstanceSections.map(\.id),
+            ["group:Alpha", "group:Beta", "group:Ungrouped"]
+        )
+        XCTAssertEqual(
+            model.visibleInstanceSections.flatMap { $0.instances }.map(\.id),
+            ["fixture.alpha", "fixture.alpha-lower", "fixture.zeta", "fixture.moon"]
+        )
+    }
+
+    func testSearchMatchesNameIdentifierAndGroupAndSupportsEmptyResults() {
+        let model = PrismShellModel()
+        model.setInstances(fixtureInstances())
+
+        model.setSearchText("  MOON ")
+        XCTAssertEqual(model.visibleInstances.map(\.id), ["fixture.moon"])
+
+        model.setSearchText("fixture.alpha")
+        XCTAssertEqual(
+            model.visibleInstances.map(\.id),
+            ["fixture.alpha", "fixture.alpha-lower"]
+        )
+
+        model.setSearchText("beta")
+        XCTAssertEqual(model.visibleInstances.map(\.id), ["fixture.zeta"])
+
+        model.setSearchText("does-not-exist")
+        XCTAssertTrue(model.visibleInstances.isEmpty)
+        XCTAssertTrue(model.visibleInstanceSections.isEmpty)
+    }
+
+    func testTenTimesFixtureVolumePreservesUniqueRowsAndSelectionIdentity() {
+        let model = PrismShellModel()
+        let instances = (0..<100).compactMap { index in
+            PrismInstanceRow(
+                id: String(format: "fixture.%03d", index),
+                name: String(format: "Instance %03d", index),
+                group: index.isMultiple(of: 2) ? "Even" : "Odd"
+            )
+        }
+        model.setInstances(instances)
+        model.setGrouping(.group)
+        model.selectInstanceID("fixture.042")
+
+        XCTAssertEqual(model.instances.count, 100)
+        XCTAssertEqual(Set(model.visibleInstances.map(\.id)).count, 100)
+        XCTAssertEqual(model.selectedInstanceID, "fixture.042")
+
+        model.setSortOrder(.nameDescending)
+        XCTAssertEqual(model.visibleInstances.count, 100)
+        XCTAssertEqual(model.selectedInstanceID, "fixture.042")
+    }
+
     func testContentSourceUsesSystemSidebarDetailAndContentStateAPIs() throws {
         let source = try contentSource()
 
@@ -57,6 +150,7 @@ final class PrismShellTests: XCTestCase {
             "selection:",
             ".tag(",
             ".listStyle(.sidebar)",
+            ".searchable(",
             "ContentUnavailableView(",
             "ProgressView(",
             ".accessibilityLabel(",
@@ -71,12 +165,45 @@ final class PrismShellTests: XCTestCase {
         XCTAssertFalse(source.contains("draw("))
     }
 
+    func testShellModelSourceDefinesSearchGroupingAndSortingState() throws {
+        let source = try shellModelSource()
+
+        for requiredToken in [
+            "PrismInstanceGrouping",
+            "PrismInstanceSortOrder",
+            "visibleInstanceSections",
+            "setSearchText(",
+            "setGrouping(",
+            "setSortOrder("
+        ] {
+            XCTAssertTrue(source.contains(requiredToken), "Missing instance state contract: \(requiredToken)")
+        }
+    }
+
+    private func fixtureInstances() -> [PrismInstanceRow] {
+        [
+            PrismInstanceRow(id: "fixture.zeta", name: "Zeta", group: "Beta"),
+            PrismInstanceRow(id: "fixture.alpha", name: "Alpha", group: "Alpha"),
+            PrismInstanceRow(id: "fixture.alpha-lower", name: "alpha", group: "Alpha"),
+            PrismInstanceRow(id: "fixture.moon", name: "Moon")
+        ].compactMap { $0 }
+    }
+
     private func contentSource() throws -> String {
         let sourceRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         let sourceURL = sourceRoot
             .appendingPathComponent("PrismNative/App/ContentView.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private func shellModelSource() throws -> String {
+        let sourceRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = sourceRoot
+            .appendingPathComponent("PrismNative/App/PrismShellModel.swift")
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }
