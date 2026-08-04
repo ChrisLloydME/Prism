@@ -23,7 +23,9 @@ struct ContentView: View {
                     Image(systemName: item.systemImage)
                 }
                 .accessibilityLabel(Text(LocalizedStringKey(item.accessibilityLabelKey)))
+                .accessibilityValue(Text(LocalizedStringKey(item.titleKey)))
                 .accessibilityHint(Text(LocalizedStringKey(item.accessibilityHintKey)))
+                .accessibilityIdentifier("prism.sidebar.\(item.id)")
                 .tag(item)
             }
             .listStyle(.sidebar)

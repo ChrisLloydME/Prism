@@ -195,6 +195,7 @@ final class PrismShellTests: XCTestCase {
             "ProgressView(",
             "Button {",
             ".accessibilityLabel(",
+            ".accessibilityValue(",
             ".help(",
             ".accessibilityHint(",
             ".accessibilityIdentifier("
@@ -206,6 +207,26 @@ final class PrismShellTests: XCTestCase {
         XCTAssertFalse(source.contains("draw("))
         XCTAssertFalse(source.contains(".task("))
         XCTAssertFalse(source.contains("Task {"))
+    }
+
+    func testSidebarSelectionUsesSystemListFocusAndAccessibilityValueSemantics() throws {
+        let source = try contentSource()
+
+        for requiredToken in [
+            "List(",
+            "selection:",
+            "Binding<PrismShellSidebarItem?>",
+            ".tag(item)",
+            ".listStyle(.sidebar)",
+            ".accessibilityValue(Text(LocalizedStringKey(item.titleKey)))"
+        ] {
+            XCTAssertTrue(source.contains(requiredToken), "Missing native selection contract: \(requiredToken)")
+        }
+
+        XCTAssertFalse(source.contains("FocusState"))
+        XCTAssertFalse(source.contains(".accessibilityElement("))
+        XCTAssertFalse(source.contains("Canvas("))
+        XCTAssertFalse(source.contains("draw("))
     }
 
     func testShellModelSourceDefinesSearchGroupingAndSortingState() throws {

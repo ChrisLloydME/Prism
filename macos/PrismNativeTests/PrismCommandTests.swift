@@ -8,12 +8,20 @@ final class PrismCommandTests: XCTestCase {
 
         XCTAssertEqual(Set(descriptors.map(\.id)).count, descriptors.count)
         XCTAssertEqual(Set(descriptors.map(\.titleKey)).count, descriptors.count)
+        XCTAssertEqual(
+            Set(descriptors.map(\.accessibilityIdentifier)).count,
+            descriptors.count
+        )
 
         for descriptor in descriptors {
             XCTAssertFalse(descriptor.titleKey.isEmpty)
             XCTAssertFalse(descriptor.accessibilityLabelKey.isEmpty)
             XCTAssertFalse(descriptor.helpKey.isEmpty)
             XCTAssertFalse(descriptor.systemImage.isEmpty)
+            XCTAssertEqual(
+                descriptor.accessibilityIdentifier,
+                "prism.command.\(descriptor.id.rawValue)"
+            )
         }
     }
 
@@ -95,8 +103,43 @@ final class PrismCommandTests: XCTestCase {
         )
 
         for command in PrismCommandModel.toolbarCommandIDs + PrismCommandModel.contextMenuCommandIDs {
-            XCTAssertFalse(PrismCommandDescriptor.descriptor(for: command).titleKey.isEmpty)
+            let descriptor = PrismCommandDescriptor.descriptor(for: command)
+            XCTAssertFalse(descriptor.titleKey.isEmpty)
+            XCTAssertFalse(descriptor.accessibilityIdentifier.isEmpty)
         }
+    }
+
+    func testCommandSurfacesPreserveEnabledStateAcrossSelectionAndRunningIdentity() {
+        let model = PrismCommandModel()
+        let surfaceCommands = PrismCommandModel.toolbarCommandIDs
+            + PrismCommandModel.contextMenuCommandIDs
+
+        for command in surfaceCommands {
+            let descriptor = PrismCommandDescriptor.descriptor(for: command)
+            XCTAssertEqual(
+                model.isEnabled(command),
+                !descriptor.requiresSelection,
+                "Unexpected initial enabled state for \(command.rawValue)"
+            )
+        }
+
+        model.setSelectedInstanceID("fixture.one")
+        for command in surfaceCommands {
+            let descriptor = PrismCommandDescriptor.descriptor(for: command)
+            if descriptor.requiresSelection && command != .stopSelected {
+                XCTAssertTrue(model.isEnabled(command), "Selection should enable \(command.rawValue)")
+            }
+        }
+        XCTAssertFalse(model.isEnabled(.stopSelected))
+
+        model.setRunningInstanceID("fixture.one")
+        XCTAssertTrue(model.isEnabled(.stopSelected))
+
+        model.setSelectedInstanceID(nil)
+        XCTAssertFalse(model.isEnabled(.launchSelected))
+        XCTAssertFalse(model.isEnabled(.stopSelected))
+        XCTAssertFalse(model.isEnabled(.editSelected))
+        XCTAssertFalse(model.isEnabled(.deleteSelected))
     }
 
     func testCommandSourceUsesSystemMenusAndAccessibilityMetadata() throws {
@@ -105,10 +148,13 @@ final class PrismCommandTests: XCTestCase {
         for requiredToken in [
             "CommandGroup(",
             "CommandMenu(",
+            "Button {",
+            "Label {",
             "PrismCommandButton(",
             "PrismInstanceContextMenu",
             ".keyboardShortcut(",
             ".accessibilityLabel(",
+            ".accessibilityIdentifier(descriptor.accessibilityIdentifier)",
             ".help("
         ] {
             XCTAssertTrue(source.contains(requiredToken), "Missing native command API: \(requiredToken)")

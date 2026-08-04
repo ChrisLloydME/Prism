@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 4, Native application shell and instance library
 
-Active work unit: none (M4-W5 complete; activate M4-W6 at next round start)
+Active work unit: none (M4-W6 complete; activate M4-W7 at next round start)
 
-Next ready work unit: M4-W6
+Next ready work unit: M4-W7
 
 ## Safety baseline
 
@@ -857,7 +857,7 @@ Next after completion: `M4-W6`, add accessibility labels, help, enabled-state, a
 
 ### M4-W6: Cross-surface accessibility, help, enabled state, and keyboard tests
 
-Status: ready
+Status: complete
 
 Outcome: extend automated accessibility, help, enabled-state, focus, and keyboard contracts across the shared command manifest, toolbar, context menu, and shell selection surfaces.
 
@@ -865,9 +865,32 @@ Scope: `macos/PrismNative/App`, directly related native tests/Xcode/project/prog
 
 Required evidence: cross-surface command and shell tests for labels, values, roles, help, enabled/disabled behavior, keyboard identity, selection focus semantics, localization shape, structural native APIs, Debug/Release builds, native tests, Bundle ID checks, and `git diff --check`.
 
-HIG decision: validate system SwiftUI accessibility modifiers, keyboard shortcuts, toolbar, context-menu, and List selection semantics; no custom accessibility container or self-drawn control is permitted.
+HIG decision: validate system SwiftUI accessibility modifiers, keyboard shortcuts, toolbar, context-menu, and List selection semantics; no custom accessibility container or self-drawn control is permitted. The decision follows Apple's macOS design guidance for [sidebars](https://developer.apple.com/design/human-interface-guidelines/sidebars), [toolbars](https://developer.apple.com/design/human-interface-guidelines/toolbars), and [menus](https://developer.apple.com/design/human-interface-guidelines/menus), plus SwiftUI's [accessibility modifiers](https://developer.apple.com/documentation/swiftui/accessibility).
 
-Commit: not created.
+Files changed: `macos/PrismNative/App/PrismCommandModel.swift`, `macos/PrismNative/App/ContentView.swift`, `macos/PrismNativeTests/PrismCommandTests.swift`, `macos/PrismNativeTests/PrismShellTests.swift`, and this progress file. No Xcode project, backend, bridge, or other-platform file changed because the existing native app/test target membership already covers these sources.
+
+Design: give every shared command a deterministic `prism.command.<raw-command-id>` accessibility identifier and apply it in the system SwiftUI `Button` used by app menus, toolbar items, and context-menu items. Extend the system sidebar `List(selection:)` row with a localized accessibility value and stable row identifier. Tests assert system `Button`, `Label`, `List`, `ToolbarItemGroup`, `.contextMenu`, `.keyboardShortcut`, `.disabled`, `.accessibilityLabel`, `.accessibilityValue`, `.accessibilityIdentifier`, and `.help` usage; no custom accessibility container, focus override, or self-drawn control is introduced.
+
+Architecture: keep semantic identity and enabled-state decisions in the shared main-actor `PrismCommandModel`/`PrismCommandDescriptor`; all command surfaces continue to use `PrismCommandButton`. The shell keeps sidebar selection as a typed `List` binding with `.tag` values, allowing the system list to own keyboard focus and selected-state roles. No Swift/Objective-C++ bridge, QWidget-free facade, backend ownership, task, or fixture data path changed.
+
+Tests and exact commands:
+
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO -only-testing:PrismNativeTests/PrismCommandTests -only-testing:PrismNativeTests/PrismShellTests test` — passed; PrismCommandTests 8/8 and PrismShellTests 13/13, 21/21 focused tests.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed; 53 tests, 0 failures.
+- `rg -n 'NavigationSplitView|List\(|selection:|\.tag\(|\.listStyle\(\.sidebar\)|\.toolbar\{|ToolbarItemGroup\(|\.contextMenu\{|PrismCommandButton\(|PrismInstanceContextMenu\(|\.keyboardShortcut\(|\.disabled\(|\.accessibilityLabel\(|\.accessibilityValue\(|\.accessibilityIdentifier\(|\.accessibilityHint\(|\.help\(' macos/PrismNative/App macos/PrismNativeTests` — passed; native shell, toolbar, context-menu, command, accessibility, enabled-state, help, and selection APIs are present.
+- `rg -n 'LocalizedStringKey|titleKey|accessibilityLabelKey|accessibilityHintKey|helpKey|Text\(|ContentUnavailableView\(|ProgressView\(' macos/PrismNative/App macos/PrismNativeTests` — passed; visible and accessibility copy retains localization-key-shaped metadata. `if rg --files macos/PrismNative | rg -q 'Localizable\.strings$'; then exit 1; else exit 0; fi` — passed; no resource was added prematurely.
+- `if rg -n 'QWidget|QDialog|QtWidgets|QAbstractItemModel|QAbstractListModel|QObject|QModelIndex|std::|#include|Unmanaged|UnsafeMutable|UnsafeRaw' macos/PrismNative --glob '*.swift'; then exit 1; else exit 0; fi` and `if rg -n 'Canvas\(|draw\(|Path\(|Shape|CGContext|NSBezierPath' macos/PrismNative/App --glob '*.swift'; then exit 1; else exit 0; fi` — passed with no forbidden Swift boundary, ownership, Qt/C++, or custom-drawing tokens.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native-release/Build/Products/Release/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `git diff --check` — passed. No CMake command was required because this unit changes only native SwiftUI source and tests; launcher backend and build configuration were unchanged.
+
+Result summary: the shared command manifest now has stable cross-surface accessibility identity, while focused and full native tests cover labels, localized values, system roles, help, disabled/enabled transitions, shortcut identity, toolbar/context-menu reuse, and List selection/focus semantics. Debug and Release builds, static native API and boundary checks, localization-shape checks, both Bundle ID checks, and diff validation passed. No application or launcher executable was launched; no screenshots, visual snapshots, upstream application data, accounts, Keychain, production services, signing, installation, or publishing state were accessed.
+
+Risk: the command handler still terminates at the injected model callback until later units connect fixture-safe facade mutations; the current context menu remains attached to the detail boundary while native instance rows are a later shell/content unit. The localization resource and runtime accessibility-tree inspection remain later non-launch contracts; system controls own their roles and keyboard focus by design. No custom rendering exception was added.
+
+Commit: pending implementation commit.
 
 Next after completion: `M4-W7`, add bounded native instance artwork loading as content rather than control chrome.
 

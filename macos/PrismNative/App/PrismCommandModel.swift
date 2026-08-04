@@ -84,6 +84,10 @@ struct PrismCommandDescriptor: Identifiable, Equatable, Sendable {
     let shortcut: PrismCommandShortcut?
     let requiresSelection: Bool
 
+    var accessibilityIdentifier: String {
+        "prism.command.\(id.rawValue)"
+    }
+
     static let all: [Self] = [
         Self(
             id: .newInstance,
@@ -303,6 +307,7 @@ struct PrismCommandButton: View {
         }
         .disabled(!model.isEnabled(command))
         .accessibilityLabel(Text(LocalizedStringKey(descriptor.accessibilityLabelKey)))
+        .accessibilityIdentifier(descriptor.accessibilityIdentifier)
         .help(Text(LocalizedStringKey(descriptor.helpKey)))
 
         if usesKeyboardShortcut, let shortcut = descriptor.shortcut {
