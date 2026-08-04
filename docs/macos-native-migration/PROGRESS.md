@@ -435,7 +435,7 @@ Result summary: configure-time assertions and the generated Ninja rule prove the
 
 Risk: target-property checks prove the configured ownership/link boundary and buildability, not runtime behavior of the unlaunched Qt application; the legacy Qt UI remains in place until native parity. Existing AutoUIC and missing `clang-format` warnings remain unchanged.
 
-Commit: to be recorded after this work-unit commit.
+Commit: `7bfb98353`
 
 Next after completion: `M3-W1`, replace the identity-only bridge composition with a lifecycle-owning bridge root.
 
@@ -470,6 +470,7 @@ Next after completion: `M3-W2`, add immutable Foundation DTOs for instance summa
 | `d19b2144f` | Added immutable instance snapshots and Added/Updated/Removed change contracts | Empty and fixture facade contracts; selected C++ tests 5/5; existing Prism target; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; public-header scan; `git diff --check` |
 | `4b466150b` | Added explicit facade lifecycle, shutdown, cancellation, and resource-release contracts | Lifecycle fixture contract 1/1; selected C++ tests 5/5; existing Prism target; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; public-header scan; `git diff --check` |
 | `78d8354be` | Added a standalone compile contract for every current facade public header | Facade and public-header tests 2/2; selected C++ tests 6/6; existing Prism target; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; public-header scan; `git diff --check` |
+| `7bfb98353` | Preserved the Qt Prism executable link and facade independence with configure-time assertions | Qt composition configure contract; facade/public-header and selected C++ tests 6/6; existing Prism target; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; Ninja link inspection; `git diff --check` |
 
 ## Current architecture findings
 
