@@ -13,7 +13,7 @@ final class PrismNativeIdentityTests: XCTestCase {
     }
 
     func testFixtureDataRootUsesPrismNamespaceAndNotUpstreamNamespace() throws {
-        let fixtureRoot = try TemporaryFixtureRoot()
+        let fixtureRoot = try PrismTemporaryFixtureRoot()
         let identity = PRApplicationIdentity(
             bundleIdentifier: PRApplicationIdentity.requiredBundleIdentifier(),
             applicationSupportBaseDirectory: fixtureRoot.url
@@ -40,19 +40,5 @@ final class PrismNativeIdentityTests: XCTestCase {
             .deletingLastPathComponent()
         let appURL = productsDirectory.appendingPathComponent("Prism.app", isDirectory: true)
         return Bundle(url: appURL)
-    }
-}
-
-private final class TemporaryFixtureRoot {
-    let url: URL
-
-    init() throws {
-        url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("PrismNativeTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
-    }
-
-    deinit {
-        try? FileManager.default.removeItem(at: url)
     }
 }

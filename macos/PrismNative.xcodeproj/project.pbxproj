@@ -12,6 +12,8 @@
 		A10000000000000000000003 /* PrismBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* PrismBridge.mm */; };
 		A10000000000000000000004 /* PrismNativeIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* PrismNativeIdentityTests.swift */; };
 		A10000000000000000000005 /* PrismBridge.mm in Tests */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* PrismBridge.mm */; };
+		A10000000000000000000006 /* PrismNativeTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* PrismNativeTestSupport.swift */; };
+		A10000000000000000000007 /* PrismNativeInfrastructureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000A /* PrismNativeInfrastructureTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -23,6 +25,8 @@
 		A20000000000000000000006 /* Prism.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Prism.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A20000000000000000000007 /* PrismNativeIdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrismNativeIdentityTests.swift; sourceTree = "<group>"; };
 		A20000000000000000000008 /* PrismNativeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PrismNativeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000009 /* PrismNativeTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrismNativeTestSupport.swift; sourceTree = "<group>"; };
+		A2000000000000000000000A /* PrismNativeInfrastructureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrismNativeInfrastructureTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -93,6 +97,8 @@
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000007 /* PrismNativeIdentityTests.swift */,
+				A20000000000000000000009 /* PrismNativeTestSupport.swift */,
+				A2000000000000000000000A /* PrismNativeInfrastructureTests.swift */,
 			);
 			path = PrismNativeTests;
 			sourceTree = "<group>";
@@ -187,6 +193,8 @@
 			files = (
 				A10000000000000000000004 /* PrismNativeIdentityTests.swift in Sources */,
 				A10000000000000000000005 /* PrismBridge.mm in Tests */,
+				A10000000000000000000006 /* PrismNativeTestSupport.swift in Sources */,
+				A10000000000000000000007 /* PrismNativeInfrastructureTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -6,11 +6,11 @@ Branch: `macos-native`
 
 Plan: `docs/macos-native-migration/PLAN.md`
 
-Current milestone: Milestone 1, contracts, tests, and durable inventory
+Current milestone: Milestone 1 complete; transition to Milestone 2
 
-Active work unit: none
+Active work unit: none (M1-W3 complete; activate M2-W1 at next round start)
 
-Next ready work unit: `M1-W3`
+Next ready work unit: M2-W1
 
 ## Safety baseline
 
@@ -20,7 +20,7 @@ Next ready work unit: `M1-W3`
 | Native product name is `Prism` | complete | Commit `6de92da18`; built Info.plist checked with `plutil` |
 | Default data identity differs from upstream `PrismLauncher` | complete | `Prism` application identity in `program_info/CMakeLists.txt` and native bridge; M1-W1 temporary-root contract test |
 | Native Xcode target exists | complete | Commit `5172b3a75` |
-| Objective-C++ public bridge exposes only Foundation types | complete, not yet automated | Commit `5172b3a75`; architecture review found no Qt or C++ type in public header |
+| Objective-C++ public bridge exposes only Foundation types | complete | Commit `5172b3a75`; M1-W3 automated public-header scan and forbidden-token negative test |
 | Native tests target exists | complete | M1-W1; shared scheme and standalone `PrismNativeTests.xctest` target |
 | Upstream application and data are untouched | complete for current work | No application launch or installation was performed |
 
@@ -28,7 +28,7 @@ Next ready work unit: `M1-W3`
 
 | Milestone | Status | Completion requirement |
 | --- | --- | --- |
-| 1. Contracts, tests, and inventory | active | Native contract tests and complete feature ledger |
+| 1. Contracts, tests, and inventory | complete | Native contract tests, complete feature ledger, and automated bridge/fixture infrastructure |
 | 2. QWidget-free backend facade | queued | Facade lists fixture instances without UI headers |
 | 3. Objective-C++ bridge foundation | queued | Swift receives real fixture snapshots and events |
 | 4. Native shell and instance library | queued | System-native shell state and commands are tested |
@@ -139,19 +139,50 @@ HIG decision: classify system controls and presentations by need before implemen
 
 Risk: the inventory is a snapshot of the current source tree; future additions under `launcher/ui` could escape a manually maintained ledger. M1-W3 should add a negative/positive source scan and bridge fixture helpers, and every later unit must update this section when tracing a new collaborator.
 
-Commit: pending; record the exact hash in the next ledger update after commit creation.
+Commit: `2158ad5db`
 
 Next after completion: `M1-W3`, automate the public bridge-header scan and temporary-root, callback, cancellation, and fixture helpers.
 
 ### M1-W3: Bridge boundary and fixture infrastructure
 
+Status: complete
+
+Outcome: automate the public bridge-header scan and provide temporary-root, callback, cancellation, and fixture helpers for later milestones. The test target now enumerates only public `.h` files under the bridge directory, rejects Qt/C++ boundary tokens with a synthetic negative test, and supplies isolated temporary fixtures without reading upstream Application Support data.
+
+Files changed: `macos/PrismNative.xcodeproj/project.pbxproj`, `macos/PrismNativeTests/PrismNativeIdentityTests.swift`, `macos/PrismNativeTests/PrismNativeInfrastructureTests.swift`, `macos/PrismNativeTests/PrismNativeTestSupport.swift`, and this progress file.
+
+Tests and exact commands:
+
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed; 6 tests, 0 failures.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO build` — passed.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native-release/Build/Products/Release/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `git diff --check` — passed.
+
+Result summary: the public-header scan passed for `PrismBridge.h`; the synthetic forbidden-type fixture detected both `QWidget` and `std::`; the fixture helper created and read a JSON file under a unique temporary root while proving it is outside the upstream `PrismLauncher` Application Support namespace; and the callback recorder delivered only the pre-cancellation value. No application launch, screenshot, upstream data access, account, Keychain, or production-data access occurred.
+
+HIG decision: none, this unit adds only non-UI test infrastructure. The public bridge remains Foundation-only and no system control or custom rendering was introduced.
+
+Risk: the scanner uses a maintained forbidden-token list and resolves the bridge directory from the test source path; later facade headers must remain under that directory or extend the scanner contract. Fixture cleanup is limited to each helper's unique temporary root, and the upstream path is constructed for comparison rather than read.
+
+Commit: not created; record the exact hash in the next ledger update.
+
+Next after completion: `M2-W1`, split `launcher/CMakeLists.txt` source classification into domain, UI, and executable composition without changing Qt runtime behavior.
+
+### M2-W1: Split backend source classification without behavior change
+
 Status: ready
 
-Outcome: automate the public bridge-header scan and provide temporary-root, callback, cancellation, and fixture helpers for later milestones.
+Outcome: split the launcher CMake source classification into domain sources, UI sources, and executable composition while preserving the existing Qt target's runtime behavior and link composition.
 
-Required evidence: native tests pass, forbidden-type scan has a negative test, fixture root cannot resolve to the upstream Application Support path.
+Scope: `launcher/CMakeLists.txt` and only directly required launcher build/test configuration or characterization tests. Do not begin facade extraction, change other platforms, or alter the existing Qt executable's behavior.
+
+Required evidence: the existing Qt target builds, source classification does not drop or duplicate required sources, the native target still builds independently, and all relevant static or C++ characterization tests pass. The unit must not introduce Qt or C++ types into native public bridge headers.
 
 Commit: not created.
+
+Next after completion: `M2-W2`, introduce the frontend facade target or library under `launcher/frontend`.
 
 ## Completed commit index
 
@@ -160,6 +191,7 @@ Commit: not created.
 | `6de92da18` | Isolated macOS fork identity and ignored local dependencies | CMake configuration and Qt baseline build; generated Info.plist Bundle ID check |
 | `5172b3a75` | Added SwiftUI Xcode target and Objective-C++ bridge scaffold | arm64 Debug build; generated Info.plist Bundle ID check; architecture review |
 | `3308191dd` | Added shared native scheme and Bundle ID/data-root contract tests | Debug and Release builds; 2 native tests; Debug/Release `plutil`; `git diff --check` |
+| `2158ad5db` | Completed the legacy UI feature inventory and native destination ledger | Source-directory, Qt-form, class-ownership, Debug/Release build, native-test, `plutil`, and `git diff --check` verification |
 
 ## Current architecture findings
 
@@ -182,4 +214,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then continue only with ready `M1-W3`. Do not begin backend extraction or visual design until the bridge boundary and fixture infrastructure are committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then mark only ready `M2-W1` active. Do not begin `M2-W2` or native visual implementation until the CMake source-classification unit is committed.
