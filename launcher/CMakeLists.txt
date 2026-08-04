@@ -445,7 +445,9 @@ set(JAVA_SOURCES
     java/download/ManifestDownloadTask.h
     java/download/SymlinkTask.cpp
     java/download/SymlinkTask.h
+)
 
+set(JAVA_UI_SOURCES
     ui/java/InstallJavaDialog.h
     ui/java/InstallJavaDialog.cpp
     ui/java/VersionList.h
@@ -760,7 +762,7 @@ endif()
 
 ################################ COMPILE ################################
 
-set(LOGIC_SOURCES
+set(LAUNCHER_DOMAIN_SOURCES
     ${CORE_SOURCES}
     ${NET_SOURCES}
     ${LAUNCH_SOURCES}
@@ -785,12 +787,12 @@ set(LOGIC_SOURCES
 )
 
 if(APPLE AND Launcher_ENABLE_UPDATER)
-    set (LOGIC_SOURCES ${LOGIC_SOURCES} ${MAC_UPDATE_SOURCES})
+    set (LAUNCHER_DOMAIN_SOURCES ${LAUNCHER_DOMAIN_SOURCES} ${MAC_UPDATE_SOURCES})
 else()
-    set (LOGIC_SOURCES ${LOGIC_SOURCES} ${PRISM_UPDATE_SOURCES})
+    set (LAUNCHER_DOMAIN_SOURCES ${LAUNCHER_DOMAIN_SOURCES} ${PRISM_UPDATE_SOURCES})
 endif()
 
-SET(LAUNCHER_SOURCES
+set(LAUNCHER_LEGACY_SOURCES
     # Application base
     Application.h
     Application.cpp
@@ -1177,15 +1179,15 @@ SET(LAUNCHER_SOURCES
 )
 
 if (APPLE)
-    set(LAUNCHER_SOURCES
-        ${LAUNCHER_SOURCES}
+    set(LAUNCHER_LEGACY_SOURCES
+        ${LAUNCHER_LEGACY_SOURCES}
         ui/themes/ThemeManager.mm
     )
 endif()
 
 if (NOT Apple)
-    set(LAUNCHER_SOURCES
-    ${LAUNCHER_SOURCES}
+    set(LAUNCHER_LEGACY_SOURCES
+    ${LAUNCHER_LEGACY_SOURCES}
 
     ui/dialogs/UpdateAvailableDialog.h
     ui/dialogs/UpdateAvailableDialog.cpp
@@ -1193,8 +1195,8 @@ if (NOT Apple)
 endif()
 
 if (APPLE)
-    set(LAUNCHER_SOURCES
-        ${LAUNCHER_SOURCES}
+    set(LAUNCHER_LEGACY_SOURCES
+        ${LAUNCHER_LEGACY_SOURCES}
 
         macsandbox/SecurityBookmarkFileAccess.h
         macsandbox/SecurityBookmarkFileAccess.mm
@@ -1202,10 +1204,10 @@ if (APPLE)
 endif()
 
 if(WIN32)
-    set(LAUNCHER_SOURCES
+    set(LAUNCHER_LEGACY_SOURCES
         console/WindowsConsole.h
         console/WindowsConsole.cpp
-        ${LAUNCHER_SOURCES}
+        ${LAUNCHER_LEGACY_SOURCES}
     )
 endif()
 
@@ -1232,6 +1234,66 @@ if(WIN32)
     set(LAUNCHER_RCS ${CMAKE_CURRENT_BINARY_DIR}/../${Launcher_Branding_WindowsRC})
 endif()
 
+######## Source ownership and target composition ########
+
+# Keep the existing Qt target composition intact while making ownership explicit
+# for the QWidget-free facade work that follows. The legacy launcher list still
+# contains application glue and UI sources; this partition is the characterization
+# boundary, not a runtime target split.
+set(LAUNCHER_UI_SOURCES)
+set(LAUNCHER_APPLICATION_SOURCES)
+foreach(_launcher_source IN LISTS LAUNCHER_LEGACY_SOURCES)
+    if(
+        _launcher_source MATCHES "^ui/"
+        OR _launcher_source MATCHES "^(DesktopServices|VersionProxyModel|Markdown|KonamiCode|FileIgnoreProxy|FastFileIconProvider|InstancePageProvider|JavaCommon)\\.(h|cpp)$"
+        OR _launcher_source MATCHES "^(icons/(MMCIcon|IconList)|logs/AnonymizeLog)\\.(h|cpp)$"
+    )
+        list(APPEND LAUNCHER_UI_SOURCES "${_launcher_source}")
+    else()
+        list(APPEND LAUNCHER_APPLICATION_SOURCES "${_launcher_source}")
+    endif()
+endforeach()
+unset(_launcher_source)
+set(_launcher_legacy_ui_sources ${LAUNCHER_UI_SOURCES})
+list(APPEND LAUNCHER_UI_SOURCES ${JAVA_UI_SOURCES})
+
+set(LAUNCHER_EXECUTABLE_SOURCES
+    main.cpp
+    ${LAUNCHER_RCS}
+)
+
+set(LAUNCHER_RUNTIME_SOURCES
+    ${LAUNCHER_DOMAIN_SOURCES}
+    ${LAUNCHER_APPLICATION_SOURCES}
+    ${LAUNCHER_UI_SOURCES}
+    ${LAUNCHER_RESOURCES}
+)
+
+list(LENGTH LAUNCHER_LEGACY_SOURCES _launcher_legacy_source_count)
+set(_launcher_partition_sources
+    ${LAUNCHER_APPLICATION_SOURCES}
+    ${_launcher_legacy_ui_sources}
+)
+list(LENGTH _launcher_partition_sources _launcher_partition_source_count)
+if(NOT _launcher_legacy_source_count EQUAL _launcher_partition_source_count)
+    message(FATAL_ERROR "Launcher source ownership partition dropped or duplicated a legacy source")
+endif()
+
+set(_launcher_unique_runtime_sources ${LAUNCHER_RUNTIME_SOURCES})
+list(REMOVE_DUPLICATES _launcher_unique_runtime_sources)
+list(LENGTH LAUNCHER_RUNTIME_SOURCES _launcher_runtime_source_count)
+list(LENGTH _launcher_unique_runtime_sources _launcher_unique_runtime_source_count)
+if(NOT _launcher_runtime_source_count EQUAL _launcher_unique_runtime_source_count)
+    message(FATAL_ERROR "Launcher runtime source composition contains duplicate entries")
+endif()
+unset(_launcher_legacy_source_count)
+unset(_launcher_partition_sources)
+unset(_launcher_partition_source_count)
+unset(_launcher_legacy_ui_sources)
+unset(_launcher_unique_runtime_sources)
+unset(_launcher_runtime_source_count)
+unset(_launcher_unique_runtime_source_count)
+
 ######## Precompiled Headers ###########
 
 if(${Launcher_USE_PCH})
@@ -1246,7 +1308,7 @@ endif()
 ####### Targets ########
 
 # Add executable
-add_library(Launcher_logic STATIC ${LOGIC_SOURCES} ${LAUNCHER_SOURCES} ${LAUNCHER_RESOURCES})
+add_library(Launcher_logic STATIC ${LAUNCHER_RUNTIME_SOURCES})
 target_include_directories(Launcher_logic PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(Launcher_logic PUBLIC LAUNCHER_APPLICATION)
 
@@ -1331,7 +1393,7 @@ if(APPLE)
     endif()
 endif()
 
-add_executable(${Launcher_Name} MACOSX_BUNDLE WIN32 main.cpp ${LAUNCHER_RCS})
+add_executable(${Launcher_Name} MACOSX_BUNDLE WIN32 ${LAUNCHER_EXECUTABLE_SOURCES})
 
 if(${Launcher_USE_PCH})
     target_precompile_headers(${Launcher_Name} REUSE_FROM Launcher_logic)
@@ -1611,7 +1673,7 @@ if(CLANG_FORMAT)
     message(STATUS "Creating clang-format target")
     add_custom_target(
         clang-format
-        COMMAND ${CLANG_FORMAT} -i --style=file:${CMAKE_SOURCE_DIR}/.clang-format ${LOGIC_SOURCES} ${LAUNCHER_SOURCES} ${PRISMUPDATER_SOURCES} ${LINKEXE_SOURCES} ${PRECOMPILED_HEADERS}
+        COMMAND ${CLANG_FORMAT} -i --style=file:${CMAKE_SOURCE_DIR}/.clang-format ${LAUNCHER_DOMAIN_SOURCES} ${LAUNCHER_APPLICATION_SOURCES} ${LAUNCHER_UI_SOURCES} ${PRISMUPDATER_SOURCES} ${LINKEXE_SOURCES} ${PRECOMPILED_HEADERS}
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
     )
 else()
