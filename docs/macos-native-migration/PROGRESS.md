@@ -242,7 +242,7 @@ HIG decision: this is a backend-only boundary unit, so it adds no SwiftUI/AppKit
 
 Risk: the facade is intentionally inert until M2-W3 adds explicit data-root and runtime-dependency construction; instance snapshots, events, and lifecycle semantics are not claimed by this unit. The existing AutoUIC duplicate-layout-name warning and missing `clang-format` warning remain unchanged.
 
-Commit: to be recorded after this work-unit commit.
+Commit: `e87f35fc0`
 
 Next after completion: `M2-W3`, make the facade accept an explicit data root and runtime dependencies.
 
@@ -256,6 +256,7 @@ Next after completion: `M2-W3`, make the facade accept an explicit data root and
 | `2158ad5db` | Completed the legacy UI feature inventory and native destination ledger | Source-directory, Qt-form, class-ownership, Debug/Release build, native-test, `plutil`, and `git diff --check` verification |
 | `5a9e80e3e` | Enforced public bridge and isolated fixture contracts | Debug and Release builds; 6 native tests; Debug/Release `plutil`; `git diff --check` |
 | `19b45a465` | Classified launcher source ownership without changing Qt composition | Isolated CMake configure/build; Launcher_logic and selected C++ tests; existing Prism target link; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; `git diff --check` |
+| `e87f35fc0` | Added the independent QWidget-free frontend facade target and fixture contract | Facade target and contract test; existing Prism target; selected C++ tests 5/5; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; public-header scan; `git diff --check` |
 
 ## Current architecture findings
 
