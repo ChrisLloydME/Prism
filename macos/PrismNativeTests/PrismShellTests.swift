@@ -202,7 +202,6 @@ final class PrismShellTests: XCTestCase {
             XCTAssertTrue(source.contains(requiredToken), "Missing native shell API: \(requiredToken)")
         }
 
-        XCTAssertFalse(source.contains(".toolbar("))
         XCTAssertFalse(source.contains("Canvas("))
         XCTAssertFalse(source.contains("draw("))
         XCTAssertFalse(source.contains(".task("))

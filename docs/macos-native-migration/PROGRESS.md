@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 4, Native application shell and instance library
 
-Active work unit: none (M4-W4 complete; activate M4-W5 at next round start)
+Active work unit: M4-W5
 
-Next ready work unit: M4-W5
+Next ready work unit: none (M4-W5 active)
 
 ## Safety baseline
 
@@ -814,7 +814,7 @@ Next after completion: `M4-W5`, route contextual menus and toolbar commands thro
 
 ### M4-W5: Contextual menus and toolbar commands
 
-Status: ready
+Status: active
 
 Outcome: route instance contextual-menu and toolbar actions through the tested shared command model, preserving one enabled-state, shortcut, accessibility, and invocation contract.
 
@@ -824,7 +824,34 @@ Required evidence: command-model routing tests for toolbar and contextual action
 
 HIG decision: use system `.toolbar` and `.contextMenu` surfaces backed by `PrismCommandModel`; keep labels, enabled state, shortcuts, and actions shared with the app command manifest. No custom-drawn chrome is allowed.
 
-Commit: not created.
+Files changed: `macos/PrismNative/App/PrismCommandModel.swift`, `macos/PrismNative/App/PrismCommands.swift`, `macos/PrismNative/App/ContentView.swift`, `macos/PrismNative/App/PrismNativeApp.swift`, `macos/PrismNativeTests/PrismCommandTests.swift`, `macos/PrismNativeTests/PrismShellTests.swift`, and this progress file. No Xcode project, backend, bridge, or other-platform file changed because all sources were already members of the native app/test targets.
+
+Design: extend each command descriptor with a stable SF Symbol and centralize the system `Button`/`Label`, enabled state, accessibility label, help, and optional keyboard shortcut in `PrismCommandButton`. `ContentView` passes the app-owned `PrismCommandModel` into system `ToolbarItemGroup` and a detail-bound `.contextMenu`; `PrismCommands` reuses the same button for app menus. No custom-drawn control, duplicate action handler, or third-party UI was added.
+
+Architecture: keep toolbar and contextual command IDs in the main-actor `PrismCommandModel` and route every surface through `model.invoke`. Move the shortcut-to-SwiftUI mapping into the shared command-model source because that file is compiled directly by `PrismNativeTests`; the app-only command surface now contains no hidden target dependency. The ContentView composition remains Swift-only and does not call the bridge or backend.
+
+Tests and exact commands:
+
+- The first focused command test build failed because `PrismCommandModel.swift` referenced `keyEquivalent` and `eventModifiers` that existed only in app-only `PrismCommands.swift`; source and target membership inspection identified the missing shared boundary, so the mapping extension moved into the shared model source. No production retry was made before that correction.
+- The next focused run compiled and executed 7 tests but failed 3 structural assertions because the test helper read only `PrismCommands.swift` after shared button modifiers moved to `PrismCommandModel.swift`; the helper was widened to read both sources.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO -only-testing:PrismNativeTests/PrismCommandTests test` — passed; final focused command tests 7/7.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed; 51 tests, 0 failures.
+- `rg -n '\.toolbar\{|ToolbarItemGroup\(|\.contextMenu\{|PrismCommandButton\(|PrismInstanceContextMenu\(|commandModel' macos/PrismNative/App/ContentView.swift macos/PrismNative/App/PrismCommands.swift macos/PrismNative/App/PrismCommandModel.swift` — passed; toolbar and context-menu surfaces use the shared command button/model.
+- `rg -n 'CommandGroup\(|CommandMenu\(|\.keyboardShortcut\(|\.disabled\(|\.accessibilityLabel\(|\.help\(|model\.invoke\(|toolbarCommandIDs|contextMenuCommandIDs' macos/PrismNative/App/PrismCommands.swift macos/PrismNative/App/PrismCommandModel.swift` — passed; menu placement, shortcuts, enabled state, accessibility/help, and single invocation path are explicit.
+- `rg -n '\.accessibilityLabel\(|\.accessibilityHint\(|\.accessibilityIdentifier\(|\.help\(' macos/PrismNative/App --glob '*.swift'` — passed; native shell and command surfaces expose accessibility metadata.
+- `if rg -n 'Canvas\(|draw\(' macos/PrismNative/App --glob '*.swift'; then exit 1; else exit 0; fi` and `if rg -n '#import <Qt|#include|std::|QWidget|QDialog|QObject|QString|QVariant|QModelIndex|QList|QMap|QHash|QUrl|unique_ptr|shared_ptr|reinterpret_cast|static_cast|dynamic_cast' macos/PrismNative/App --glob '*.swift'; then exit 1; else exit 0; fi` — passed with no custom drawing or Qt/C++/ownership types in Swift.
+- `rg -n 'LocalizedStringKey|Text\("|String\(format:' macos/PrismNative/App/ContentView.swift macos/PrismNative/App/PrismCommands.swift macos/PrismNative/App/PrismCommandModel.swift` — passed; command and toolbar copy uses localization-aware keys without fragment concatenation. `rg --files macos/PrismNative | rg 'Localizable\.strings|\.stringsdict$'` found no resource yet, so resource-key coverage remains a later unit.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native-release/Build/Products/Release/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `git diff --check` — passed. No CMake command was required because launcher backend sources and build configuration were unchanged.
+
+Result summary: toolbar and detail context-menu surfaces now consume the same command descriptors, enabled-state gates, invocation handler, accessibility/help metadata, and shortcut contract as app menus. Focused and full native tests, Debug/Release builds, structural UI checks, boundary scans, localization-shape checks, and both Bundle ID checks passed. No application or launcher executable was launched; no screenshots, visual snapshots, upstream application data, accounts, Keychain, production services, signing, installation, or publishing state were accessed.
+
+Risk: toolbar and context-menu actions still terminate at the injected command handler until later units connect fixture-safe facade mutations; the context menu is attached to the current detail boundary while native instance rows remain a later shell/content contract. No localization resource has been added yet. The next ready unit adds cross-surface accessibility, help, enabled-state, and keyboard tests.
+
+Commit: pending implementation commit.
 
 Next after completion: `M4-W6`, add accessibility labels, help, enabled-state, and keyboard tests across the native shell.
 
@@ -883,6 +910,7 @@ Next after completion: `M4-W6`, add accessibility labels, help, enabled-state, a
 24. M4-W2 replaces the placeholder hierarchy with a system `NavigationSplitView` and sidebar `List`; `PrismShellModel` keeps sidebar selection and detail loading/empty/content states testable without backend mutations, search, grouping, or custom chrome.
 25. M4-W3 keeps instance collection behavior in a main-actor Swift state seam: immutable stable-ID rows feed deterministic search, grouping, sorting, and section identity, while `ContentView` uses system `.searchable` and the existing selection metadata without introducing custom cells or backend mutations.
 26. M4-W4 keeps failure presentation in the main-actor Swift state seam: stable Foundation-only failure/recovery metadata drives system `ContentUnavailableView` actions, while retry remains an injected intent and no asynchronous or backend ownership crosses into the view.
+27. M4-W5 routes app menus, toolbar buttons, and the detail context menu through one `PrismCommandButton`/`PrismCommandModel` invocation path; shortcut mapping is compiled in the shared command-model source so app and test targets have the same contract.
 
 ## Custom rendering exceptions
 

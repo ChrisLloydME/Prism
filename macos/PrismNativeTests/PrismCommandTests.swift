@@ -13,6 +13,7 @@ final class PrismCommandTests: XCTestCase {
             XCTAssertFalse(descriptor.titleKey.isEmpty)
             XCTAssertFalse(descriptor.accessibilityLabelKey.isEmpty)
             XCTAssertFalse(descriptor.helpKey.isEmpty)
+            XCTAssertFalse(descriptor.systemImage.isEmpty)
         }
     }
 
@@ -83,12 +84,29 @@ final class PrismCommandTests: XCTestCase {
         XCTAssertEqual(invoked, [.launchSelected, .settings])
     }
 
+    func testToolbarAndContextMenuUseStableSharedCommandSets() {
+        XCTAssertEqual(
+            PrismCommandModel.toolbarCommandIDs,
+            [.newInstance, .importInstance, .launchSelected, .stopSelected]
+        )
+        XCTAssertEqual(
+            PrismCommandModel.contextMenuCommandIDs,
+            [.launchSelected, .stopSelected, .editSelected, .deleteSelected]
+        )
+
+        for command in PrismCommandModel.toolbarCommandIDs + PrismCommandModel.contextMenuCommandIDs {
+            XCTAssertFalse(PrismCommandDescriptor.descriptor(for: command).titleKey.isEmpty)
+        }
+    }
+
     func testCommandSourceUsesSystemMenusAndAccessibilityMetadata() throws {
         let source = try commandSource()
 
         for requiredToken in [
             "CommandGroup(",
             "CommandMenu(",
+            "PrismCommandButton(",
+            "PrismInstanceContextMenu",
             ".keyboardShortcut(",
             ".accessibilityLabel(",
             ".help("
@@ -101,12 +119,43 @@ final class PrismCommandTests: XCTestCase {
         XCTAssertFalse(source.contains("draw(") )
     }
 
+    func testContentViewUsesSystemToolbarAndContextMenuWithSharedCommandModel() throws {
+        let source = try contentSource()
+
+        for requiredToken in [
+            ".toolbar {",
+            "ToolbarItemGroup(",
+            ".contextMenu {",
+            "PrismCommandButton(model: commandModel",
+            "PrismInstanceContextMenu(model: commandModel)",
+        ] {
+            XCTAssertTrue(source.contains(requiredToken), "Missing native command surface API: \(requiredToken)")
+        }
+
+        XCTAssertFalse(source.contains("commandModel.invoke("))
+        XCTAssertFalse(source.contains("Canvas("))
+        XCTAssertFalse(source.contains("draw("))
+    }
+
     private func commandSource() throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
+        let sourceURLs = [
+            repositoryRoot.appendingPathComponent("PrismNative/App/PrismCommands.swift"),
+            repositoryRoot.appendingPathComponent("PrismNative/App/PrismCommandModel.swift"),
+        ]
+        return try sourceURLs
+            .map { try String(contentsOf: $0, encoding: .utf8) }
+            .joined(separator: "\n")
+    }
+
+    private func contentSource() throws -> String {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
         let sourceURL = repositoryRoot
-            .appendingPathComponent("PrismNative/App/PrismCommands.swift")
+            .appendingPathComponent("PrismNative/App/ContentView.swift")
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }

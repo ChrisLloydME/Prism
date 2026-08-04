@@ -46,12 +46,41 @@ struct PrismCommandShortcut: Equatable, Sendable {
     static let delete = Self(key: .delete, modifiers: [])
 }
 
+extension PrismCommandShortcut {
+    var keyEquivalent: KeyEquivalent {
+        switch key {
+        case let .character(character):
+            return KeyEquivalent(character)
+        case .delete:
+            return .delete
+        }
+    }
+
+    var eventModifiers: EventModifiers {
+        var result: EventModifiers = []
+        if modifiers.contains(.command) {
+            result.insert(.command)
+        }
+        if modifiers.contains(.shift) {
+            result.insert(.shift)
+        }
+        if modifiers.contains(.option) {
+            result.insert(.option)
+        }
+        if modifiers.contains(.control) {
+            result.insert(.control)
+        }
+        return result
+    }
+}
+
 struct PrismCommandDescriptor: Identifiable, Equatable, Sendable {
     let id: PrismCommandID
     let menu: PrismCommandMenu
     let titleKey: String
     let accessibilityLabelKey: String
     let helpKey: String
+    let systemImage: String
     let shortcut: PrismCommandShortcut?
     let requiresSelection: Bool
 
@@ -62,6 +91,7 @@ struct PrismCommandDescriptor: Identifiable, Equatable, Sendable {
             titleKey: "New Instance…",
             accessibilityLabelKey: "New Instance",
             helpKey: "Create a new instance.",
+            systemImage: "plus",
             shortcut: .command("n"),
             requiresSelection: false
         ),
@@ -71,6 +101,7 @@ struct PrismCommandDescriptor: Identifiable, Equatable, Sendable {
             titleKey: "Import Instance…",
             accessibilityLabelKey: "Import Instance",
             helpKey: "Import an instance from a file or supported source.",
+            systemImage: "square.and.arrow.down",
             shortcut: nil,
             requiresSelection: false
         ),
@@ -80,6 +111,7 @@ struct PrismCommandDescriptor: Identifiable, Equatable, Sendable {
             titleKey: "Launch",
             accessibilityLabelKey: "Launch Selected Instance",
             helpKey: "Launch the selected instance.",
+            systemImage: "play.fill",
             shortcut: nil,
             requiresSelection: true
         ),
@@ -89,6 +121,7 @@ struct PrismCommandDescriptor: Identifiable, Equatable, Sendable {
             titleKey: "Stop",
             accessibilityLabelKey: "Stop Selected Instance",
             helpKey: "Stop the selected running instance.",
+            systemImage: "stop.fill",
             shortcut: nil,
             requiresSelection: true
         ),
@@ -98,6 +131,7 @@ struct PrismCommandDescriptor: Identifiable, Equatable, Sendable {
             titleKey: "Edit Instance…",
             accessibilityLabelKey: "Edit Selected Instance",
             helpKey: "Edit the selected instance.",
+            systemImage: "pencil",
             shortcut: nil,
             requiresSelection: true
         ),
@@ -107,6 +141,7 @@ struct PrismCommandDescriptor: Identifiable, Equatable, Sendable {
             titleKey: "Delete Instance",
             accessibilityLabelKey: "Delete Selected Instance",
             helpKey: "Delete the selected instance.",
+            systemImage: "trash",
             shortcut: .delete,
             requiresSelection: true
         ),
@@ -116,6 +151,7 @@ struct PrismCommandDescriptor: Identifiable, Equatable, Sendable {
             titleKey: "Undo Last Instance Deletion",
             accessibilityLabelKey: "Undo Last Instance Deletion",
             helpKey: "Restore the most recently deleted instance when recovery is available.",
+            systemImage: "arrow.uturn.backward",
             shortcut: nil,
             requiresSelection: false
         ),
@@ -125,6 +161,7 @@ struct PrismCommandDescriptor: Identifiable, Equatable, Sendable {
             titleKey: "Settings…",
             accessibilityLabelKey: "Settings",
             helpKey: "Open Prism settings.",
+            systemImage: "gearshape",
             shortcut: .command(","),
             requiresSelection: false
         ),
@@ -134,6 +171,7 @@ struct PrismCommandDescriptor: Identifiable, Equatable, Sendable {
             titleKey: "Close Window",
             accessibilityLabelKey: "Close Window",
             helpKey: "Close the current Prism window.",
+            systemImage: "xmark",
             shortcut: .command("w"),
             requiresSelection: false
         ),
@@ -143,6 +181,7 @@ struct PrismCommandDescriptor: Identifiable, Equatable, Sendable {
             titleKey: "About Prism",
             accessibilityLabelKey: "About Prism",
             helpKey: "Show information about Prism.",
+            systemImage: "info.circle",
             shortcut: nil,
             requiresSelection: false
         ),
@@ -162,6 +201,20 @@ final class PrismCommandModel: ObservableObject {
     @Published private(set) var runningInstanceID: String?
     @Published private(set) var canUndoDeletion = false
     private(set) var lastInvokedCommand: PrismCommandID?
+
+    static let toolbarCommandIDs: [PrismCommandID] = [
+        .newInstance,
+        .importInstance,
+        .launchSelected,
+        .stopSelected,
+    ]
+
+    static let contextMenuCommandIDs: [PrismCommandID] = [
+        .launchSelected,
+        .stopSelected,
+        .editSelected,
+        .deleteSelected,
+    ]
 
     var onCommand: ((PrismCommandID) -> Void)?
 
@@ -211,5 +264,51 @@ final class PrismCommandModel: ObservableObject {
         }
         let normalized = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
         return normalized.isEmpty ? nil : normalized
+    }
+}
+
+@MainActor
+struct PrismCommandButton: View {
+    @ObservedObject private var model: PrismCommandModel
+    let command: PrismCommandID
+    let usesKeyboardShortcut: Bool
+    let onInvoke: (() -> Void)?
+
+    init(
+        model: PrismCommandModel,
+        command: PrismCommandID,
+        usesKeyboardShortcut: Bool = false,
+        onInvoke: (() -> Void)? = nil
+    ) {
+        _model = ObservedObject(wrappedValue: model)
+        self.command = command
+        self.usesKeyboardShortcut = usesKeyboardShortcut
+        self.onInvoke = onInvoke
+    }
+
+    @ViewBuilder
+    var body: some View {
+        let descriptor = PrismCommandDescriptor.descriptor(for: command)
+        let button = Button {
+            guard model.invoke(command) else {
+                return
+            }
+            onInvoke?()
+        } label: {
+            Label {
+                Text(LocalizedStringKey(descriptor.titleKey))
+            } icon: {
+                Image(systemName: descriptor.systemImage)
+            }
+        }
+        .disabled(!model.isEnabled(command))
+        .accessibilityLabel(Text(LocalizedStringKey(descriptor.accessibilityLabelKey)))
+        .help(Text(LocalizedStringKey(descriptor.helpKey)))
+
+        if usesKeyboardShortcut, let shortcut = descriptor.shortcut {
+            button.keyboardShortcut(shortcut.keyEquivalent, modifiers: shortcut.eventModifiers)
+        } else {
+            button
+        }
     }
 }

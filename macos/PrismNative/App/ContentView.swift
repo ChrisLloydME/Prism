@@ -2,6 +2,11 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var shellModel = PrismShellModel()
+    @ObservedObject private var commandModel: PrismCommandModel
+
+    init(commandModel: PrismCommandModel) {
+        _commandModel = ObservedObject(wrappedValue: commandModel)
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -29,6 +34,9 @@ struct ContentView: View {
                 state: shellModel.detailState,
                 onRetry: { shellModel.retry() }
             )
+            .contextMenu {
+                PrismInstanceContextMenu(model: commandModel)
+            }
         }
         .searchable(
             text: Binding<String>(
@@ -37,6 +45,16 @@ struct ContentView: View {
             ),
             prompt: Text("Search Instances")
         )
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                PrismCommandButton(model: commandModel, command: .newInstance)
+                PrismCommandButton(model: commandModel, command: .importInstance)
+            }
+            ToolbarItemGroup(placement: .automatic) {
+                PrismCommandButton(model: commandModel, command: .launchSelected)
+                PrismCommandButton(model: commandModel, command: .stopSelected)
+            }
+        }
     }
 }
 
@@ -88,5 +106,5 @@ private struct PrismShellDetailView: View {
 }
 
 #Preview {
-    ContentView()
+    ContentView(commandModel: PrismCommandModel())
 }

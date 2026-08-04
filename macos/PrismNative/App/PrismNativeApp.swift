@@ -6,7 +6,7 @@ struct PrismNativeApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(commandModel: commandModel)
         }
         .defaultSize(width: 1040, height: 680)
         .commands {

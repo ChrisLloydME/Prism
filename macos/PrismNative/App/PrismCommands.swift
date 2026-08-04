@@ -1,33 +1,5 @@
 import SwiftUI
 
-extension PrismCommandShortcut {
-    var keyEquivalent: KeyEquivalent {
-        switch key {
-        case let .character(character):
-            return KeyEquivalent(character)
-        case .delete:
-            return .delete
-        }
-    }
-
-    var eventModifiers: EventModifiers {
-        var result: EventModifiers = []
-        if modifiers.contains(.command) {
-            result.insert(.command)
-        }
-        if modifiers.contains(.shift) {
-            result.insert(.shift)
-        }
-        if modifiers.contains(.option) {
-            result.insert(.option)
-        }
-        if modifiers.contains(.control) {
-            result.insert(.control)
-        }
-        return result
-    }
-}
-
 @MainActor
 struct PrismCommands: Commands {
     @ObservedObject private var model: PrismCommandModel
@@ -39,56 +11,51 @@ struct PrismCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            commandButton(.newInstance)
-            commandButton(.importInstance)
+            PrismCommandButton(model: model, command: .newInstance, usesKeyboardShortcut: true)
+            PrismCommandButton(model: model, command: .importInstance, usesKeyboardShortcut: true)
         }
 
         CommandMenu("Instance") {
-            commandButton(.launchSelected)
-            commandButton(.stopSelected)
+            PrismCommandButton(model: model, command: .launchSelected, usesKeyboardShortcut: true)
+            PrismCommandButton(model: model, command: .stopSelected, usesKeyboardShortcut: true)
             Divider()
-            commandButton(.editSelected)
-            commandButton(.deleteSelected)
+            PrismCommandButton(model: model, command: .editSelected, usesKeyboardShortcut: true)
+            PrismCommandButton(model: model, command: .deleteSelected, usesKeyboardShortcut: true)
         }
 
         CommandGroup(after: .undoRedo) {
-            commandButton(.undoDelete)
+            PrismCommandButton(model: model, command: .undoDelete, usesKeyboardShortcut: true)
         }
 
         CommandGroup(replacing: .appSettings) {
-            commandButton(.settings) {
+            PrismCommandButton(model: model, command: .settings, usesKeyboardShortcut: true) {
                 openSettings()
             }
         }
 
         CommandGroup(replacing: .appInfo) {
-            commandButton(.about)
+            PrismCommandButton(model: model, command: .about, usesKeyboardShortcut: true)
         }
 
         CommandGroup(after: .windowArrangement) {
-            commandButton(.closeWindow)
+            PrismCommandButton(model: model, command: .closeWindow, usesKeyboardShortcut: true)
         }
     }
+}
 
-    @ViewBuilder
-    private func commandButton(_ command: PrismCommandID, onInvoke: (() -> Void)? = nil) -> some View {
-        let descriptor = PrismCommandDescriptor.descriptor(for: command)
-        let button = Button {
-            guard model.invoke(command) else {
-                return
-            }
-            onInvoke?()
-        } label: {
-            Text(LocalizedStringKey(descriptor.titleKey))
-        }
-        .disabled(!model.isEnabled(command))
-        .accessibilityLabel(Text(LocalizedStringKey(descriptor.accessibilityLabelKey)))
-        .help(Text(LocalizedStringKey(descriptor.helpKey)))
+@MainActor
+struct PrismInstanceContextMenu: View {
+    @ObservedObject private var model: PrismCommandModel
 
-        if let shortcut = descriptor.shortcut {
-            button.keyboardShortcut(shortcut.keyEquivalent, modifiers: shortcut.eventModifiers)
-        } else {
-            button
-        }
+    init(model: PrismCommandModel) {
+        _model = ObservedObject(wrappedValue: model)
+    }
+
+    var body: some View {
+        PrismCommandButton(model: model, command: .launchSelected)
+        PrismCommandButton(model: model, command: .stopSelected)
+        Divider()
+        PrismCommandButton(model: model, command: .editSelected)
+        PrismCommandButton(model: model, command: .deleteSelected)
     }
 }
