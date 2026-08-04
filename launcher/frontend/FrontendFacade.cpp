@@ -47,6 +47,13 @@ void validateInstanceChanges(const std::vector<FrontendInstanceChange>& changes)
     }
 }
 
+void ensureRunning(FrontendLifecycleState state)
+{
+    if (state != FrontendLifecycleState::Running) {
+        throw std::logic_error("FrontendFacade is not running");
+    }
+}
+
 }  // namespace
 
 FrontendFacade::FrontendFacade(std::filesystem::path dataRoot, FrontendRuntimeDependencies runtimeDependencies)
@@ -60,10 +67,40 @@ FrontendFacade::FrontendFacade(std::filesystem::path dataRoot, FrontendRuntimeDe
     }
 }
 
-FrontendFacade::~FrontendFacade() noexcept = default;
+FrontendFacade::~FrontendFacade() noexcept
+{
+    shutdown();
+}
+
+bool FrontendFacade::shutdown() noexcept
+{
+    if (m_lifecycleState != FrontendLifecycleState::Running) {
+        return false;
+    }
+
+    m_lifecycleState = FrontendLifecycleState::ShuttingDown;
+    try {
+        if (m_runtimeDependencies.cancelPendingWork) {
+            m_runtimeDependencies.cancelPendingWork();
+        }
+    } catch (...) {
+    }
+
+    try {
+        if (m_runtimeDependencies.shutdown) {
+            m_runtimeDependencies.shutdown();
+        }
+    } catch (...) {
+    }
+
+    m_runtimeDependencies = {};
+    m_lifecycleState = FrontendLifecycleState::Stopped;
+    return true;
+}
 
 std::vector<FrontendInstanceSnapshot> FrontendFacade::instanceSnapshots() const
 {
+    ensureRunning(m_lifecycleState);
     if (!m_runtimeDependencies.loadInstanceSnapshots) {
         return {};
     }
@@ -75,6 +112,7 @@ std::vector<FrontendInstanceSnapshot> FrontendFacade::instanceSnapshots() const
 
 std::vector<FrontendInstanceChange> FrontendFacade::instanceChanges() const
 {
+    ensureRunning(m_lifecycleState);
     if (!m_runtimeDependencies.loadInstanceChanges) {
         return {};
     }

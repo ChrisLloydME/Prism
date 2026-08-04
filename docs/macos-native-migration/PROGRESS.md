@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 2, QWidget-free backend facade
 
-Active work unit: none (M2-W4 complete; activate M2-W5 at next round start)
+Active work unit: none (M2-W5 complete; activate M2-W6 at next round start)
 
-Next ready work unit: M2-W5
+Next ready work unit: M2-W6
 
 ## Safety baseline
 
@@ -320,7 +320,7 @@ Next after completion: `M2-W5`, add lifecycle and shutdown tests around the faca
 
 ### M2-W5: Lifecycle and shutdown tests
 
-Status: ready
+Status: complete
 
 Outcome: add deterministic facade lifecycle and shutdown contracts, including rejection of new work and safe release of injected resources.
 
@@ -330,9 +330,49 @@ Required evidence: construction, running, shutdown, repeated shutdown, rejected 
 
 HIG decision: none, this unit remains backend lifecycle infrastructure without controls or rendering.
 
-Commit: not created.
+Files changed: `launcher/frontend/FrontendFacade.h`, `launcher/frontend/FrontendFacade.cpp`, `launcher/frontend/FrontendFacadeContractTest.cpp`, and this progress file.
+
+Design: define explicit `Running`, `ShuttingDown`, and `Stopped` states. The first shutdown is idempotently accepted, cancels pending work, invokes the release callback while the facade reports `ShuttingDown`, clears injected ports, and rejects later snapshot or event reads. Destruction performs the same safe shutdown path; no UI controls, custom drawing, process launch, or real credentials are involved.
+
+Tests and exact commands:
+
+- `git diff --check` — passed before and after implementation changes.
+- `env PKG_CONFIG_PATH="/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/libarchive_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/bzip2_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/liblzma_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/lzo_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/lz4_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/zstd_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/tomlplusplus_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/libqrencode_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/zlib_arm64-osx/lib/pkgconfig:/opt/homebrew/lib/pkgconfig" cmake -S . -B /private/tmp/prism-m2-cmake-pkgconfig -G Ninja -DCMAKE_PREFIX_PATH="/opt/homebrew/opt/qt;/opt/homebrew/opt/cmark;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/ecm_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/cmark_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/libarchive_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/tomlplusplus_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/zlib_arm64-osx" -DVCPKG_MANIFEST_MODE=OFF -DCMAKE_DISABLE_FIND_PACKAGE_LibArchive=TRUE -DBUILD_TESTING=ON -DLauncher_USE_PCH=OFF -DLauncher_ENABLE_JAVA_DOWNLOADER=OFF -DMACOSX_SPARKLE_UPDATE_PUBLIC_KEY="" -DMACOSX_SPARKLE_UPDATE_FEED_URL=""` — passed; existing clang-format and AutoUIC warnings remain non-blocking.
+- `cmake --build /private/tmp/prism-m2-cmake-pkgconfig --target Launcher_frontend Launcher_frontend_contract_test --parallel 2` — passed; lifecycle facade library and contract executable linked.
+- `ctest --test-dir /private/tmp/prism-m2-cmake-pkgconfig --output-on-failure -R '^FrontendFacadeContract$'` — passed; 1/1 covering construction, running, shutdown, repeated shutdown, post-shutdown rejection, callback release, destructor shutdown, and fixture containment.
+- `cmake --build /private/tmp/prism-m2-cmake-pkgconfig --target Prism --parallel 2` — passed; existing Qt launcher target linked without a frontend dependency.
+- `ctest --test-dir /private/tmp/prism-m2-cmake-pkgconfig --output-on-failure -R '^(FrontendFacadeContract|FileSystem|Task|JavaVersion|Version)$'` — passed; 5/5.
+- `rg -n "launcher/ui|QWidget|QDialog|QtWidgets|QAbstractItemModel|QAbstractListModel|QObject|QModelIndex" launcher/frontend --glob '*.h'` — passed with no public-header matches.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed; 6 tests, 0 failures.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO build` — passed.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native-release/Build/Products/Release/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `git diff --check` — passed after verification.
+
+Result summary: lifecycle callbacks are explicit runtime ports, run at most once, and are released after shutdown. Reads after stopping fail deterministically without invoking loaders; the temporary fixture marker remains protected. Existing Qt behavior and the native target remain independent. No application or launcher executable was launched, and no upstream application, Application Support data, account, Keychain, production API, signing, installation, or publishing state was accessed.
+
+Risk: the lifecycle boundary is a synchronous callback contract and does not yet own real backend observers, task workers, or launch processes; those remain later facade units. Existing AutoUIC and missing `clang-format` warnings remain unchanged.
+
+Commit: to be recorded after this work-unit commit.
 
 Next after completion: `M2-W6`, ensure all facade public headers compile without `launcher/ui`.
+
+### M2-W6: Facade public-header compile boundary
+
+Status: ready
+
+Outcome: compile every `launcher/frontend` public header in a target that cannot include `launcher/ui` or depend on QWidget ownership.
+
+Scope: `launcher/frontend` and directly related compile-test/CMake files only. Do not add native visual surfaces, Objective-C++, Swift, process launch, or real backend credentials.
+
+Required evidence: standalone public-header compilation, no forbidden UI/model tokens, independent facade and existing Qt builds, native Debug/Release builds and tests, Bundle ID checks, and `git diff --check`.
+
+HIG decision: none, this unit remains a compile-boundary check without controls or rendering.
+
+Commit: not created.
+
+Next after completion: `M2-W7`, preserve the existing Qt executable link and behavior while keeping the facade target independent.
 
 ## Completed commit index
 
@@ -362,6 +402,7 @@ Next after completion: `M2-W6`, ensure all facade public headers compile without
 10. The native facade must receive an absolute data root and injected runtime ports rather than deriving paths from `Application`, process arguments, environment variables, or global Qt application state.
 11. M2-W3 normalizes the root lexically and rejects invalid construction before any service work; filesystem mutation and backend instance loading remain separate contracts.
 12. M2-W4 exposes snapshots and ordered instance-change values through loader ports; `InstanceList` remains an internal legacy model and cannot cross the facade boundary.
+13. M2-W5 makes lifecycle ownership explicit: cancellation and release callbacks run once during `ShuttingDown`, injected ports are cleared at `Stopped`, and post-stop facade work is rejected without touching loaders.
 
 ## Custom rendering exceptions
 
@@ -375,4 +416,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M2-W5`. Do not begin M2-W6 header work or native visual implementation until lifecycle/shutdown tests are committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M2-W6`. Do not begin M2-W7 or native visual implementation until the public-header compile boundary is committed.

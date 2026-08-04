@@ -38,6 +38,8 @@ FrontendRuntimeDependencies makeFixtureDependencies()
         }
     };
     dependencies.now = [] { return std::chrono::system_clock::time_point{}; };
+    dependencies.cancelPendingWork = [] {};
+    dependencies.shutdown = [] {};
     return dependencies;
 }
 
@@ -47,6 +49,17 @@ bool throwsInvalidArgument(Function&& function)
     try {
         function();
     } catch (const std::invalid_argument&) {
+        return true;
+    }
+    return false;
+}
+
+template <typename Function>
+bool throwsLogicError(Function&& function)
+{
+    try {
+        function();
+    } catch (const std::logic_error&) {
         return true;
     }
     return false;
@@ -149,10 +162,71 @@ int main()
         (void) facade;
     });
 
+    std::size_t cancelPendingWorkCount = 0;
+    std::size_t shutdownCount = 0;
+    std::size_t snapshotLoaderCount = 0;
+    std::size_t changeLoaderCount = 0;
+    FrontendLifecycleState shutdownCallbackState = FrontendLifecycleState::Running;
+    FrontendFacade* lifecycleFacadePointer = nullptr;
+    bool lifecycleContract = false;
+    {
+        auto lifecycleDependencies = makeFixtureDependencies();
+        lifecycleDependencies.cancelPendingWork = [&cancelPendingWorkCount] { ++cancelPendingWorkCount; };
+        lifecycleDependencies.shutdown = [&shutdownCount, &shutdownCallbackState, &lifecycleFacadePointer] {
+            ++shutdownCount;
+            if (lifecycleFacadePointer) {
+                shutdownCallbackState = lifecycleFacadePointer->lifecycleState();
+            }
+        };
+        lifecycleDependencies.loadInstanceSnapshots = [&snapshotLoaderCount](const std::filesystem::path&) {
+            ++snapshotLoaderCount;
+            return std::vector<FrontendInstanceSnapshot>{ { "post-shutdown-snapshot", "", "", "" } };
+        };
+        lifecycleDependencies.loadInstanceChanges = [&changeLoaderCount](const std::filesystem::path&) {
+            ++changeLoaderCount;
+            return std::vector<FrontendInstanceChange>{
+                { FrontendInstanceChangeKind::Added, { "post-shutdown-change", "", "", "" } },
+            };
+        };
+
+        FrontendFacade lifecycleFacade(fixtureRoot, std::move(lifecycleDependencies));
+        lifecycleFacadePointer = &lifecycleFacade;
+        const bool initiallyRunning = lifecycleFacade.lifecycleState() == FrontendLifecycleState::Running;
+        const bool firstShutdown = lifecycleFacade.shutdown();
+        const bool repeatedShutdown = !lifecycleFacade.shutdown();
+        const bool stoppedAfterShutdown = lifecycleFacade.lifecycleState() == FrontendLifecycleState::Stopped;
+        const bool releasedDependencies = !lifecycleFacade.hasRuntimeDependencies();
+        const bool rejectedSnapshotWork = throwsLogicError([&lifecycleFacade] {
+            (void) lifecycleFacade.instanceSnapshots();
+        });
+        const bool rejectedChangeWork = throwsLogicError([&lifecycleFacade] {
+            (void) lifecycleFacade.instanceChanges();
+        });
+        lifecycleFacadePointer = nullptr;
+        lifecycleContract = initiallyRunning && firstShutdown && repeatedShutdown && stoppedAfterShutdown
+            && releasedDependencies && rejectedSnapshotWork && rejectedChangeWork;
+    }
+    const bool callbacksRanExactlyOnce = cancelPendingWorkCount == 1 && shutdownCount == 1
+        && shutdownCallbackState == FrontendLifecycleState::ShuttingDown && snapshotLoaderCount == 0 && changeLoaderCount == 0;
+
+    std::size_t implicitShutdownCount = 0;
+    {
+        auto implicitDependencies = makeFixtureDependencies();
+        implicitDependencies.shutdown = [&implicitShutdownCount] { ++implicitShutdownCount; };
+        FrontendFacade implicitFacade(fixtureRoot, std::move(implicitDependencies));
+        if (implicitFacade.lifecycleState() != FrontendLifecycleState::Running) {
+            std::filesystem::remove(fixtureMarker, error);
+            std::filesystem::remove(fixtureRoot, error);
+            return 4;
+        }
+    }
+    const bool destructorShutdownContract = implicitShutdownCount == 1;
+
     std::filesystem::remove(fixtureMarker, error);
     std::filesystem::remove(fixtureRoot, error);
     return fixtureWasPreserved && emptyContract && fixtureSnapshotContract && fixtureChangeContract && rejectedInvalidSnapshot
-               && rejectedInvalidChange && rejectedEmptyRoot && rejectedRelativeRoot && rejectedIncompleteDependencies && !error
+               && rejectedInvalidChange && rejectedEmptyRoot && rejectedRelativeRoot && rejectedIncompleteDependencies
+               && lifecycleContract && callbacksRanExactlyOnce && destructorShutdownContract && !error
         ? 0
         : 4;
 }
