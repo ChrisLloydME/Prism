@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 3, Objective-C++ bridge foundation
 
-Active work unit: M3-W5
+Active work unit: none (M3-W5 complete; activate M3-W6 at next round start)
 
-Next ready work unit: none (M3-W5 active)
+Next ready work unit: M3-W6
 
 ## Safety baseline
 
@@ -585,7 +585,7 @@ Next after completion: `M3-W5`, add complete bridge contract tests for empty and
 
 ### M3-W5: Complete bridge contract tests
 
-Status: active
+Status: complete
 
 Outcome: exercise initialization, empty and fixture data, cancellation, shutdown, and released-observer behavior through the real native bridge contract.
 
@@ -615,9 +615,25 @@ Result summary: the bridge contract suite confirmed that a temporary bridge star
 
 Risk: fixture ingress remains private and synthetic until M3-W6 connects the real `FrontendFacade`; this unit intentionally does not claim backend linkage or live data conversion. Existing AppIntents metadata and prior non-blocking CMake warnings remain unchanged. No CMake command was required because this unit changes only native tests and Xcode test-source registration.
 
-Commit: pending implementation commit hash; record it in the follow-up progress synchronization commit.
+Commit: `6711968f7`
 
 Next after completion: `M3-W6`, link the QWidget-free `FrontendFacade` output into Xcode through the Objective-C++ bridge.
+
+### M3-W6: Link the QWidget-free facade into the native bridge
+
+Status: ready
+
+Outcome: link the existing `Launcher_frontend` output into the native Xcode target and convert real facade snapshots, events, lifecycle, and errors through Objective-C++ without copying launcher implementation files into the app target.
+
+Scope: `macos/PrismNative`, `launcher/frontend` and directly required launcher build configuration, directly related native/C++ tests, Xcode project settings, and this progress file only. Preserve the existing Qt `Prism` executable link and do not change unrelated platforms or access real data.
+
+Required evidence: isolated CMake facade build and relevant C++ tests, Xcode link configuration proving `Launcher_frontend` is consumed without `launcher/ui` sources, real fixture snapshot/event conversion through the bridge, lifecycle and error propagation, no Qt/C++ public types, native Debug/Release builds, native tests, Bundle ID checks, link inspection, and `git diff --check`.
+
+HIG decision: none, this unit establishes backend linkage and bridge conversion without controls or rendering.
+
+Commit: not created.
+
+Next after completion: `M4-W1`, define native app commands and keyboard shortcuts before toolbar duplication.
 
 ## Completed commit index
 
@@ -639,6 +655,7 @@ Next after completion: `M3-W6`, link the QWidget-free `FrontendFacade` output in
 | `65a044abe` | Added immutable Foundation instance and task DTOs with progress and cancellation contracts | Native Debug XCTest 11/11; Debug/Release builds; Objective-C public-header syntax; forbidden bridge and Swift boundary scans; Debug/Release `plutil`; `git diff --check` |
 | `cacd8d16f` | Added Foundation observation handlers and cancellable tokens with fixture delivery and release contracts | Native Debug XCTest 17/17; Debug/Release builds; Objective-C public-header syntax; forbidden bridge and Swift boundary scans; Debug/Release `plutil`; `git diff --check` |
 | `a9853cbe2` | Added stable Foundation error translation and asynchronous main-actor observation delivery | Native Debug XCTest 20/20; Debug/Release builds; Objective-C public-header syntax; forbidden bridge and Swift boundary scans; Debug/Release `plutil`; `git diff --check` |
+| `6711968f7` | Added dedicated native bridge contract coverage for fixture initialization, empty state, immutable snapshots, cancellation, shutdown, released observers, and errors | Native Debug XCTest 27/27; Debug/Release builds; Objective-C public-header syntax; forbidden bridge and Swift boundary scans; Debug/Release `plutil`; `git diff --check` |
 
 ## Current architecture findings
 
@@ -662,6 +679,7 @@ Next after completion: `M3-W6`, link the QWidget-free `FrontendFacade` output in
 18. M3-W3 adds typed Foundation observation handlers and private cancellation states; token release removes callbacks deterministically, while main-actor delivery and real facade event wiring remain later bridge work.
 19. M3-W4 adds Foundation error translation and structured `NSError` metadata, while main-queue delivery is asynchronous and cancellation-aware; real facade failure mapping and Swift `@MainActor` feature state remain later work.
 20. M3-W5 adds a dedicated bridge contract suite for temporary-root initialization, empty and fixture snapshots, cancellation, shutdown ordering, released observers, and stable error propagation; the private fixture ingress remains until M3-W6 backend linkage.
+21. M3-W6 is the remaining Milestone 3 boundary: consume the existing QWidget-free `Launcher_frontend` target from Objective-C++ and keep the Swift-facing bridge free of Qt, C++, and ownership types.
 
 ## Custom rendering exceptions
 
@@ -675,4 +693,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then resume the active `M3-W5`. Do not begin M3-W6 or native visual implementation until the complete bridge contract tests are verified and committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M3-W6`. Do not begin M4-W1 or native visual implementation until real `FrontendFacade` linkage and bridge conversion are verified and committed.
