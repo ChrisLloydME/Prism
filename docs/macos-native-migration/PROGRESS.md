@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 4, Native application shell and instance library
 
-Active work unit: none (M3-W6 complete; activate M4-W1 at next round start)
+Active work unit: M4-W1
 
-Next ready work unit: M4-W1
+Next ready work unit: none (M4-W1 active)
 
 ## Safety baseline
 
@@ -30,8 +30,8 @@ Next ready work unit: M4-W1
 | --- | --- | --- |
 | 1. Contracts, tests, and inventory | complete | Native contract tests, complete feature ledger, and automated bridge/fixture infrastructure |
 | 2. QWidget-free backend facade | complete | Facade lists fixture instances without UI headers |
-| 3. Objective-C++ bridge foundation | active | Swift receives real fixture snapshots and events |
-| 4. Native shell and instance library | queued | System-native shell state and commands are tested |
+| 3. Objective-C++ bridge foundation | complete | Swift receives real fixture snapshots and events |
+| 4. Native shell and instance library | active | System-native shell state and commands are tested |
 | 5. Launch, tasks, and logs | queued | Deterministic launch-task contracts are tested |
 | 6. Instance detail and editing | queued | Instance management surfaces have native contracts |
 | 7. Settings, Java, and accounts | queued | Settings and fake-account workflows are covered |
@@ -660,7 +660,7 @@ Next after completion: `M4-W1`, define native app commands and keyboard shortcut
 
 ### M4-W1: Define native app commands and keyboard shortcuts
 
-Status: ready
+Status: active
 
 Outcome: establish one testable native command model and system menu/shortcut definitions before duplicating toolbar actions, so shell commands have stable enabled state, accessibility metadata, and keyboard behavior.
 
@@ -670,9 +670,27 @@ Required evidence: command/view-model tests for enabled state and invocation rou
 
 HIG decision: use SwiftUI `Commands`, `CommandGroup`, `CommandMenu`, and `keyboardShortcut` for the app shell; keep toolbar duplication deferred until the command model is tested. No custom-drawn menu or control is allowed.
 
-Commit: not created.
+Files changed: `macos/PrismNative/App/PrismCommandModel.swift`, `macos/PrismNative/App/PrismCommands.swift`, `macos/PrismNative/App/PrismNativeApp.swift`, `macos/PrismNativeTests/PrismCommandTests.swift`, `macos/PrismNative.xcodeproj/project.pbxproj`, and this progress file. The command model is also a direct test-target source so its enabled-state and routing contract is exercised without importing the app executable.
 
-Next after completion: `M4-W2`, implement the sidebar and instance content with `NavigationSplitView`.
+Design: define a stable command manifest with menu placement, static localization keys, accessibility labels, help text, and optional keyboard shortcuts. `PrismCommandModel` is a main-actor observable state seam that gates selection-dependent launch, stop, edit, delete, and undo actions and routes only enabled commands to an injected handler. `PrismCommands` renders the manifest through SwiftUI `CommandGroup` and `CommandMenu`, uses the system `openSettings` action, and adds no toolbar or custom-drawn control. Preserve standard Edit undo/redo placement by leaving instance-deletion undo without a duplicate shortcut; a later mutation unit can connect it to native `UndoManager` semantics.
+
+Tests and exact commands:
+
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO -only-testing:PrismNativeTests/PrismCommandTests test` — passed 5/5 command tests.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed 37/37.
+- `rg -n 'CommandGroup\(|CommandMenu\(|\.keyboardShortcut\(|\.accessibilityLabel\(|\.help\(' macos/PrismNative/App/PrismCommands.swift` — passed; system command/menu and accessibility APIs are present. `rg -n '\.toolbar\(|Canvas\(|draw\(|QWidget|QDialog|Qt|std::|#include' macos/PrismNative/App --glob '*.swift'` — passed with no forbidden matches.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` and the corresponding Release command — both printed `com.lloydME.Prism`.
+- `git diff --check` — passed.
+
+Result summary: the native app now attaches a testable system command surface before toolbar work. New Instance uses Command-N, Settings uses Command-Comma and the system Settings scene, Close Window uses Command-W, and Delete uses the system delete key equivalent. Selection and running-state gates are tested, disabled commands do not route, labels/help metadata are non-empty, and source inspection confirms no toolbar duplication or custom drawing. The first test build exposed that app-only Swift sources were invisible to the test target; direct model membership was added to the test Sources phase, after which the focused and full suites passed. No application launch, screenshot, visual snapshot, upstream data, real account, Keychain, signing, or publishing action was used.
+
+Risk: command actions currently terminate at the injected command handler because native instance mutations and launch/stop facade commands are later work; the model intentionally does not invent backend behavior. The legacy instance-deletion Command-Z shortcut is not rebound until a native reversible mutation/`UndoManager` contract exists, avoiding a conflict with standard text undo. Static `LocalizedStringKey` usage establishes localizable command keys; localized resource coverage remains part of the consuming feature units. No CMake command was required because this unit changes only native Swift command composition and tests.
+
+Commit: not created; implementation in progress.
+
+Resume: Continue the active M4-W1 implementation; after verification record the implementation and progress-sync commits, then activate only M4-W2.
 
 ## Completed commit index
 
@@ -734,4 +752,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M4-W1`. Do not begin M4-W2 or native visual implementation until the command model, menu definitions, enabled state, and shortcut tests are verified and committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then resume the active `M4-W1`. Do not begin M4-W2 or native visual implementation until the command model, menu definitions, enabled state, and shortcut tests are verified and committed.
