@@ -22,6 +22,8 @@ enum class FrontendInstanceChangeKind : std::uint8_t { Added, Updated, Removed }
 
 enum class FrontendLifecycleState : std::uint8_t { Running, ShuttingDown, Stopped };
 
+enum class FrontendInstanceCommandResult : std::uint8_t { Succeeded, UnknownInstance, Rejected };
+
 struct FrontendInstanceChange final {
     FrontendInstanceChangeKind kind = FrontendInstanceChangeKind::Updated;
     FrontendInstanceSnapshot instance;
@@ -37,6 +39,7 @@ struct FrontendRuntimeDependencies final {
     using Shutdown = std::function<void()>;
     using InstanceSnapshotLoader = std::function<std::vector<FrontendInstanceSnapshot>(const std::filesystem::path&)>;
     using InstanceChangeLoader = std::function<std::vector<FrontendInstanceChange>(const std::filesystem::path&)>;
+    using InstanceCommand = std::function<FrontendInstanceCommandResult(const std::filesystem::path&, const std::string&)>;
 
     Dispatch dispatch;
     Clock now;
@@ -44,6 +47,8 @@ struct FrontendRuntimeDependencies final {
     Shutdown shutdown;
     InstanceSnapshotLoader loadInstanceSnapshots;
     InstanceChangeLoader loadInstanceChanges;
+    InstanceCommand launchInstance;
+    InstanceCommand stopInstance;
 
     bool isComplete() const noexcept
     {
@@ -73,6 +78,8 @@ class FrontendFacade final {
     bool shutdown() noexcept;
     std::vector<FrontendInstanceSnapshot> instanceSnapshots() const;
     std::vector<FrontendInstanceChange> instanceChanges() const;
+    FrontendInstanceCommandResult launchInstance(const std::string& instanceIdentifier) const;
+    FrontendInstanceCommandResult stopInstance(const std::string& instanceIdentifier) const;
 
    private:
     std::filesystem::path m_dataRoot;

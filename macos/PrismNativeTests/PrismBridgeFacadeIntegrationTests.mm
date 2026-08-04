@@ -133,6 +133,102 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     XCTAssertTrue(token.isCancelled);
 }
 
+- (void)testFacadeCommandsConvertFoundationIdentifiersAndPreserveFixtureOutcomes
+{
+    auto launchCalls = std::make_shared<std::vector<std::string>>();
+    auto stopCalls = std::make_shared<std::vector<std::string>>();
+    auto commandRootMatches = std::make_shared<std::atomic<bool>>(true);
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.launchInstance = [launchCalls, commandRootMatches, fixtureRoot = self.fixtureRootURL.path.UTF8String](
+                                      const std::filesystem::path& root,
+                                      const std::string& identifier) {
+        *commandRootMatches = *commandRootMatches && root == std::filesystem::path(fixtureRoot).lexically_normal();
+        launchCalls->push_back(identifier);
+        if (identifier == "fixture.one") {
+            return FrontendInstanceCommandResult::Succeeded;
+        }
+        if (identifier == "unknown-instance") {
+            return FrontendInstanceCommandResult::UnknownInstance;
+        }
+        return FrontendInstanceCommandResult::Rejected;
+    };
+    dependencies.stopInstance = [stopCalls, commandRootMatches, fixtureRoot = self.fixtureRootURL.path.UTF8String](
+                                    const std::filesystem::path& root,
+                                    const std::string& identifier) {
+        *commandRootMatches = *commandRootMatches && root == std::filesystem::path(fixtureRoot).lexically_normal();
+        stopCalls->push_back(identifier);
+        if (identifier == "fixture.one") {
+            return FrontendInstanceCommandResult::Succeeded;
+        }
+        if (identifier == "unknown-instance") {
+            return FrontendInstanceCommandResult::UnknownInstance;
+        }
+        return FrontendInstanceCommandResult::Rejected;
+    };
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    __block PRInstanceCommandResult *receivedResult = nil;
+    __block PRBridgeError *receivedError = nil;
+    void (^runCommand)(PRInstanceCommandKind, NSString *) = ^(PRInstanceCommandKind kind, NSString *identifier) {
+        receivedResult = nil;
+        receivedError = nil;
+        XCTestExpectation *completion = [self expectationWithDescription:@"Facade command completed"];
+        PRBridgeObservationToken *token = nil;
+        PRInstanceCommandCompletionHandler handler = ^(PRInstanceCommandResult *result, PRBridgeError *error) {
+            XCTAssertTrue([NSThread isMainThread]);
+            receivedResult = result;
+            receivedError = error;
+            [completion fulfill];
+        };
+        if (kind == PRInstanceCommandKindLaunch) {
+            token = [bridge launchInstanceWithIdentifier:identifier completion:handler];
+        } else {
+            token = [bridge stopInstanceWithIdentifier:identifier completion:handler];
+        }
+        XCTAssertNotNil(token);
+        [self waitForExpectations:@[ completion ] timeout:2.0];
+    };
+
+    NSMutableString *mutableIdentifier = [NSMutableString stringWithString:@" fixture.one "];
+    runCommand(PRInstanceCommandKindLaunch, mutableIdentifier);
+    [mutableIdentifier setString:@"fixture.rejected.after-call"];
+    XCTAssertNil(receivedError);
+    XCTAssertEqual(receivedResult.kind, PRInstanceCommandKindLaunch);
+    XCTAssertEqual(receivedResult.outcome, PRInstanceCommandOutcomeSucceeded);
+    XCTAssertEqualObjects(receivedResult.identifier, @"fixture.one");
+
+    runCommand(PRInstanceCommandKindLaunch, @"fixture.one");
+    XCTAssertEqual(receivedResult.outcome, PRInstanceCommandOutcomeSucceeded);
+    runCommand(PRInstanceCommandKindLaunch, @"unknown-instance");
+    XCTAssertEqual(receivedResult.outcome, PRInstanceCommandOutcomeUnknownInstance);
+    runCommand(PRInstanceCommandKindLaunch, @"rejected-instance");
+    XCTAssertEqual(receivedResult.outcome, PRInstanceCommandOutcomeRejected);
+
+    runCommand(PRInstanceCommandKindStop, @"fixture.one");
+    XCTAssertEqual(receivedResult.kind, PRInstanceCommandKindStop);
+    XCTAssertEqual(receivedResult.outcome, PRInstanceCommandOutcomeSucceeded);
+    runCommand(PRInstanceCommandKindStop, @"fixture.one");
+    XCTAssertEqual(receivedResult.outcome, PRInstanceCommandOutcomeSucceeded);
+    runCommand(PRInstanceCommandKindStop, @"unknown-instance");
+    XCTAssertEqual(receivedResult.outcome, PRInstanceCommandOutcomeUnknownInstance);
+    runCommand(PRInstanceCommandKindStop, @"rejected-instance");
+    XCTAssertEqual(receivedResult.outcome, PRInstanceCommandOutcomeRejected);
+
+    runCommand(PRInstanceCommandKindLaunch, @"   ");
+    XCTAssertNil(receivedResult);
+    XCTAssertNotNil(receivedError);
+    XCTAssertEqual(receivedError.code, PRBridgeErrorCodeInvalidInput);
+
+    XCTAssertTrue(commandRootMatches->load());
+    XCTAssertEqual(launchCalls->size(), (NSUInteger)4);
+    XCTAssertEqual(stopCalls->size(), (NSUInteger)4);
+    XCTAssertEqualObjects([NSString stringWithUTF8String:launchCalls->front().c_str()], @"fixture.one");
+    XCTAssertEqualObjects([NSString stringWithUTF8String:launchCalls->back().c_str()], @"rejected-instance");
+}
+
 - (void)testFacadeChangesAreConvertedAndPublishedInOrder
 {
     FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
@@ -282,6 +378,8 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     XCTAssertEqual(facadeShutdownCount->load(), 1);
     XCTAssertEqualObjects(lifecycleEvents, (@[ @"cancel", @"shutdown" ]));
     XCTAssertNil([bridge loadInstanceSummariesWithCompletion:^(NSArray<PRInstanceSummary *> *, PRBridgeError *) {
+    }]);
+    XCTAssertNil([bridge launchInstanceWithIdentifier:@"fixture.one" completion:^(PRInstanceCommandResult *, PRBridgeError *) {
     }]);
 }
 

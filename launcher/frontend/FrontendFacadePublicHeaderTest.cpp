@@ -10,6 +10,9 @@ static_assert(static_cast<std::uint8_t>(FrontendInstanceChangeKind::Removed) == 
 static_assert(static_cast<std::uint8_t>(FrontendLifecycleState::Running) == 0);
 static_assert(static_cast<std::uint8_t>(FrontendLifecycleState::ShuttingDown) == 1);
 static_assert(static_cast<std::uint8_t>(FrontendLifecycleState::Stopped) == 2);
+static_assert(static_cast<std::uint8_t>(FrontendInstanceCommandResult::Succeeded) == 0);
+static_assert(static_cast<std::uint8_t>(FrontendInstanceCommandResult::UnknownInstance) == 1);
+static_assert(static_cast<std::uint8_t>(FrontendInstanceCommandResult::Rejected) == 2);
 
 int main()
 {

@@ -35,6 +35,16 @@ enum PrismCommandKey: Equatable, Sendable {
     case delete
 }
 
+enum PrismInstanceCommandAction: Equatable, Sendable {
+    case launch
+    case stop
+}
+
+struct PrismInstanceCommandIntent: Equatable, Sendable {
+    let action: PrismInstanceCommandAction
+    let identifier: String
+}
+
 struct PrismCommandShortcut: Equatable, Sendable {
     let key: PrismCommandKey
     let modifiers: PrismCommandModifiers
@@ -221,9 +231,14 @@ final class PrismCommandModel: ObservableObject {
     ]
 
     var onCommand: ((PrismCommandID) -> Void)?
+    var onInstanceCommand: ((PrismInstanceCommandIntent) -> Void)?
 
-    init(onCommand: ((PrismCommandID) -> Void)? = nil) {
+    init(
+        onCommand: ((PrismCommandID) -> Void)? = nil,
+        onInstanceCommand: ((PrismInstanceCommandIntent) -> Void)? = nil
+    ) {
         self.onCommand = onCommand
+        self.onInstanceCommand = onInstanceCommand
     }
 
     func setSelectedInstanceID(_ identifier: String?) {
@@ -251,6 +266,21 @@ final class PrismCommandModel: ObservableObject {
         }
     }
 
+    func instanceCommandIntent(for command: PrismCommandID) -> PrismInstanceCommandIntent? {
+        guard let identifier = selectedInstanceID else {
+            return nil
+        }
+
+        switch command {
+        case .launchSelected:
+            return PrismInstanceCommandIntent(action: .launch, identifier: identifier)
+        case .stopSelected:
+            return PrismInstanceCommandIntent(action: .stop, identifier: identifier)
+        default:
+            return nil
+        }
+    }
+
     @discardableResult
     func invoke(_ command: PrismCommandID) -> Bool {
         guard isEnabled(command) else {
@@ -258,7 +288,11 @@ final class PrismCommandModel: ObservableObject {
         }
 
         lastInvokedCommand = command
-        onCommand?(command)
+        if let intent = instanceCommandIntent(for: command), let onInstanceCommand {
+            onInstanceCommand(intent)
+        } else {
+            onCommand?(command)
+        }
         return true
     }
 

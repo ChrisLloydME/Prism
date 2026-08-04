@@ -23,6 +23,17 @@ typedef NS_ENUM(NSInteger, PRInstanceChangeKind) {
     PRInstanceChangeKindRemoved,
 };
 
+typedef NS_ENUM(NSInteger, PRInstanceCommandKind) {
+    PRInstanceCommandKindLaunch = 0,
+    PRInstanceCommandKindStop,
+};
+
+typedef NS_ENUM(NSInteger, PRInstanceCommandOutcome) {
+    PRInstanceCommandOutcomeSucceeded = 0,
+    PRInstanceCommandOutcomeUnknownInstance,
+    PRInstanceCommandOutcomeRejected,
+};
+
 /// Immutable instance metadata that is safe to pass into Swift state.
 @interface PRInstanceSummary : NSObject
 
@@ -36,6 +47,20 @@ typedef NS_ENUM(NSInteger, PRInstanceChangeKind) {
 @property(nonatomic, copy, readonly) NSString *name;
 @property(nonatomic, copy, readonly, nullable) NSString *iconKey;
 @property(nonatomic, copy, readonly, nullable) NSString *groupID;
+
+@end
+
+/// Immutable result for a fixture-safe launch or stop intent.
+@interface PRInstanceCommandResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithKind:(PRInstanceCommandKind)kind
+                           identifier:(NSString *)identifier
+                              outcome:(PRInstanceCommandOutcome)outcome NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, assign, readonly) PRInstanceCommandKind kind;
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, assign, readonly) PRInstanceCommandOutcome outcome;
 
 @end
 

@@ -128,6 +128,60 @@ int main()
         && changes[1].kind == FrontendInstanceChangeKind::Updated && changes[2].kind == FrontendInstanceChangeKind::Removed
         && changes[2].instance.id == "fixture-two" && changeRootMatches;
 
+    std::vector<std::string> launchCalls;
+    std::vector<std::string> stopCalls;
+    bool commandRootMatches = true;
+    auto commandDependencies = makeFixtureDependencies();
+    commandDependencies.launchInstance = [&](const std::filesystem::path& root, const std::string& identifier) {
+        commandRootMatches = commandRootMatches && root == fixtureRoot.lexically_normal();
+        launchCalls.push_back(identifier);
+        if (identifier == "fixture-one") {
+            return FrontendInstanceCommandResult::Succeeded;
+        }
+        if (identifier == "unknown-instance") {
+            return FrontendInstanceCommandResult::UnknownInstance;
+        }
+        return FrontendInstanceCommandResult::Rejected;
+    };
+    commandDependencies.stopInstance = [&](const std::filesystem::path& root, const std::string& identifier) {
+        commandRootMatches = commandRootMatches && root == fixtureRoot.lexically_normal();
+        stopCalls.push_back(identifier);
+        if (identifier == "fixture-one") {
+            return FrontendInstanceCommandResult::Succeeded;
+        }
+        if (identifier == "unknown-instance") {
+            return FrontendInstanceCommandResult::UnknownInstance;
+        }
+        return FrontendInstanceCommandResult::Rejected;
+    };
+    FrontendFacade commandFacade(fixtureRoot / "nested" / "..", std::move(commandDependencies));
+    const bool commandOutcomes = commandFacade.launchInstance("fixture-one") == FrontendInstanceCommandResult::Succeeded
+        && commandFacade.launchInstance("fixture-one") == FrontendInstanceCommandResult::Succeeded
+        && commandFacade.launchInstance("unknown-instance") == FrontendInstanceCommandResult::UnknownInstance
+        && commandFacade.launchInstance("rejected-instance") == FrontendInstanceCommandResult::Rejected
+        && commandFacade.stopInstance("fixture-one") == FrontendInstanceCommandResult::Succeeded
+        && commandFacade.stopInstance("fixture-one") == FrontendInstanceCommandResult::Succeeded
+        && commandFacade.stopInstance("unknown-instance") == FrontendInstanceCommandResult::UnknownInstance
+        && commandFacade.stopInstance("rejected-instance") == FrontendInstanceCommandResult::Rejected;
+    const bool repeatedCommandsAreForwarded = launchCalls == std::vector<std::string>{ "fixture-one", "fixture-one", "unknown-instance", "rejected-instance" }
+        && stopCalls == std::vector<std::string>{ "fixture-one", "fixture-one", "unknown-instance", "rejected-instance" };
+    const bool rejectedInvalidCommandIdentifiers = throwsInvalidArgument([&commandFacade] {
+        (void) commandFacade.launchInstance("");
+    }) && throwsInvalidArgument([&commandFacade] {
+        (void) commandFacade.stopInstance("");
+    });
+    const bool commandRootContract = commandRootMatches && commandOutcomes && repeatedCommandsAreForwarded
+        && rejectedInvalidCommandIdentifiers;
+    const bool missingCommandPortsAreRejected = emptyFacade.launchInstance("fixture-one") == FrontendInstanceCommandResult::Rejected
+        && emptyFacade.stopInstance("fixture-one") == FrontendInstanceCommandResult::Rejected;
+    const bool rejectedPostShutdownCommands = commandFacade.shutdown()
+        && throwsLogicError([&commandFacade] {
+               (void) commandFacade.launchInstance("fixture-one");
+           })
+        && throwsLogicError([&commandFacade] {
+               (void) commandFacade.stopInstance("fixture-one");
+           });
+
     auto invalidSnapshotDependencies = makeFixtureDependencies();
     invalidSnapshotDependencies.loadInstanceSnapshots = [](const std::filesystem::path&) {
         return std::vector<FrontendInstanceSnapshot>{ { "", "Invalid", "", "" } };
@@ -224,7 +278,8 @@ int main()
 
     std::filesystem::remove(fixtureMarker, error);
     std::filesystem::remove(fixtureRoot, error);
-    return fixtureWasPreserved && emptyContract && fixtureSnapshotContract && fixtureChangeContract && rejectedInvalidSnapshot
+    return fixtureWasPreserved && emptyContract && fixtureSnapshotContract && fixtureChangeContract && commandRootContract
+               && missingCommandPortsAreRejected && rejectedPostShutdownCommands && rejectedInvalidSnapshot
                && rejectedInvalidChange && rejectedEmptyRoot && rejectedRelativeRoot && rejectedIncompleteDependencies
                && lifecycleContract && callbacksRanExactlyOnce && destructorShutdownContract && !error
         ? 0

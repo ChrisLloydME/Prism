@@ -37,6 +37,8 @@ typedef void (^PRInstanceSummariesCompletionHandler)(NSArray<PRInstanceSummary *
                                                       PRBridgeError * _Nullable error);
 typedef void (^PRInstanceChangesCompletionHandler)(NSArray<PRInstanceChange *> *changes,
                                                     PRBridgeError * _Nullable error);
+typedef void (^PRInstanceCommandCompletionHandler)(PRInstanceCommandResult * _Nullable result,
+                                                    PRBridgeError * _Nullable error);
 
 /// Owns one bridge observation registration and cancels it when released.
 @interface PRBridgeObservationToken : NSObject
@@ -80,6 +82,15 @@ typedef void (^PRInstanceChangesCompletionHandler)(NSArray<PRInstanceChange *> *
 /// before the backend result is delivered.
 - (nullable PRBridgeObservationToken *)loadInstanceSummariesWithCompletion:(PRInstanceSummariesCompletionHandler)completion;
 - (nullable PRBridgeObservationToken *)loadInstanceChangesWithCompletion:(PRInstanceChangesCompletionHandler)completion;
+
+/// Sends a fixture-controlled command for one stable instance identifier. The
+/// completion runs on the main actor with a Foundation result for success,
+/// unknown-instance, or explicit backend rejection; invalid input and
+/// lifecycle failures use PRBridgeError.
+- (nullable PRBridgeObservationToken *)launchInstanceWithIdentifier:(NSString *)identifier
+                                                           completion:(PRInstanceCommandCompletionHandler)completion;
+- (nullable PRBridgeObservationToken *)stopInstanceWithIdentifier:(NSString *)identifier
+                                                         completion:(PRInstanceCommandCompletionHandler)completion;
 
 @end
 

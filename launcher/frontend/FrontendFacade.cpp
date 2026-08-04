@@ -54,6 +54,36 @@ void ensureRunning(FrontendLifecycleState state)
     }
 }
 
+bool isKnownInstanceCommandResult(FrontendInstanceCommandResult result) noexcept
+{
+    switch (result) {
+        case FrontendInstanceCommandResult::Succeeded:
+        case FrontendInstanceCommandResult::UnknownInstance:
+        case FrontendInstanceCommandResult::Rejected:
+            return true;
+    }
+    return false;
+}
+
+FrontendInstanceCommandResult executeInstanceCommand(
+    const FrontendRuntimeDependencies::InstanceCommand& command,
+    const std::filesystem::path& dataRoot,
+    const std::string& instanceIdentifier)
+{
+    if (instanceIdentifier.empty()) {
+        throw std::invalid_argument("Instance commands require a stable identifier");
+    }
+    if (!command) {
+        return FrontendInstanceCommandResult::Rejected;
+    }
+
+    const auto result = command(dataRoot, instanceIdentifier);
+    if (!isKnownInstanceCommandResult(result)) {
+        throw std::invalid_argument("Instance command returned an unknown result");
+    }
+    return result;
+}
+
 }  // namespace
 
 FrontendFacade::FrontendFacade(std::filesystem::path dataRoot, FrontendRuntimeDependencies runtimeDependencies)
@@ -120,4 +150,16 @@ std::vector<FrontendInstanceChange> FrontendFacade::instanceChanges() const
     auto changes = m_runtimeDependencies.loadInstanceChanges(m_dataRoot);
     validateInstanceChanges(changes);
     return changes;
+}
+
+FrontendInstanceCommandResult FrontendFacade::launchInstance(const std::string& instanceIdentifier) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeInstanceCommand(m_runtimeDependencies.launchInstance, m_dataRoot, instanceIdentifier);
+}
+
+FrontendInstanceCommandResult FrontendFacade::stopInstance(const std::string& instanceIdentifier) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeInstanceCommand(m_runtimeDependencies.stopInstance, m_dataRoot, instanceIdentifier);
 }

@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 5, Launch, stop, tasks, and logs
 
-Active work unit: none (M4-W7 complete; activate M5-W1 at next round start)
+Active work unit: M5-W1
 
-Next ready work unit: M5-W1
+Next ready work unit: none (M5-W1 active)
 
 ## Safety baseline
 
@@ -942,6 +942,50 @@ Risk: the store and view are reusable seams; live `PRInstanceSummary.iconKey` re
 Commit: `33676df3f`
 
 Next after completion: `M5-W1`, add fixture-controlled launch and stop facade commands using stable instance identifiers.
+
+### M5-W1: Fixture-controlled launch and stop facade commands
+
+Status: active
+
+Outcome: add launch and stop command contracts keyed only by stable instance identifiers across the QWidget-free facade, Objective-C++ bridge, and native command seam. The implementation and verification are complete; the implementation commit is pending the commit gate below.
+
+Scope: directly required `launcher/frontend`, `macos/PrismNative/Bridge`, native command/state tests, and this progress file only; no Qt UI composition, other platform behavior, production process, credentials, or real data. Preserve the existing legacy Qt launch path and keep all new runtime ports explicit and injectable.
+
+Required evidence: valid/invalid/unknown stable IDs, launch/stop success and rejection, repeated command behavior, lifecycle/shutdown rejection, Objective-C++ Foundation conversion, Swift command routing, smallest relevant CMake build and C++ tests, native Debug/Release builds, full native tests, Bundle ID checks, bridge/Swift boundary scans, and `git diff --check`.
+
+HIG decision: keep launch and stop as existing menu/toolbar/context command intents backed by the shared Swift command model and SwiftUI `Commands`, `Button`, toolbar, and context-menu surfaces. No new custom control, process UI, or drawing is introduced; task progress and cancellation presentation remain M5-W2/M5-W3 work. This follows the existing [menus](https://developer.apple.com/design/human-interface-guidelines/menus) and [toolbars](https://developer.apple.com/design/human-interface-guidelines/toolbars) decisions.
+
+Architecture: add `FrontendInstanceCommandResult` with `Succeeded`, `UnknownInstance`, and `Rejected` outcomes. `FrontendFacade` accepts explicit launch/stop callback ports, passes the normalized fixture root and stable identifier without deduplication, rejects empty IDs, rejects post-shutdown work, and returns a deterministic rejection when a command port is not configured. Objective-C++ converts Foundation strings to copied UTF-8 IDs, runs the facade call on its serial backend queue, converts the result to immutable `PRInstanceCommandResult`, delivers completion on the main actor, and cancels the request state during shutdown. Swift receives only `PrismInstanceCommandIntent` with a normalized string ID; if that dedicated handler is absent, the existing generic command handler remains the compatibility path. No process, account, Qt object, QWidget, QDialog, SwiftUI object, or AppKit object is owned by the facade command seam.
+
+Files changed: `launcher/frontend/FrontendFacade.h`, `launcher/frontend/FrontendFacade.cpp`, `launcher/frontend/FrontendFacadeContractTest.cpp`, `launcher/frontend/FrontendFacadePublicHeaderTest.cpp`, `macos/PrismNative/Bridge/PrismBridge.h`, `macos/PrismNative/Bridge/PrismBridgeModels.h`, `macos/PrismNative/Bridge/PrismBridge.mm`, `macos/PrismNativeTests/PrismBridgeFacadeIntegrationTests.mm`, `macos/PrismNative/App/PrismCommandModel.swift`, `macos/PrismNativeTests/PrismCommandTests.swift`, and this progress file.
+
+Tests and exact commands:
+
+- `cmake --build /private/tmp/prism-m3-w6-cmake --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test --parallel 2` — passed for the arm64 fixture build.
+- `ctest --test-dir /private/tmp/prism-m3-w6-cmake --output-on-failure -R '^(FrontendFacadeContract|FrontendFacadePublicHeaders)$'` — passed; 2/2.
+- `cmake --build /private/tmp/prism-m3-w6-universal --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test --parallel 2` — passed with the archive configured for `arm64;x86_64`.
+- `file .deriveddata-prism-native-backend/libLauncher_frontend.a && lipo -info .deriveddata-prism-native-backend/libLauncher_frontend.a` — passed; the archive contains arm64 and x86_64 slices.
+- `ctest --test-dir /private/tmp/prism-m3-w6-universal --output-on-failure -R '^(FrontendFacadeContract|FrontendFacadePublicHeaders)$'` — passed; 2/2 after the final universal rebuild.
+- `cmake --build /private/tmp/prism-m3-w6-cmake --target Prism --parallel 2` — passed in the existing arm64 CMake configuration; the legacy Qt executable target remains buildable without changing its link graph. A separate universal `Prism` link attempt reached the final link but failed only because the pre-existing Qt/libarchive/zlib dependency artifacts have no x86_64 slices; this environment limitation is recorded as non-blocking and was not retried with new dependencies.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO -only-testing:PrismNativeTests/PrismCommandTests -only-testing:PrismNativeTests/PrismBridgeFacadeIntegrationTests test` — passed; 15/15 focused tests (9 command, 6 bridge-facade).
+- The first focused Xcode build failed before tests because the reused backend archive had been rebuilt as arm64-only and the Xcode target also links x86_64. Log inspection showed architecture-mismatch warnings and undefined `FrontendFacade` symbols only for x86_64; rebuilding the explicit universal CMake archive resolved the issue without changing production code.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed; full native suite, 59/59 tests.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO build` — passed.
+- `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -fsyntax-only -x objective-c -target arm64-apple-macos14.0 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk macos/PrismNative/Bridge/PrismBridge.h` — passed; public bridge headers compile as Objective-C without C++ mode.
+- Forbidden public bridge scan for Qt/C++/ownership tokens — passed with no matches. Swift App scan for Qt/C++/ownership tokens — passed with no matches. Swift App scans for `Canvas`, custom drawing, upstream path discovery, and implicit network image loading — passed with no matches. Frontend public-header scan for `launcher/ui` and QWidget/QDialog/model tokens — passed with no matches.
+- Command/static API scan for `PRInstanceCommandResult`, launch/stop bridge selectors, `PrismInstanceCommandIntent`, `onInstanceCommand`, `Commands`, and keyboard shortcuts — passed.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native-release/Build/Products/Release/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `git diff --check` — passed.
+
+Result summary: fixture C++ tests cover success, unknown IDs, explicit rejection, missing command ports, invalid IDs, repeated forwarding, root propagation, and post-shutdown rejection. Bridge tests cover copied/trimmed Foundation identifiers, launch and stop result conversion, success/unknown/rejected outcomes, repeated calls, invalid-input error translation, main-thread completion, and shutdown rejection. Swift tests cover stable launch/stop intents, normalized selection IDs, repeated routing, enabled-state gating, and compatibility with the existing generic handler. No application, Minecraft process, screenshot, visual snapshot, upstream application/data, account, Keychain, production service, signing, installation, publishing, or push action was used.
+
+Risk: launch and stop callback ports are still fixture adapters; they do not yet connect `LaunchController`, task progress, cancellation, process state, or account selection. The default bridge composition has no command ports and therefore reports explicit rejection. The universal legacy Qt link remains environment-limited by pre-existing arm64-only third-party artifacts, while the arm64 Qt target and native universal target both build. M5-W2 must add task progress, subtasks, cancellation, and terminal result DTOs.
+
+Commit: not created; implementation and verification are complete, awaiting the staged commit gate.
+
+Next after completion: `M5-W2`, add task progress, subtasks, cancellation, and terminal result DTOs.
 
 ## Completed commit index
 

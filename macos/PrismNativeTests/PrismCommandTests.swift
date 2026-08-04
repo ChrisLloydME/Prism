@@ -92,6 +92,34 @@ final class PrismCommandTests: XCTestCase {
         XCTAssertEqual(invoked, [.launchSelected, .settings])
     }
 
+    func testCommandModelRoutesLaunchAndStopWithStableInstanceIntents() {
+        var intents: [PrismInstanceCommandIntent] = []
+        let model = PrismCommandModel(onInstanceCommand: { intents.append($0) })
+
+        model.setSelectedInstanceID(" fixture.one ")
+        XCTAssertEqual(
+            model.instanceCommandIntent(for: .launchSelected),
+            PrismInstanceCommandIntent(action: .launch, identifier: "fixture.one")
+        )
+        XCTAssertEqual(
+            model.instanceCommandIntent(for: .stopSelected),
+            PrismInstanceCommandIntent(action: .stop, identifier: "fixture.one")
+        )
+        XCTAssertTrue(model.invoke(.launchSelected))
+        XCTAssertTrue(model.invoke(.launchSelected))
+
+        model.setRunningInstanceID("fixture.one")
+        XCTAssertTrue(model.invoke(.stopSelected))
+        XCTAssertEqual(
+            intents,
+            [
+                PrismInstanceCommandIntent(action: .launch, identifier: "fixture.one"),
+                PrismInstanceCommandIntent(action: .launch, identifier: "fixture.one"),
+                PrismInstanceCommandIntent(action: .stop, identifier: "fixture.one"),
+            ]
+        )
+    }
+
     func testToolbarAndContextMenuUseStableSharedCommandSets() {
         XCTAssertEqual(
             PrismCommandModel.toolbarCommandIDs,
