@@ -1,29 +1,56 @@
 #import "PrismBridge.h"
 
 namespace {
+NSString *const kPrismBundleIdentifier = @"com.lloydME.Prism";
 NSString *const kPrismApplicationName = @"Prism";
 }
 
+@interface PRApplicationIdentity ()
+
+@property(nonatomic, copy, readwrite) NSString *bundleIdentifier;
+@property(nonatomic, copy, readwrite) NSURL *applicationSupportDirectory;
+
+@end
+
 @implementation PRApplicationIdentity
 
-- (NSString *)bundleIdentifier
++ (NSString *)requiredBundleIdentifier
 {
-    return NSBundle.mainBundle.bundleIdentifier ?: @"";
+    return kPrismBundleIdentifier;
 }
 
-- (NSString *)applicationName
++ (NSString *)applicationName
 {
     return kPrismApplicationName;
 }
 
-- (NSURL *)applicationSupportDirectory
+- (instancetype)init
 {
     NSURL *baseURL = [[NSFileManager defaultManager] URLForDirectory:NSApplicationSupportDirectory
                                                             inDomain:NSUserDomainMask
                                                    appropriateForURL:nil
                                                               create:NO
                                                                error:nil];
-    return [baseURL URLByAppendingPathComponent:kPrismApplicationName isDirectory:YES];
+    NSString *bundleIdentifier = NSBundle.mainBundle.bundleIdentifier ?: @"";
+    return [self initWithBundleIdentifier:bundleIdentifier
+            applicationSupportBaseDirectory:baseURL];
+}
+
+- (instancetype)initWithBundleIdentifier:(NSString *)bundleIdentifier
+           applicationSupportBaseDirectory:(NSURL *)applicationSupportBaseDirectory
+{
+    self = [super init];
+    if (self) {
+        self.bundleIdentifier = bundleIdentifier;
+        self.applicationSupportDirectory = [applicationSupportBaseDirectory URLByAppendingPathComponent:kPrismApplicationName
+                                                                                               isDirectory:YES];
+    }
+    return self;
+}
+
+- (NSString *)applicationName
+{
+    return kPrismApplicationName;
 }
 
 @end

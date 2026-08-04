@@ -10,7 +10,7 @@ Current milestone: Milestone 1, contracts, tests, and durable inventory
 
 Active work unit: none
 
-Next ready work unit: `M1-W1`
+Next ready work unit: `M1-W2`
 
 ## Safety baseline
 
@@ -18,10 +18,10 @@ Next ready work unit: `M1-W1`
 | --- | --- | --- |
 | Bundle ID is `com.lloydME.Prism` | complete | Commit `6de92da18`; built Info.plist checked with `plutil` |
 | Native product name is `Prism` | complete | Commit `6de92da18`; built Info.plist checked with `plutil` |
-| Default data identity differs from upstream `PrismLauncher` | complete, not yet automated | `Prism` application identity in `program_info/CMakeLists.txt` and native bridge |
+| Default data identity differs from upstream `PrismLauncher` | complete | `Prism` application identity in `program_info/CMakeLists.txt` and native bridge; M1-W1 temporary-root contract test |
 | Native Xcode target exists | complete | Commit `5172b3a75` |
 | Objective-C++ public bridge exposes only Foundation types | complete, not yet automated | Commit `5172b3a75`; architecture review found no Qt or C++ type in public header |
-| Native tests target exists | ready | First work unit `M1-W1` |
+| Native tests target exists | complete | M1-W1; shared scheme and standalone `PrismNativeTests.xctest` target |
 | Upstream application and data are untouched | complete for current work | No application launch or installation was performed |
 
 ## Milestone status
@@ -43,25 +43,34 @@ Next ready work unit: `M1-W1`
 
 ### M1-W1: Shared scheme and native safety contract tests
 
-Status: ready
+Status: complete
 
 Outcome: add a stable shared `PrismNative` scheme and a `PrismNativeTests` target covering Bundle ID and data-root isolation without launching the app.
 
-Required files: Xcode project and shared scheme, `macos/PrismNativeTests`, directly related test helpers, this progress file.
+Files changed: `macos/PrismNative.xcodeproj/project.pbxproj`, `macos/PrismNative.xcodeproj/xcshareddata/xcschemes/PrismNative.xcscheme`, `macos/PrismNativeTests/PrismNativeIdentityTests.swift`, `macos/PrismNative/Bridge/PrismBridge.h`, `macos/PrismNative/Bridge/PrismBridge.mm`, and this progress file.
 
-Required evidence: Debug build, native tests, `git diff --check`, Info.plist Bundle ID check.
+Tests and exact commands:
+
+- `git diff --check` — passed.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed; 2 tests, 0 failures.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO build` — passed.
+- `plutil -extract CFBundleIdentifier raw .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `plutil -extract CFBundleIdentifier raw .deriveddata-prism-native-release/Build/Products/Release/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+
+Result summary: the shared scheme builds the app and its standalone XCTest bundle. Tests inspect the built app Info.plist without launching it, inject a temporary fixture root into the Foundation-only identity bridge, assert the native `Prism` root, and assert explicit non-equality with the upstream `PrismLauncher` namespace. No upstream application, Application Support data, account, Keychain, or production data was accessed.
 
 HIG decision: none, this unit protects product identity and test infrastructure.
 
-Risk: Xcode target settings and the bridge currently hold related identity concepts in different build systems. Tests must detect drift.
+Risk: the test resolves `Prism.app` as a sibling of the XCTest bundle, so the shared scheme must continue to build the application target before running identity tests. Runtime backend isolation remains a later facade responsibility.
 
-Commit: not created.
+Commit: pending; record the exact hash in the next ledger update after commit creation.
 
 Next after completion: `M1-W2`, inventory every legacy UI family and map it to facade capabilities and native destination.
 
 ### M1-W2: Complete legacy feature inventory
 
-Status: queued
+Status: ready
 
 Outcome: expand this ledger so every source family under `launcher/ui` has a native destination, backend owner, verification class, and migration milestone.
 

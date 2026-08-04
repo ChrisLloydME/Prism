@@ -10,6 +10,8 @@
 		A10000000000000000000001 /* PrismNativeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* PrismNativeApp.swift */; };
 		A10000000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* ContentView.swift */; };
 		A10000000000000000000003 /* PrismBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* PrismBridge.mm */; };
+		A10000000000000000000004 /* PrismNativeIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* PrismNativeIdentityTests.swift */; };
+		A10000000000000000000005 /* PrismBridge.mm in Tests */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* PrismBridge.mm */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -19,10 +21,19 @@
 		A20000000000000000000004 /* PrismBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = PrismBridge.mm; sourceTree = "<group>"; };
 		A20000000000000000000005 /* PrismNative-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "PrismNative-Bridging-Header.h"; sourceTree = "<group>"; };
 		A20000000000000000000006 /* Prism.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Prism.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000007 /* PrismNativeIdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrismNativeIdentityTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000008 /* PrismNativeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PrismNativeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A30000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A30000000000000000000002 /* Test Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -36,6 +47,7 @@
 			isa = PBXGroup;
 			children = (
 				A40000000000000000000002 /* PrismNative */,
+				A40000000000000000000006 /* PrismNativeTests */,
 				A40000000000000000000005 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -72,8 +84,17 @@
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000006 /* Prism.app */,
+				A20000000000000000000008 /* PrismNativeTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000006 /* PrismNativeTests */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000007 /* PrismNativeIdentityTests.swift */,
+			);
+			path = PrismNativeTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -96,6 +117,24 @@
 			productReference = A20000000000000000000006 /* Prism.app */;
 			productType = "com.apple.product-type.application";
 		};
+		A50000000000000000000002 /* PrismNativeTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A80000000000000000000003 /* Build configuration list for PBXNativeTarget "PrismNativeTests" */;
+			buildPhases = (
+				A60000000000000000000003 /* Test Sources */,
+				A30000000000000000000002 /* Test Frameworks */,
+				A60000000000000000000004 /* Test Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A70000000000000000000002 /* PrismNative target dependency */,
+			);
+			name = PrismNativeTests;
+			productName = PrismNativeTests;
+			productReference = A20000000000000000000008 /* PrismNativeTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -108,6 +147,10 @@
 				TargetAttributes = {
 					A50000000000000000000001 = {
 						CreatedOnToolsVersion = 26.6;
+					};
+					A50000000000000000000002 = {
+						CreatedOnToolsVersion = 26.6;
+						TestTargetID = A50000000000000000000001;
 					};
 				};
 			};
@@ -125,12 +168,29 @@
 			projectRoot = "";
 			targets = (
 				A50000000000000000000001 /* PrismNative */,
+				A50000000000000000000002 /* PrismNativeTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		A60000000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A60000000000000000000003 /* Test Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000004 /* PrismNativeIdentityTests.swift in Sources */,
+				A10000000000000000000005 /* PrismBridge.mm in Tests */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A60000000000000000000004 /* Test Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -215,6 +275,36 @@
 			};
 			name = Release;
 		};
+		A90000000000000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lloydME.PrismTests;
+				PRODUCT_NAME = PrismNativeTests;
+				SDKROOT = macosx;
+				SWIFT_OBJC_BRIDGING_HEADER = "PrismNative/PrismNative-Bridging-Header.h";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		A90000000000000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lloydME.PrismTests;
+				PRODUCT_NAME = PrismNativeTests;
+				SDKROOT = macosx;
+				SWIFT_OBJC_BRIDGING_HEADER = "PrismNative/PrismNative-Bridging-Header.h";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -236,7 +326,34 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		A80000000000000000000003 /* Build configuration list for PBXNativeTarget "PrismNativeTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A90000000000000000000005 /* Debug */,
+				A90000000000000000000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
+
+/* Begin PBXContainerItemProxy section */
+		A70000000000000000000003 /* PrismNative target proxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A70000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A50000000000000000000001;
+			remoteInfo = PrismNative;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		A70000000000000000000002 /* PrismNative target dependency */ = {
+			isa = PBXTargetDependency;
+			target = A50000000000000000000001 /* PrismNative */;
+			targetProxy = A70000000000000000000003 /* PrismNative target proxy */;
+		};
+/* End PBXTargetDependency section */
 	};
 	rootObject = A70000000000000000000001 /* Project object */;
 }
