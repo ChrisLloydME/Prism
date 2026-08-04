@@ -15,6 +15,7 @@
 		A10000000000000000000006 /* PrismNativeTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* PrismNativeTestSupport.swift */; };
 		A10000000000000000000007 /* PrismNativeInfrastructureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000A /* PrismNativeInfrastructureTests.swift */; };
 		A10000000000000000000008 /* PrismBridgeObservationTests.mm in Tests */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000C /* PrismBridgeObservationTests.mm */; };
+		A10000000000000000000009 /* PrismBridgeContractTests.mm in Tests */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000E /* PrismBridgeContractTests.mm */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,6 +32,7 @@
 		A2000000000000000000000B /* PrismBridgeModels.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PrismBridgeModels.h; sourceTree = "<group>"; };
 		A2000000000000000000000C /* PrismBridgeObservationTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = PrismBridgeObservationTests.mm; sourceTree = "<group>"; };
 		A2000000000000000000000D /* PrismBridgeErrors.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PrismBridgeErrors.h; sourceTree = "<group>"; };
+		A2000000000000000000000E /* PrismBridgeContractTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = PrismBridgeContractTests.mm; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -106,6 +108,7 @@
 				A20000000000000000000009 /* PrismNativeTestSupport.swift */,
 				A2000000000000000000000A /* PrismNativeInfrastructureTests.swift */,
 				A2000000000000000000000C /* PrismBridgeObservationTests.mm */,
+				A2000000000000000000000E /* PrismBridgeContractTests.mm */,
 			);
 			path = PrismNativeTests;
 			sourceTree = "<group>";
@@ -203,6 +206,7 @@
 				A10000000000000000000006 /* PrismNativeTestSupport.swift in Sources */,
 				A10000000000000000000007 /* PrismNativeInfrastructureTests.swift in Sources */,
 				A10000000000000000000008 /* PrismBridgeObservationTests.mm in Tests */,
+				A10000000000000000000009 /* PrismBridgeContractTests.mm in Tests */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

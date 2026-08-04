@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 3, Objective-C++ bridge foundation
 
-Active work unit: none (M3-W4 complete; activate M3-W5 at next round start)
+Active work unit: M3-W5
 
-Next ready work unit: M3-W5
+Next ready work unit: none (M3-W5 active)
 
 ## Safety baseline
 
@@ -585,7 +585,7 @@ Next after completion: `M3-W5`, add complete bridge contract tests for empty and
 
 ### M3-W5: Complete bridge contract tests
 
-Status: ready
+Status: active
 
 Outcome: exercise initialization, empty and fixture data, cancellation, shutdown, and released-observer behavior through the real native bridge contract.
 
@@ -595,7 +595,27 @@ Required evidence: deterministic empty and fixture-root bridge state, immutable 
 
 HIG decision: none, this unit strengthens bridge tests without controls or rendering.
 
-Commit: not created.
+Files changed: `macos/PrismNativeTests/PrismBridgeContractTests.mm`, `macos/PrismNative.xcodeproj/project.pbxproj`, and this progress file. The contract suite is a separate Objective-C++ test source; it reaches only private fixture ingress selectors through a test category and does not widen the Foundation public bridge or link backend code.
+
+Design: keep the bridge contract test-only and deterministic. Use a temporary root for every test, observe instance summaries through the public token API, inject fixture summaries only through the existing private Objective-C++ test ingress, drain the main queue without launching the app, and assert that empty fixtures create no placeholder instance. The suite verifies copied identifier/name/icon/group values, cancellation before queued delivery, lifecycle callback order during shutdown, released observer/token lifetime, and stable error metadata alongside fixture state. No custom rendering or HIG exception is involved.
+
+Tests and exact commands:
+
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed; 27 tests, 0 failures, including 7 new bridge contract tests.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO build` — passed.
+- `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -fsyntax-only -x objective-c -target arm64-apple-macos14.0 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk macos/PrismNative/Bridge/PrismBridge.h` — passed; all public bridge headers compile without C++ mode.
+- `if rg -n "QWidget|QDialog|QObject|QString|QVariant|QModelIndex|QList|QMap|QHash|QUrl|QAbstractItemModel|QAbstractListModel|QAbstractTableModel|Q_OBJECT|std::|shared_ptr|unique_ptr|reinterpret_cast|static_cast|dynamic_cast|template<|namespace " macos/PrismNative/Bridge --glob '*.h'; then exit 1; else exit 0; fi` — passed with no forbidden public-header matches.
+- `if rg -n "#import <Qt|#include|std::|QWidget|QDialog|QObject|QString|QVariant|QModelIndex|QList|QMap|QHash|QUrl|unique_ptr|shared_ptr|reinterpret_cast|static_cast|dynamic_cast" macos/PrismNative/App --glob '*.swift'; then exit 1; else exit 0; fi` — passed; native Swift app sources remain outside Qt and C++ types.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native-release/Build/Products/Release/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `git diff --check` — passed.
+
+Result summary: the bridge contract suite confirmed that a temporary bridge starts in `Running`, uses no upstream namespace, emits no placeholder instance for empty fixture state, delivers immutable fixture metadata on the main actor, suppresses queued callbacks after cancellation or shutdown, invokes lifecycle callbacks in cancellation-then-shutdown order, releases captured observers when tokens are released, and preserves stable Foundation error values. No application or launcher executable was launched and no upstream data was accessed.
+
+Risk: fixture ingress remains private and synthetic until M3-W6 connects the real `FrontendFacade`; this unit intentionally does not claim backend linkage or live data conversion. Existing AppIntents metadata and prior non-blocking CMake warnings remain unchanged. No CMake command was required because this unit changes only native tests and Xcode test-source registration.
+
+Commit: pending implementation commit hash; record it in the follow-up progress synchronization commit.
 
 Next after completion: `M3-W6`, link the QWidget-free `FrontendFacade` output into Xcode through the Objective-C++ bridge.
 
@@ -641,6 +661,7 @@ Next after completion: `M3-W6`, link the QWidget-free `FrontendFacade` output in
 17. M3-W2 adds Foundation-only immutable `PRInstanceSummary` and `PRTaskStatus` contracts; DTO validation and copying remain private to Objective-C++, while backend conversion and task error translation remain later bridge work.
 18. M3-W3 adds typed Foundation observation handlers and private cancellation states; token release removes callbacks deterministically, while main-actor delivery and real facade event wiring remain later bridge work.
 19. M3-W4 adds Foundation error translation and structured `NSError` metadata, while main-queue delivery is asynchronous and cancellation-aware; real facade failure mapping and Swift `@MainActor` feature state remain later work.
+20. M3-W5 adds a dedicated bridge contract suite for temporary-root initialization, empty and fixture snapshots, cancellation, shutdown ordering, released observers, and stable error propagation; the private fixture ingress remains until M3-W6 backend linkage.
 
 ## Custom rendering exceptions
 
@@ -654,4 +675,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M3-W5`. Do not begin M3-W6 or native visual implementation until the complete bridge contract tests are verified and committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then resume the active `M3-W5`. Do not begin M3-W6 or native visual implementation until the complete bridge contract tests are verified and committed.
