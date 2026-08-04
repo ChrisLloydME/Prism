@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 3, Objective-C++ bridge foundation
 
-Active work unit: M3-W4
+Active work unit: none (M3-W4 complete; activate M3-W5 at next round start)
 
-Next ready work unit: none (M3-W4 active)
+Next ready work unit: M3-W5
 
 ## Safety baseline
 
@@ -549,7 +549,7 @@ Next after completion: `M3-W4`, add error translation and main-actor delivery.
 
 ### M3-W4: Error translation and main-actor delivery
 
-Status: active
+Status: complete
 
 Outcome: translate bridge failures into stable Foundation error values and deliver observer callbacks on the main actor without blocking backend work.
 
@@ -579,9 +579,25 @@ Result summary: the native bridge now translates fixture failure categories into
 
 Risk: the failure-kind mapper is fixture-facing infrastructure until M3-W5/M3-W6 connect real facade errors and snapshots; partial-rollback values are conservatively `false` because this unit performs no mutating backend operation. Localization resources, Swift feature stores, and real facade event ingress remain later units. No CMake command was required because launcher backend sources and build configuration were unchanged.
 
-Commit: pending implementation commit hash; record it in the follow-up progress synchronization commit.
+Commit: `a9853cbe2`
 
 Next after completion: `M3-W5`, add complete bridge contract tests for empty and fixture data, cancellation, shutdown, and released observers.
+
+### M3-W5: Complete bridge contract tests
+
+Status: ready
+
+Outcome: exercise initialization, empty and fixture data, cancellation, shutdown, and released-observer behavior through the real native bridge contract.
+
+Scope: `macos/PrismNative/Bridge`, directly related native tests and Xcode project files, and this progress file only. Do not access real accounts, credentials, Keychain, production services, or add visual surfaces.
+
+Required evidence: deterministic empty and fixture-root bridge state, immutable snapshot/event conversion, cancellation and shutdown ordering, released observer behavior, stable error propagation, native Debug/Release builds, native tests, Bundle ID checks, public-header scan, and `git diff --check`.
+
+HIG decision: none, this unit strengthens bridge tests without controls or rendering.
+
+Commit: not created.
+
+Next after completion: `M3-W6`, link the QWidget-free `FrontendFacade` output into Xcode through the Objective-C++ bridge.
 
 ## Completed commit index
 
@@ -602,6 +618,7 @@ Next after completion: `M3-W5`, add complete bridge contract tests for empty and
 | `17258dae9` | Added the Foundation-only Objective-C++ lifecycle root with explicit fixture data and callback release contracts | Native Debug XCTest 9/9; Debug/Release builds; Objective-C public-header syntax; forbidden bridge scan; Debug/Release `plutil`; `git diff --check` |
 | `65a044abe` | Added immutable Foundation instance and task DTOs with progress and cancellation contracts | Native Debug XCTest 11/11; Debug/Release builds; Objective-C public-header syntax; forbidden bridge and Swift boundary scans; Debug/Release `plutil`; `git diff --check` |
 | `cacd8d16f` | Added Foundation observation handlers and cancellable tokens with fixture delivery and release contracts | Native Debug XCTest 17/17; Debug/Release builds; Objective-C public-header syntax; forbidden bridge and Swift boundary scans; Debug/Release `plutil`; `git diff --check` |
+| `a9853cbe2` | Added stable Foundation error translation and asynchronous main-actor observation delivery | Native Debug XCTest 20/20; Debug/Release builds; Objective-C public-header syntax; forbidden bridge and Swift boundary scans; Debug/Release `plutil`; `git diff --check` |
 
 ## Current architecture findings
 
@@ -637,4 +654,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then resume the active `M3-W4`. Do not begin M3-W5 or native visual implementation until error translation and main-actor delivery are verified and committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M3-W5`. Do not begin M3-W6 or native visual implementation until the complete bridge contract tests are verified and committed.
