@@ -1,8 +1,16 @@
 #import "PrismBridge.h"
 
+#include "FrontendFacade.h"
+
+#include <chrono>
 #include <cmath>
 #include <dispatch/dispatch.h>
+#include <exception>
 #include <memory>
+#include <mutex>
+#include <stdexcept>
+#include <utility>
+#include <vector>
 
 namespace {
 NSString *const kPrismBundleIdentifier = @"com.lloydME.Prism";
@@ -69,6 +77,123 @@ bool isNonEmptyString(NSString *value)
 NSString *nullableStringCopy(NSString *value)
 {
     return isNonEmptyString(value) ? [value copy] : nil;
+}
+
+bool isKnownInstanceChangeKind(PRInstanceChangeKind kind)
+{
+    switch (kind) {
+        case PRInstanceChangeKindAdded:
+        case PRInstanceChangeKindUpdated:
+        case PRInstanceChangeKindRemoved:
+            return true;
+    }
+    return false;
+}
+
+FrontendRuntimeDependencies defaultRuntimeDependencies()
+{
+    FrontendRuntimeDependencies dependencies;
+    dependencies.dispatch = [](FrontendRuntimeDependencies::Work work) {
+        if (work) {
+            work();
+        }
+    };
+    dependencies.now = [] {
+        return std::chrono::system_clock::now();
+    };
+    dependencies.cancelPendingWork = [] {};
+    dependencies.shutdown = [] {};
+    return dependencies;
+}
+
+std::filesystem::path dataRootPathForURL(NSURL *dataRootURL)
+{
+    const char *fileSystemRepresentation = dataRootURL.fileSystemRepresentation;
+    if (fileSystemRepresentation == nullptr || fileSystemRepresentation[0] == '\0') {
+        throw std::invalid_argument("Bridge data root must have a filesystem representation");
+    }
+    return std::filesystem::path(fileSystemRepresentation);
+}
+
+NSString *foundationStringFromUTF8(const std::string& value)
+{
+    if (value.empty()) {
+        return nil;
+    }
+
+    NSString *string = [NSString stringWithUTF8String:value.c_str()];
+    if (!string) {
+        throw std::invalid_argument("Facade returned invalid UTF-8 text");
+    }
+    return string;
+}
+
+PRInstanceSummary *summaryFromFacadeSnapshot(const FrontendInstanceSnapshot& snapshot)
+{
+    NSString *identifier = foundationStringFromUTF8(snapshot.id);
+    NSString *name = foundationStringFromUTF8(snapshot.name);
+    NSString *iconKey = foundationStringFromUTF8(snapshot.iconKey);
+    NSString *groupID = foundationStringFromUTF8(snapshot.groupId);
+    PRInstanceSummary *summary = [[PRInstanceSummary alloc] initWithIdentifier:identifier
+                                                                             name:name
+                                                                          iconKey:iconKey
+                                                                          groupID:groupID];
+    if (!summary) {
+        throw std::invalid_argument("Facade returned an invalid instance snapshot");
+    }
+    return summary;
+}
+
+NSArray<PRInstanceSummary *> *summariesFromFacadeSnapshots(const std::vector<FrontendInstanceSnapshot>& snapshots)
+{
+    NSMutableArray<PRInstanceSummary *> *converted = [NSMutableArray arrayWithCapacity:snapshots.size()];
+    for (const FrontendInstanceSnapshot& snapshot : snapshots) {
+        [converted addObject:summaryFromFacadeSnapshot(snapshot)];
+    }
+    return [converted copy];
+}
+
+PRInstanceChange *changeFromFacadeChange(const FrontendInstanceChange& change)
+{
+    NSString *identifier = foundationStringFromUTF8(change.instance.id);
+    if (!identifier) {
+        throw std::invalid_argument("Facade returned an instance change without an identifier");
+    }
+
+    PRInstanceChangeKind kind = PRInstanceChangeKindUpdated;
+    PRInstanceSummary *summary = nil;
+    switch (change.kind) {
+        case FrontendInstanceChangeKind::Added:
+            kind = PRInstanceChangeKindAdded;
+            summary = summaryFromFacadeSnapshot(change.instance);
+            break;
+        case FrontendInstanceChangeKind::Updated:
+            kind = PRInstanceChangeKindUpdated;
+            summary = summaryFromFacadeSnapshot(change.instance);
+            break;
+        case FrontendInstanceChangeKind::Removed:
+            kind = PRInstanceChangeKindRemoved;
+            break;
+        default:
+            throw std::invalid_argument("Facade returned an unknown instance change kind");
+    }
+
+    PRInstanceChange *converted = [[PRInstanceChange alloc] initWithKind:kind
+                                                                 identifier:identifier
+                                                                    summary:summary];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid instance change");
+    }
+    return converted;
+}
+
+NSArray<PRInstanceChange *> *changesFromFacadeChanges(const std::vector<FrontendInstanceChange>& changes)
+{
+    NSMutableArray<PRInstanceChange *> *converted = [NSMutableArray arrayWithCapacity:changes.size()];
+    for (const FrontendInstanceChange& change : changes) {
+        [converted addObject:changeFromFacadeChange(change)];
+    }
+    return [converted copy];
 }
 
 bool isKnownTaskState(PRTaskState state)
@@ -298,10 +423,11 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     PRBridgeObservationState *state = self;
     dispatch_async(dispatch_get_main_queue(), ^{
         [state->_lock lock];
-        if (!state->_cancelled && state->_handler) {
+        PRBridgeObservationDelivery handler = (!state->_cancelled && state->_handler) ? [state->_handler copy] : nil;
+        if (handler) {
             try {
                 @try {
-                    state->_handler(value);
+                    handler(value);
                 } @catch (NSException *) {
                 }
             } catch (...) {
@@ -314,6 +440,30 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 - (void)dealloc
 {
     [self cancel];
+}
+
+@end
+
+@interface PRBridgeArrayResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithValues:(NSArray *)values error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSArray *values;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeArrayResult
+
+- (instancetype)initWithValues:(NSArray *)values error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _values = [values copy] ?: @[];
+        _error = error;
+    }
+    return self;
 }
 
 @end
@@ -362,19 +512,35 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @interface PRPrismBridge () {
     std::unique_ptr<NativeFacadeLifecycle> _lifecycle;
+    std::unique_ptr<FrontendFacade> _facade;
+    std::mutex _lifecycleLock;
+    std::mutex _facadeLock;
+    dispatch_queue_t _backendQueue;
 }
 
 @property(nonatomic, copy, readwrite) NSURL *dataRootURL;
 @property(nonatomic, copy, readwrite, nullable) PRBridgeLifecycleHandler cancellationHandler;
 @property(nonatomic, copy, readwrite, nullable) PRBridgeLifecycleHandler shutdownHandler;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *instanceObservationStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *instanceChangeObservationStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *taskObservationStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *snapshotRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *changeRequestStates;
 @property(nonatomic, strong) NSLock *observationLock;
 
+- (nullable instancetype)initWithDataRootURL:(NSURL *)dataRootURL
+                          cancellationHandler:(nullable PRBridgeLifecycleHandler)cancellationHandler
+                             shutdownHandler:(nullable PRBridgeLifecycleHandler)shutdownHandler
+                   frontendRuntimeDependencies:(FrontendRuntimeDependencies)runtimeDependencies NS_DESIGNATED_INITIALIZER;
+- (BOOL)isLifecycleRunning;
 - (void)removeInstanceObservation:(PRBridgeObservationState *)observation;
+- (void)removeInstanceChangeObservation:(PRBridgeObservationState *)observation;
 - (void)removeTaskObservation:(PRBridgeObservationState *)observation;
+- (void)removeSnapshotRequest:(PRBridgeObservationState *)request;
+- (void)removeChangeRequest:(PRBridgeObservationState *)request;
 - (void)cancelAllObservations;
 - (void)publishInstanceSummary:(PRInstanceSummary *)summary;
+- (void)publishInstanceChange:(PRInstanceChange *)change;
 - (void)publishTaskStatus:(PRTaskStatus *)status;
 - (PRBridgeError *)bridgeErrorForFailureKind:(NSInteger)failureKind
                                diagnosticText:(nullable NSString *)diagnosticText
@@ -388,6 +554,14 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, copy, readwrite) NSString *name;
 @property(nonatomic, copy, readwrite, nullable) NSString *iconKey;
 @property(nonatomic, copy, readwrite, nullable) NSString *groupID;
+
+@end
+
+@interface PRInstanceChange ()
+
+@property(nonatomic, assign, readwrite) PRInstanceChangeKind kind;
+@property(nonatomic, copy, readwrite) NSString *identifier;
+@property(nonatomic, strong, readwrite, nullable) PRInstanceSummary *summary;
 
 @end
 
@@ -480,6 +654,34 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@implementation PRInstanceChange
+
+- (instancetype)initWithKind:(PRInstanceChangeKind)kind
+                   identifier:(NSString *)identifier
+                      summary:(PRInstanceSummary *)summary
+{
+    if (!isKnownInstanceChangeKind(kind) || !isNonEmptyString(identifier)) {
+        return nil;
+    }
+
+    if ((kind == PRInstanceChangeKindAdded || kind == PRInstanceChangeKindUpdated) && !summary) {
+        return nil;
+    }
+    if (summary && ![summary.identifier isEqualToString:identifier]) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.kind = kind;
+        self.identifier = [identifier copy];
+        self.summary = summary;
+    }
+    return self;
+}
+
+@end
+
 @implementation PRTaskStatus
 
 - (instancetype)initWithIdentifier:(NSString *)identifier
@@ -552,8 +754,26 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
                   cancellationHandler:(PRBridgeLifecycleHandler)cancellationHandler
                      shutdownHandler:(PRBridgeLifecycleHandler)shutdownHandler
 {
+    return [self initWithDataRootURL:dataRootURL
+                   cancellationHandler:cancellationHandler
+                      shutdownHandler:shutdownHandler
+            frontendRuntimeDependencies:defaultRuntimeDependencies()];
+}
+
+- (instancetype)initWithDataRootURL:(NSURL *)dataRootURL
+                  cancellationHandler:(PRBridgeLifecycleHandler)cancellationHandler
+                     shutdownHandler:(PRBridgeLifecycleHandler)shutdownHandler
+           frontendRuntimeDependencies:(FrontendRuntimeDependencies)runtimeDependencies
+{
     NSURL *normalizedURL = normalizedDataRootURL(dataRootURL);
     if (!normalizedURL) {
+        return nil;
+    }
+
+    std::unique_ptr<FrontendFacade> facade;
+    try {
+        facade = std::make_unique<FrontendFacade>(dataRootPathForURL(normalizedURL), std::move(runtimeDependencies));
+    } catch (...) {
         return nil;
     }
 
@@ -563,16 +783,27 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.cancellationHandler = cancellationHandler;
         self.shutdownHandler = shutdownHandler;
         self.instanceObservationStates = [NSMutableArray array];
+        self.instanceChangeObservationStates = [NSMutableArray array];
         self.taskObservationStates = [NSMutableArray array];
+        self.snapshotRequestStates = [NSMutableArray array];
+        self.changeRequestStates = [NSMutableArray array];
         self.observationLock = [[NSLock alloc] init];
         _lifecycle = std::make_unique<NativeFacadeLifecycle>();
+        _facade = std::move(facade);
+        _backendQueue = dispatch_queue_create("com.lloydME.PrismNative.frontend", DISPATCH_QUEUE_SERIAL);
     }
     return self;
 }
 
+- (BOOL)isLifecycleRunning
+{
+    std::lock_guard<std::mutex> lock(_lifecycleLock);
+    return _lifecycle && _lifecycle->state() == PRBridgeLifecycleStateRunning;
+}
+
 - (PRBridgeObservationToken *)observeInstanceSummariesWithHandler:(PRInstanceSummaryObservationHandler)handler
 {
-    if (!handler || !_lifecycle || _lifecycle->state() != PRBridgeLifecycleStateRunning) {
+    if (!handler || ![self isLifecycleRunning]) {
         return nil;
     }
 
@@ -586,7 +817,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     };
 
     [self.observationLock lock];
-    if (!_lifecycle || _lifecycle->state() != PRBridgeLifecycleStateRunning) {
+    if (![self isLifecycleRunning]) {
         [self.observationLock unlock];
         [observation cancel];
         return nil;
@@ -597,9 +828,36 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     return [[PRBridgeObservationToken alloc] initWithState:observation];
 }
 
+- (PRBridgeObservationToken *)observeInstanceChangesWithHandler:(PRInstanceChangeObservationHandler)handler
+{
+    if (!handler || ![self isLifecycleRunning]) {
+        return nil;
+    }
+
+    PRBridgeObservationState *observation = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        handler((PRInstanceChange *)value);
+    }];
+    __weak PRPrismBridge *weakBridge = self;
+    __weak PRBridgeObservationState *weakObservation = observation;
+    observation.removalHandler = ^{
+        [weakBridge removeInstanceChangeObservation:weakObservation];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning]) {
+        [self.observationLock unlock];
+        [observation cancel];
+        return nil;
+    }
+    [self.instanceChangeObservationStates addObject:observation];
+    [self.observationLock unlock];
+
+    return [[PRBridgeObservationToken alloc] initWithState:observation];
+}
+
 - (PRBridgeObservationToken *)observeTaskStatusWithHandler:(PRTaskStatusObservationHandler)handler
 {
-    if (!handler || !_lifecycle || _lifecycle->state() != PRBridgeLifecycleStateRunning) {
+    if (!handler || ![self isLifecycleRunning]) {
         return nil;
     }
 
@@ -613,7 +871,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     };
 
     [self.observationLock lock];
-    if (!_lifecycle || _lifecycle->state() != PRBridgeLifecycleStateRunning) {
+    if (![self isLifecycleRunning]) {
         [self.observationLock unlock];
         [observation cancel];
         return nil;
@@ -624,12 +882,182 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     return [[PRBridgeObservationToken alloc] initWithState:observation];
 }
 
+- (PRBridgeObservationToken *)loadInstanceSummariesWithCompletion:(PRInstanceSummariesCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeArrayResult *result = (PRBridgeArrayResult *)value;
+        [weakRequest cancel];
+        completion((NSArray<PRInstanceSummary *> *)result.values, result.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeSnapshotRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.snapshotRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        NSArray<PRInstanceSummary *> *summaries = @[];
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    summaries = summariesFromFacadeSnapshots(bridge->_facade->instanceSnapshots());
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid facade snapshot"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Facade operation cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Facade data unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown facade failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeArrayResult alloc] initWithValues:summaries error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
+- (PRBridgeObservationToken *)loadInstanceChangesWithCompletion:(PRInstanceChangesCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeArrayResult *result = (PRBridgeArrayResult *)value;
+        [weakRequest cancel];
+        completion((NSArray<PRInstanceChange *> *)result.values, result.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeChangeRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.changeRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        NSArray<PRInstanceChange *> *changes = @[];
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    changes = changesFromFacadeChanges(bridge->_facade->instanceChanges());
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid facade change"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Facade operation cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Facade data unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown facade failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled && !error) {
+            for (PRInstanceChange *change in changes) {
+                if (state.isCancelled) {
+                    break;
+                }
+                [bridge publishInstanceChange:change];
+            }
+        }
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeArrayResult alloc] initWithValues:changes error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
 - (void)removeInstanceObservation:(PRBridgeObservationState *)observation
 {
     [self.observationLock lock];
     NSUInteger index = [self.instanceObservationStates indexOfObjectIdenticalTo:observation];
     if (index != NSNotFound) {
         [self.instanceObservationStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
+- (void)removeInstanceChangeObservation:(PRBridgeObservationState *)observation
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.instanceChangeObservationStates indexOfObjectIdenticalTo:observation];
+    if (index != NSNotFound) {
+        [self.instanceChangeObservationStates removeObjectAtIndex:index];
     }
     [self.observationLock unlock];
 }
@@ -644,12 +1072,40 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.observationLock unlock];
 }
 
+- (void)removeSnapshotRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.snapshotRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.snapshotRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
+- (void)removeChangeRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.changeRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.changeRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
 - (void)cancelAllObservations
 {
     [self.observationLock lock];
-    NSArray<PRBridgeObservationState *> *observations = [self.instanceObservationStates arrayByAddingObjectsFromArray:self.taskObservationStates];
+    NSMutableArray<PRBridgeObservationState *> *observations = [NSMutableArray array];
+    [observations addObjectsFromArray:self.instanceObservationStates];
+    [observations addObjectsFromArray:self.instanceChangeObservationStates];
+    [observations addObjectsFromArray:self.taskObservationStates];
+    [observations addObjectsFromArray:self.snapshotRequestStates];
+    [observations addObjectsFromArray:self.changeRequestStates];
     [self.instanceObservationStates removeAllObjects];
+    [self.instanceChangeObservationStates removeAllObjects];
     [self.taskObservationStates removeAllObjects];
+    [self.snapshotRequestStates removeAllObjects];
+    [self.changeRequestStates removeAllObjects];
     [self.observationLock unlock];
 
     for (PRBridgeObservationState *observation in observations) {
@@ -668,6 +1124,20 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.observationLock unlock];
     for (PRBridgeObservationState *observation in observations) {
         [observation deliverOnMainActor:summary];
+    }
+}
+
+- (void)publishInstanceChange:(PRInstanceChange *)change
+{
+    if (!change) {
+        return;
+    }
+
+    [self.observationLock lock];
+    NSArray<PRBridgeObservationState *> *observations = [self.instanceChangeObservationStates copy];
+    [self.observationLock unlock];
+    for (PRBridgeObservationState *observation in observations) {
+        [observation deliverOnMainActor:change];
     }
 }
 
@@ -694,22 +1164,37 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 - (PRBridgeLifecycleState)lifecycleState
 {
+    std::lock_guard<std::mutex> lock(_lifecycleLock);
     return _lifecycle ? _lifecycle->state() : PRBridgeLifecycleStateStopped;
 }
 
 - (BOOL)shutdown
 {
-    if (!_lifecycle || !_lifecycle->beginShutdown()) {
-        return NO;
+    {
+        std::lock_guard<std::mutex> lock(_lifecycleLock);
+        if (!_lifecycle || !_lifecycle->beginShutdown()) {
+            return NO;
+        }
     }
 
     [self cancelAllObservations];
     invokeHandler(self.cancellationHandler);
+    {
+        std::lock_guard<std::mutex> lock(_facadeLock);
+        if (_facade) {
+            _facade->shutdown();
+        }
+    }
     invokeHandler(self.shutdownHandler);
 
     self.cancellationHandler = nil;
     self.shutdownHandler = nil;
-    _lifecycle->finishShutdown();
+    {
+        std::lock_guard<std::mutex> lock(_lifecycleLock);
+        if (_lifecycle) {
+            _lifecycle->finishShutdown();
+        }
+    }
     return YES;
 }
 

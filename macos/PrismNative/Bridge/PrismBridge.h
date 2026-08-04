@@ -31,7 +31,12 @@ typedef NS_ENUM(NSInteger, PRBridgeLifecycleState) {
 
 typedef void (^PRBridgeLifecycleHandler)(void);
 typedef void (^PRInstanceSummaryObservationHandler)(PRInstanceSummary *summary);
+typedef void (^PRInstanceChangeObservationHandler)(PRInstanceChange *change);
 typedef void (^PRTaskStatusObservationHandler)(PRTaskStatus *status);
+typedef void (^PRInstanceSummariesCompletionHandler)(NSArray<PRInstanceSummary *> *summaries,
+                                                      PRBridgeError * _Nullable error);
+typedef void (^PRInstanceChangesCompletionHandler)(NSArray<PRInstanceChange *> *changes,
+                                                    PRBridgeError * _Nullable error);
 
 /// Owns one bridge observation registration and cancels it when released.
 @interface PRBridgeObservationToken : NSObject
@@ -55,8 +60,7 @@ typedef void (^PRTaskStatusObservationHandler)(PRTaskStatus *status);
 - (instancetype)init NS_UNAVAILABLE;
 - (nullable instancetype)initWithDataRootURL:(NSURL *)dataRootURL
                           cancellationHandler:(nullable PRBridgeLifecycleHandler)cancellationHandler
-                             shutdownHandler:(nullable PRBridgeLifecycleHandler)shutdownHandler
-    NS_DESIGNATED_INITIALIZER;
+                             shutdownHandler:(nullable PRBridgeLifecycleHandler)shutdownHandler;
 
 @property(nonatomic, copy, readonly) NSURL *dataRootURL;
 @property(nonatomic, assign, readonly) PRBridgeLifecycleState lifecycleState;
@@ -68,7 +72,14 @@ typedef void (^PRTaskStatusObservationHandler)(PRTaskStatus *status);
 /// Registers a Foundation callback. Releasing or cancelling the returned token
 /// removes the callback; registration is rejected once shutdown begins.
 - (nullable PRBridgeObservationToken *)observeInstanceSummariesWithHandler:(PRInstanceSummaryObservationHandler)handler;
+- (nullable PRBridgeObservationToken *)observeInstanceChangesWithHandler:(PRInstanceChangeObservationHandler)handler;
 - (nullable PRBridgeObservationToken *)observeTaskStatusWithHandler:(PRTaskStatusObservationHandler)handler;
+
+/// Loads facade snapshots asynchronously. The completion runs on the main
+/// actor and the returned token cancels delivery if it is released or cancelled
+/// before the backend result is delivered.
+- (nullable PRBridgeObservationToken *)loadInstanceSummariesWithCompletion:(PRInstanceSummariesCompletionHandler)completion;
+- (nullable PRBridgeObservationToken *)loadInstanceChangesWithCompletion:(PRInstanceChangesCompletionHandler)completion;
 
 @end
 

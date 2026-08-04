@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 3, Objective-C++ bridge foundation
 
-Active work unit: none (M3-W5 complete; activate M3-W6 at next round start)
+Active work unit: M3-W6
 
-Next ready work unit: M3-W6
+Next ready work unit: none (M3-W6 active)
 
 ## Safety baseline
 
@@ -621,7 +621,7 @@ Next after completion: `M3-W6`, link the QWidget-free `FrontendFacade` output in
 
 ### M3-W6: Link the QWidget-free facade into the native bridge
 
-Status: ready
+Status: active
 
 Outcome: link the existing `Launcher_frontend` output into the native Xcode target and convert real facade snapshots, events, lifecycle, and errors through Objective-C++ without copying launcher implementation files into the app target.
 
@@ -631,9 +631,9 @@ Required evidence: isolated CMake facade build and relevant C++ tests, Xcode lin
 
 HIG decision: none, this unit establishes backend linkage and bridge conversion without controls or rendering.
 
-Commit: not created.
+Commit: not created; implementation in progress.
 
-Next after completion: `M4-W1`, define native app commands and keyboard shortcuts before toolbar duplication.
+Resume: Continue the active M3-W6 implementation; after verification record the exact implementation and progress-sync commits, then activate only M4-W1.
 
 ## Completed commit index
 
@@ -693,4 +693,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M3-W6`. Do not begin M4-W1 or native visual implementation until real `FrontendFacade` linkage and bridge conversion are verified and committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then resume the active `M3-W6`. Do not begin M4-W1 or native visual implementation until real `FrontendFacade` linkage and bridge conversion are verified and committed.

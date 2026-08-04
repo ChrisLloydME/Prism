@@ -16,6 +16,7 @@
 		A10000000000000000000007 /* PrismNativeInfrastructureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000A /* PrismNativeInfrastructureTests.swift */; };
 		A10000000000000000000008 /* PrismBridgeObservationTests.mm in Tests */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000C /* PrismBridgeObservationTests.mm */; };
 		A10000000000000000000009 /* PrismBridgeContractTests.mm in Tests */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000E /* PrismBridgeContractTests.mm */; };
+		A1000000000000000000000A /* PrismBridgeFacadeIntegrationTests.mm in Tests */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000F /* PrismBridgeFacadeIntegrationTests.mm */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -33,6 +34,7 @@
 		A2000000000000000000000C /* PrismBridgeObservationTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = PrismBridgeObservationTests.mm; sourceTree = "<group>"; };
 		A2000000000000000000000D /* PrismBridgeErrors.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PrismBridgeErrors.h; sourceTree = "<group>"; };
 		A2000000000000000000000E /* PrismBridgeContractTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = PrismBridgeContractTests.mm; sourceTree = "<group>"; };
+		A2000000000000000000000F /* PrismBridgeFacadeIntegrationTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = PrismBridgeFacadeIntegrationTests.mm; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -109,6 +111,7 @@
 				A2000000000000000000000A /* PrismNativeInfrastructureTests.swift */,
 				A2000000000000000000000C /* PrismBridgeObservationTests.mm */,
 				A2000000000000000000000E /* PrismBridgeContractTests.mm */,
+				A2000000000000000000000F /* PrismBridgeFacadeIntegrationTests.mm */,
 			);
 			path = PrismNativeTests;
 			sourceTree = "<group>";
@@ -207,6 +210,7 @@
 				A10000000000000000000007 /* PrismNativeInfrastructureTests.swift in Sources */,
 				A10000000000000000000008 /* PrismBridgeObservationTests.mm in Tests */,
 				A10000000000000000000009 /* PrismBridgeContractTests.mm in Tests */,
+				A1000000000000000000000A /* PrismBridgeFacadeIntegrationTests.mm in Tests */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -238,7 +242,13 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
+				CLANG_CXX_LIBRARY = "libc++";
+				HEADER_SEARCH_PATHS = ("$(inherited)", "$(SRCROOT)/../launcher/frontend");
+				LIBRARY_SEARCH_PATHS = ("$(inherited)", "$(PRISM_FRONTEND_LIBRARY_DIR)");
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				OTHER_LDFLAGS = ("$(inherited)", "-lLauncher_frontend");
+				PRISM_FRONTEND_LIBRARY_DIR = "$(SRCROOT)/../.deriveddata-prism-native-backend";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 6.0;
 			};
@@ -249,7 +259,13 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
+				CLANG_CXX_LIBRARY = "libc++";
+				HEADER_SEARCH_PATHS = ("$(inherited)", "$(SRCROOT)/../launcher/frontend");
+				LIBRARY_SEARCH_PATHS = ("$(inherited)", "$(PRISM_FRONTEND_LIBRARY_DIR)");
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				OTHER_LDFLAGS = ("$(inherited)", "-lLauncher_frontend");
+				PRISM_FRONTEND_LIBRARY_DIR = "$(SRCROOT)/../.deriveddata-prism-native-backend";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 6.0;
 			};

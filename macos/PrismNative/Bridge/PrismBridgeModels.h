@@ -17,6 +17,12 @@ typedef NS_ENUM(NSInteger, PRTaskProgressKind) {
     PRTaskProgressKindDeterminate,
 };
 
+typedef NS_ENUM(NSInteger, PRInstanceChangeKind) {
+    PRInstanceChangeKindAdded = 0,
+    PRInstanceChangeKindUpdated,
+    PRInstanceChangeKindRemoved,
+};
+
 /// Immutable instance metadata that is safe to pass into Swift state.
 @interface PRInstanceSummary : NSObject
 
@@ -48,6 +54,20 @@ typedef NS_ENUM(NSInteger, PRTaskProgressKind) {
 @property(nonatomic, assign, readonly) PRTaskProgressKind progressKind;
 @property(nonatomic, assign, readonly) double progressFraction;
 @property(nonatomic, assign, readonly) BOOL cancellationAllowed;
+
+@end
+
+/// Immutable instance change data with an optional summary for removals.
+@interface PRInstanceChange : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithKind:(PRInstanceChangeKind)kind
+                           identifier:(NSString *)identifier
+                              summary:(nullable PRInstanceSummary *)summary NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, assign, readonly) PRInstanceChangeKind kind;
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, strong, readonly, nullable) PRInstanceSummary *summary;
 
 @end
 
