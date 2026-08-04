@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 3, Objective-C++ bridge foundation
 
-Active work unit: none (M2-W7 complete; activate M3-W1 at next round start)
+Active work unit: none (M3-W1 complete; activate M3-W2 at next round start)
 
-Next ready work unit: M3-W1
+Next ready work unit: M3-W2
 
 ## Safety baseline
 
@@ -441,9 +441,9 @@ Next after completion: `M3-W1`, replace the identity-only bridge composition wit
 
 ### M3-W1: Lifecycle-owning Objective-C++ bridge root
 
-Status: ready
+Status: complete
 
-Outcome: replace the identity-only bridge composition with an Objective-C++ root that owns the native facade lifecycle against an injected temporary data root.
+Outcome: replace the identity-only bridge composition with `PRPrismBridge`, an Objective-C++ root that owns a private native-facade lifecycle state and explicit cancellation/shutdown callback lifetime against an injected temporary data root.
 
 Scope: `macos/PrismNative/Bridge`, directly related native tests and Xcode project files, and this progress file only. Do not access upstream data, real credentials, Keychain, or production services; do not add visual surfaces yet.
 
@@ -451,9 +451,44 @@ Required evidence: Foundation-only public bridge API, explicit fixture-root init
 
 HIG decision: none, this unit is bridge lifecycle infrastructure without controls or rendering.
 
-Commit: not created.
+Files changed: `macos/PrismNative/Bridge/PrismBridge.h`, `macos/PrismNative/Bridge/PrismBridge.mm`, `macos/PrismNativeTests/PrismNativeInfrastructureTests.swift`, `macos/PrismNativeTests/PrismNativeTestSupport.swift`, and this progress file. The Xcode project already compiled `PrismBridge.mm` for both targets, so no project-file change was required.
+
+Design: add a Foundation-only `PRBridgeLifecycleState` enum, an explicit file-URL initializer, and nullable Foundation block handlers. The private `.mm` implementation normalizes the URL without filesystem discovery or mutation, stores a C++ lifecycle state object behind the Objective-C++ boundary, transitions `Running` → `ShuttingDown` → `Stopped`, invokes cancellation before shutdown, clears both handlers, makes repeated shutdown a no-op, and performs the same shutdown from ARC deinitialization. No QWidget, QDialog, Qt model, C++ value, or ownership type crosses the public header.
+
+Tests and exact commands:
+
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed; 9 tests, 0 failures.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO build` — passed.
+- `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -fsyntax-only -x objective-c -target arm64-apple-macos14.0 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk macos/PrismNative/Bridge/PrismBridge.h` — passed; the public header compiles as Objective-C without C++ mode.
+- `if rg -n "QWidget|QDialog|QObject|QString|QVariant|QModelIndex|QList|QMap|QHash|QUrl|QAbstractItemModel|QAbstractListModel|QAbstractTableModel|Q_OBJECT|std::|shared_ptr|unique_ptr|reinterpret_cast|static_cast|dynamic_cast|template<|namespace " macos/PrismNative/Bridge --glob '*.h'; then exit 1; else exit 0; fi` — passed with no forbidden public-header matches.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native-release/Build/Products/Release/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `git diff --check` — passed.
+
+Result summary: fixture tests construct the root only from a temporary URL, preserve a marker file, reject non-file and relative roots, and prove the fixture is outside the upstream `PrismLauncher` namespace. Cancellation and shutdown handlers execute once in order; repeated shutdown is rejected; the lifecycle reports `ShuttingDown` to the shutdown callback; ARC deinitialization performs the same shutdown; and a weak observer is released after callbacks are cleared. Swift and Objective-C++ compile through the existing native targets. No application or launcher executable was launched, and no upstream application, Application Support data, account, Keychain, production API, signing, installation, or publishing state was accessed.
+
+Risk: this unit owns the bridge lifecycle state and callback ports but does not yet link or construct the real `FrontendFacade`; backend linking is reserved for M3-W6. Observer tokens, main-actor delivery, Foundation instance/task DTOs, and real fixture snapshots remain later M3 contracts. The existing AppIntents metadata warning and prior non-blocking CMake warnings remain unchanged. No CMake command was required because this unit does not modify launcher backend sources or build configuration.
+
+Commit: pending implementation commit hash; record it in the follow-up progress synchronization commit.
 
 Next after completion: `M3-W2`, add immutable Foundation DTOs for instance summaries and task status.
+
+### M3-W2: Immutable Foundation instance and task DTOs
+
+Status: ready
+
+Outcome: add immutable Foundation value objects for instance summaries and task status so Swift can receive stable bridge data without Qt models or C++ ownership.
+
+Scope: `macos/PrismNative/Bridge`, directly related native tests and Xcode project files, and this progress file only. Do not add visual surfaces, real backend credentials, live authentication, or production data access.
+
+Required evidence: Objective-C header compile, immutable Foundation properties, stable identifiers and task progress/error values, fixture conversion tests, no Qt/C++ public types, native Debug/Release builds, native tests, Bundle ID checks, and `git diff --check`.
+
+HIG decision: none, this unit defines bridge values without controls or rendering.
+
+Commit: not created.
+
+Next after completion: `M3-W3`, add explicitly cancellable observation tokens and callback registration.
 
 ## Completed commit index
 
@@ -489,6 +524,7 @@ Next after completion: `M3-W2`, add immutable Foundation DTOs for instance summa
 13. M2-W5 makes lifecycle ownership explicit: cancellation and release callbacks run once during `ShuttingDown`, injected ports are cleared at `Stopped`, and post-stop facade work is rejected without touching loaders.
 14. M2-W6 makes the facade public-header boundary executable: the current header list is compiled by a standalone no-link target, while forbidden Qt/UI tokens remain absent from the public surface.
 15. M2-W7 protects the legacy Qt composition with configure-time link assertions: `Prism` continues through `Launcher_logic`, which retains Qt Widgets, and neither target links `Launcher_frontend`.
+16. M3-W1 adds an explicit normalized fixture-root `PRPrismBridge`; its private Objective-C++ implementation owns lifecycle state and callback lifetime, while the real `FrontendFacade` link remains deliberately deferred to M3-W6.
 
 ## Custom rendering exceptions
 
@@ -502,4 +538,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M3-W1`. Do not begin M3-W2 or native visual implementation until the lifecycle-owning bridge root is committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M3-W2`. Do not begin M3-W3 or native visual implementation until the immutable Foundation DTO contract is verified and committed.

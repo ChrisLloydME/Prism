@@ -92,6 +92,10 @@ final class PrismTestCallbackRecorder<Value>: @unchecked Sendable {
     }
 }
 
+final class PrismWeakBridgeReference: @unchecked Sendable {
+    weak var bridge: PRPrismBridge?
+}
+
 struct PrismBridgeHeaderScanner {
     static let forbiddenTokens = [
         "QWidget",
