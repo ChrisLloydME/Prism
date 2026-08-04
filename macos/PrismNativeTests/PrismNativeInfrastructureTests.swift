@@ -138,4 +138,128 @@ final class PrismNativeInfrastructureTests: XCTestCase {
 
         XCTAssertEqual(callbackRecorder.values, ["cancel", "shutdown"])
     }
+
+    func testInstanceSummaryDTOCopiesFixtureValuesAndNormalizesOptionalMetadata() throws {
+        let fixtureRoot = try PrismTemporaryFixtureRoot()
+        let fixtureDirectory = try fixtureRoot.makeDirectory(relativePath: "instances/fixture-instance")
+        let fixtureMarker = try fixtureRoot.makeFile(relativePath: "instances/fixture-instance/metadata.json", contents: "{}")
+        let mutableIdentifier = NSMutableString(string: fixtureDirectory.lastPathComponent)
+        let mutableName = NSMutableString(string: "Fixture Instance")
+        let mutableIconKey = NSMutableString(string: "icon.fixture")
+        let mutableGroupID = NSMutableString(string: "group.fixture")
+
+        let summary = try XCTUnwrap(
+            PRInstanceSummary(
+                identifier: mutableIdentifier as String,
+                name: mutableName as String,
+                iconKey: mutableIconKey as String,
+                groupID: mutableGroupID as String
+            )
+        )
+
+        mutableIdentifier.append(".mutated")
+        mutableName.append(" Mutated")
+        mutableIconKey.append(".mutated")
+        mutableGroupID.append(".mutated")
+
+        XCTAssertEqual(summary.identifier, "fixture-instance")
+        XCTAssertEqual(summary.name, "Fixture Instance")
+        XCTAssertEqual(summary.iconKey, "icon.fixture")
+        XCTAssertEqual(summary.groupID, "group.fixture")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixtureMarker.path))
+
+        let normalizedSummary = try XCTUnwrap(
+            PRInstanceSummary(identifier: "fixture-instance", name: "Fixture Instance", iconKey: "", groupID: "")
+        )
+        XCTAssertNil(normalizedSummary.iconKey)
+        XCTAssertNil(normalizedSummary.groupID)
+        XCTAssertNil(PRInstanceSummary(identifier: "", name: "Fixture Instance", iconKey: nil, groupID: nil))
+        XCTAssertNil(PRInstanceSummary(identifier: "fixture-instance", name: "", iconKey: nil, groupID: nil))
+    }
+
+    func testTaskStatusDTOValidatesProgressAndCancellationMetadata() throws {
+        let running = try XCTUnwrap(
+            PRTaskStatus(
+                identifier: "task.fixture",
+                state: .running,
+                progressKind: .determinate,
+                progressFraction: 0.5,
+                cancellationAllowed: true
+            )
+        )
+        XCTAssertEqual(running.identifier, "task.fixture")
+        XCTAssertEqual(running.state, .running)
+        XCTAssertEqual(running.progressKind, .determinate)
+        XCTAssertEqual(running.progressFraction, 0.5)
+        XCTAssertTrue(running.cancellationAllowed)
+
+        let waiting = try XCTUnwrap(
+            PRTaskStatus(
+                identifier: "task.fixture.waiting",
+                state: .cancelling,
+                progressKind: .indeterminate,
+                progressFraction: 0,
+                cancellationAllowed: false
+            )
+        )
+        XCTAssertEqual(waiting.state, .cancelling)
+        XCTAssertEqual(waiting.progressKind, .indeterminate)
+        XCTAssertEqual(waiting.progressFraction, 0)
+        XCTAssertFalse(waiting.cancellationAllowed)
+
+        XCTAssertNil(
+            PRTaskStatus(
+                identifier: "",
+                state: .queued,
+                progressKind: .none,
+                progressFraction: 0,
+                cancellationAllowed: false
+            )
+        )
+        XCTAssertNil(
+            PRTaskStatus(
+                identifier: "task.fixture",
+                state: PRTaskState(rawValue: 99)!,
+                progressKind: .none,
+                progressFraction: 0,
+                cancellationAllowed: false
+            )
+        )
+        XCTAssertNil(
+            PRTaskStatus(
+                identifier: "task.fixture",
+                state: .running,
+                progressKind: PRTaskProgressKind(rawValue: 99)!,
+                progressFraction: 0,
+                cancellationAllowed: false
+            )
+        )
+        XCTAssertNil(
+            PRTaskStatus(
+                identifier: "task.fixture",
+                state: .running,
+                progressKind: .determinate,
+                progressFraction: 1.1,
+                cancellationAllowed: true
+            )
+        )
+        XCTAssertNil(
+            PRTaskStatus(
+                identifier: "task.fixture",
+                state: .running,
+                progressKind: .determinate,
+                progressFraction: -0.1,
+                cancellationAllowed: true
+            )
+        )
+        XCTAssertNil(
+            PRTaskStatus(
+                identifier: "task.fixture",
+                state: .running,
+                progressKind: .indeterminate,
+                progressFraction: 0.25,
+                cancellationAllowed: true
+            )
+        )
+    }
 }

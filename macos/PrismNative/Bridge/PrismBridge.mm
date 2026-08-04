@@ -1,5 +1,6 @@
 #import "PrismBridge.h"
 
+#include <cmath>
 #include <memory>
 
 namespace {
@@ -58,6 +59,53 @@ void invokeHandler(PRBridgeLifecycleHandler handler) noexcept
     } catch (...) {
     }
 }
+
+bool isNonEmptyString(NSString *value)
+{
+    return [value isKindOfClass:NSString.class] && value.length > 0;
+}
+
+NSString *nullableStringCopy(NSString *value)
+{
+    return isNonEmptyString(value) ? [value copy] : nil;
+}
+
+bool isKnownTaskState(PRTaskState state)
+{
+    switch (state) {
+        case PRTaskStateQueued:
+        case PRTaskStateRunning:
+        case PRTaskStateCancelling:
+        case PRTaskStateSucceeded:
+        case PRTaskStateFailed:
+        case PRTaskStateCancelled:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownTaskProgressKind(PRTaskProgressKind progressKind)
+{
+    switch (progressKind) {
+        case PRTaskProgressKindNone:
+        case PRTaskProgressKindIndeterminate:
+        case PRTaskProgressKindDeterminate:
+            return true;
+    }
+    return false;
+}
+
+bool isValidProgress(PRTaskProgressKind progressKind, double progressFraction)
+{
+    if (!std::isfinite(progressFraction) || !isKnownTaskProgressKind(progressKind)) {
+        return false;
+    }
+
+    if (progressKind == PRTaskProgressKindDeterminate) {
+        return progressFraction >= 0.0 && progressFraction <= 1.0;
+    }
+    return progressFraction == 0.0;
+}
 }
 
 @interface PRApplicationIdentity ()
@@ -74,6 +122,25 @@ void invokeHandler(PRBridgeLifecycleHandler handler) noexcept
 @property(nonatomic, copy, readwrite) NSURL *dataRootURL;
 @property(nonatomic, copy, readwrite, nullable) PRBridgeLifecycleHandler cancellationHandler;
 @property(nonatomic, copy, readwrite, nullable) PRBridgeLifecycleHandler shutdownHandler;
+
+@end
+
+@interface PRInstanceSummary ()
+
+@property(nonatomic, copy, readwrite) NSString *identifier;
+@property(nonatomic, copy, readwrite) NSString *name;
+@property(nonatomic, copy, readwrite, nullable) NSString *iconKey;
+@property(nonatomic, copy, readwrite, nullable) NSString *groupID;
+
+@end
+
+@interface PRTaskStatus ()
+
+@property(nonatomic, copy, readwrite) NSString *identifier;
+@property(nonatomic, assign, readwrite) PRTaskState state;
+@property(nonatomic, assign, readwrite) PRTaskProgressKind progressKind;
+@property(nonatomic, assign, readwrite) double progressFraction;
+@property(nonatomic, assign, readwrite) BOOL cancellationAllowed;
 
 @end
 
@@ -116,6 +183,54 @@ void invokeHandler(PRBridgeLifecycleHandler handler) noexcept
 - (NSString *)applicationName
 {
     return kPrismApplicationName;
+}
+
+@end
+
+@implementation PRInstanceSummary
+
+- (instancetype)initWithIdentifier:(NSString *)identifier
+                               name:(NSString *)name
+                            iconKey:(NSString *)iconKey
+                            groupID:(NSString *)groupID
+{
+    if (!isNonEmptyString(identifier) || !isNonEmptyString(name)) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.identifier = [identifier copy];
+        self.name = [name copy];
+        self.iconKey = nullableStringCopy(iconKey);
+        self.groupID = nullableStringCopy(groupID);
+    }
+    return self;
+}
+
+@end
+
+@implementation PRTaskStatus
+
+- (instancetype)initWithIdentifier:(NSString *)identifier
+                              state:(PRTaskState)state
+                       progressKind:(PRTaskProgressKind)progressKind
+                   progressFraction:(double)progressFraction
+                cancellationAllowed:(BOOL)cancellationAllowed
+{
+    if (!isNonEmptyString(identifier) || !isKnownTaskState(state) || !isValidProgress(progressKind, progressFraction)) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.identifier = [identifier copy];
+        self.state = state;
+        self.progressKind = progressKind;
+        self.progressFraction = progressFraction;
+        self.cancellationAllowed = cancellationAllowed;
+    }
+    return self;
 }
 
 @end
