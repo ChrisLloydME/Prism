@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 5, Launch, stop, tasks, and logs
 
-Active work unit: M5-W1
+Active work unit: M5-W2
 
-Next ready work unit: none (M5-W1 active)
+Next ready work unit: none (M5-W2 active)
 
 ## Safety baseline
 
@@ -31,8 +31,8 @@ Next ready work unit: none (M5-W1 active)
 | 1. Contracts, tests, and inventory | complete | Native contract tests, complete feature ledger, and automated bridge/fixture infrastructure |
 | 2. QWidget-free backend facade | complete | Facade lists fixture instances without UI headers |
 | 3. Objective-C++ bridge foundation | complete | Swift receives real fixture snapshots and events |
-| 4. Native shell and instance library | active | System-native shell state and commands are tested |
-| 5. Launch, tasks, and logs | queued | Deterministic launch-task contracts are tested |
+| 4. Native shell and instance library | complete | System-native shell state and commands are tested |
+| 5. Launch, tasks, and logs | active | Deterministic launch-task contracts are tested |
 | 6. Instance detail and editing | queued | Instance management surfaces have native contracts |
 | 7. Settings, Java, and accounts | queued | Settings and fake-account workflows are covered |
 | 8. Creation, discovery, and installation | queued | All supported providers and import flows are covered |
@@ -945,9 +945,9 @@ Next after completion: `M5-W1`, add fixture-controlled launch and stop facade co
 
 ### M5-W1: Fixture-controlled launch and stop facade commands
 
-Status: active
+Status: complete
 
-Outcome: add launch and stop command contracts keyed only by stable instance identifiers across the QWidget-free facade, Objective-C++ bridge, and native command seam. The implementation and verification are complete; the implementation commit is pending the commit gate below.
+Outcome: add launch and stop command contracts keyed only by stable instance identifiers across the QWidget-free facade, Objective-C++ bridge, and native command seam. The implementation and verification are complete in commit `fd58b4b40`.
 
 Scope: directly required `launcher/frontend`, `macos/PrismNative/Bridge`, native command/state tests, and this progress file only; no Qt UI composition, other platform behavior, production process, credentials, or real data. Preserve the existing legacy Qt launch path and keep all new runtime ports explicit and injectable.
 
@@ -983,9 +983,29 @@ Result summary: fixture C++ tests cover success, unknown IDs, explicit rejection
 
 Risk: launch and stop callback ports are still fixture adapters; they do not yet connect `LaunchController`, task progress, cancellation, process state, or account selection. The default bridge composition has no command ports and therefore reports explicit rejection. The universal legacy Qt link remains environment-limited by pre-existing arm64-only third-party artifacts, while the arm64 Qt target and native universal target both build. M5-W2 must add task progress, subtasks, cancellation, and terminal result DTOs.
 
-Commit: not created; implementation and verification are complete, awaiting the staged commit gate.
+Commit: `fd58b4b40`
 
 Next after completion: `M5-W2`, add task progress, subtasks, cancellation, and terminal result DTOs.
+
+### M5-W2: Task progress, subtasks, cancellation, and terminal result DTOs
+
+Status: active
+
+Outcome: activated after M5-W1. Add deterministic task-state, subtask, cancellation, and terminal-result contracts across the QWidget-free facade, Objective-C++ bridge, and native state seam without starting processes or accessing production task data.
+
+Scope: directly required `launcher/frontend`, `macos/PrismNative/Bridge`, native task/state tests, and this progress file only. Preserve explicit fixture roots and injected runtime ports; do not change Qt UI composition, other platforms, authentication, or process ownership.
+
+Required evidence: immutable task snapshots, stable task and subtask identifiers, determinate and indeterminate progress, cancellation eligibility and idempotence, terminal success/failure/cancelled results, error and recovery metadata, callback delivery and shutdown behavior, smallest relevant CMake build and C++ tests, native Debug/Release builds, full native tests, Bundle ID checks, bridge/Swift boundary scans, localization/accessibility checks, and `git diff --check`.
+
+HIG decision: represent task state with native `ProgressView`/standard progress semantics and existing command/state surfaces; no custom progress control, drawing, or process UI is introduced. Cancellation remains an explicit command capability and must be exposed through the shared command model and standard button/menu affordances in later feature work.
+
+Architecture: keep task and subtask data immutable and Foundation-only at the bridge boundary. Objective-C++ owns C++ task lifetime, cancellation tokens, conversion, error translation, and main-actor delivery; Swift receives state and intents only. The fixture backend must make every transition deterministic and must not connect to `LaunchController`, real processes, accounts, or upstream data until a later work unit explicitly adds the required contract.
+
+Files changed: not started; activation record only.
+
+Commit: pending implementation.
+
+Next after completion: `M5-W3`, map task state to `ProgressView` or `NSProgressIndicator` semantics.
 
 ## Completed commit index
 
@@ -1016,6 +1036,8 @@ Next after completion: `M5-W2`, add task progress, subtasks, cancellation, and t
 | `d5249dd8a` | Routed native toolbar and detail context-menu actions through the shared command model and system command button | Focused command tests 7/7; native Debug XCTest 51/51; Debug/Release builds; toolbar/context-menu, shortcut/accessibility, localization-shape, and forbidden API scans; Debug/Release `plutil`; `git diff --check` |
 | `b7d53cf84` | Hardened cross-surface accessibility identity, localized values, enabled-state, shortcut, and List selection/focus contracts | Focused command and shell tests 21/21; native Debug XCTest 53/53; Debug/Release builds; native API, localization-shape, boundary, no-drawing, Debug/Release `plutil`, and `git diff --check` validations |
 | `33676df3f` | Added bounded native instance artwork decoding, deterministic LRU caching, invalidation, and SwiftUI content presentation | Focused artwork/Shell tests 17/17; native Debug XCTest 57/57; Debug/Release builds; artwork/localization, boundary, no-drawing, upstream-data, Debug/Release `plutil`, and `git diff --check` validations |
+
+| `fd58b4b40` | Added fixture-controlled launch and stop commands with stable identifiers, explicit outcomes, cancellation, and main-actor bridge delivery | CMake facade tests 2/2; focused native command/bridge tests 15/15; full native tests 59/59; arm64 legacy Prism target; Debug/Release builds; public boundary, command, localization-shape, Bundle ID, and `git diff --check` validations |
 
 ## Current architecture findings
 
@@ -1048,6 +1070,7 @@ Next after completion: `M5-W2`, add task progress, subtasks, cancellation, and t
 27. M4-W5 routes app menus, toolbar buttons, and the detail context menu through one `PrismCommandButton`/`PrismCommandModel` invocation path; shortcut mapping is compiled in the shared command-model source so app and test targets have the same contract.
 28. M4-W6 gives every shared command a stable accessibility identifier and validates it across menus, toolbar, and context-menu surfaces; sidebar rows use localized values and typed `List(selection:)`/`.tag` semantics so system accessibility roles and keyboard focus remain native rather than manually recreated.
 29. M4-W7 keeps instance artwork behind an explicit file-URL input and a main-actor deterministic LRU store with 32-entry/8 MiB defaults; SwiftUI `Image` owns presentation and accessibility, while bridge icon-key resolution and live row integration remain downstream of this isolated content seam.
+30. M5-W1 adds explicit launch and stop callback ports with stable-ID result outcomes; the Objective-C++ bridge copies Foundation identifiers, serializes facade calls, owns cancellation and main-actor delivery, and the Swift command model preserves a generic-handler compatibility path. The default composition intentionally rejects commands until task/process wiring is introduced.
 
 ## Custom rendering exceptions
 
@@ -1061,4 +1084,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M4-W6`. Do not begin M4-W7 or later native visual implementation until cross-surface accessibility, help, enabled-state, focus, keyboard, and structural tests are verified and committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M5-W2`. Do not begin M5-W3 or later task/progress implementation until immutable task and subtask DTOs, cancellation, terminal results, and their bridge/facade tests are verified and committed.
