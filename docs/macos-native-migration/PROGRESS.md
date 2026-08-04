@@ -278,7 +278,7 @@ HIG decision: this is a backend construction unit, so it adds no SwiftUI/AppKit 
 
 Risk: root validation is absolute and lexical, not a symlink-resolving containment policy; later mutation units must assert every write is inside the injected fixture root. The dispatch and clock ports are seams only; backend service initialization and instance behavior remain future work. Existing AutoUIC and missing `clang-format` warnings remain unchanged.
 
-Commit: to be recorded after this work-unit commit.
+Commit: `6d1b08f3b`
 
 Next after completion: `M2-W4`, add instance snapshot and instance-change event contracts.
 
@@ -309,6 +309,7 @@ Next after completion: `M2-W5`, add lifecycle and shutdown tests around the faca
 | `5a9e80e3e` | Enforced public bridge and isolated fixture contracts | Debug and Release builds; 6 native tests; Debug/Release `plutil`; `git diff --check` |
 | `19b45a465` | Classified launcher source ownership without changing Qt composition | Isolated CMake configure/build; Launcher_logic and selected C++ tests; existing Prism target link; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; `git diff --check` |
 | `e87f35fc0` | Added the independent QWidget-free frontend facade target and fixture contract | Facade target and contract test; existing Prism target; selected C++ tests 5/5; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; public-header scan; `git diff --check` |
+| `6d1b08f3b` | Required explicit data-root and runtime dependency inputs for the facade | Facade fixture contract; selected C++ tests 5/5; existing Prism target; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; public-header scan; `git diff --check` |
 
 ## Current architecture findings
 
