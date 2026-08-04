@@ -354,7 +354,7 @@ Result summary: lifecycle callbacks are explicit runtime ports, run at most once
 
 Risk: the lifecycle boundary is a synchronous callback contract and does not yet own real backend observers, task workers, or launch processes; those remain later facade units. Existing AutoUIC and missing `clang-format` warnings remain unchanged.
 
-Commit: to be recorded after this work-unit commit.
+Commit: `4b466150b`
 
 Next after completion: `M2-W6`, ensure all facade public headers compile without `launcher/ui`.
 
@@ -387,6 +387,7 @@ Next after completion: `M2-W7`, preserve the existing Qt executable link and beh
 | `e87f35fc0` | Added the independent QWidget-free frontend facade target and fixture contract | Facade target and contract test; existing Prism target; selected C++ tests 5/5; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; public-header scan; `git diff --check` |
 | `6d1b08f3b` | Required explicit data-root and runtime dependency inputs for the facade | Facade fixture contract; selected C++ tests 5/5; existing Prism target; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; public-header scan; `git diff --check` |
 | `d19b2144f` | Added immutable instance snapshots and Added/Updated/Removed change contracts | Empty and fixture facade contracts; selected C++ tests 5/5; existing Prism target; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; public-header scan; `git diff --check` |
+| `4b466150b` | Added explicit facade lifecycle, shutdown, cancellation, and resource-release contracts | Lifecycle fixture contract 1/1; selected C++ tests 5/5; existing Prism target; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; public-header scan; `git diff --check` |
 
 ## Current architecture findings
 
