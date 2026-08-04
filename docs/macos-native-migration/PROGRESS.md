@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 4, Native application shell and instance library
 
-Active work unit: M4-W4
+Active work unit: none (M4-W4 complete; activate M4-W5 at next round start)
 
-Next ready work unit: none (M4-W4 active)
+Next ready work unit: M4-W5
 
 ## Safety baseline
 
@@ -772,7 +772,7 @@ Next after completion: `M4-W4`, implement loading, empty, failed, and content st
 
 ### M4-W4: Loading, empty, failed, and content states
 
-Status: active
+Status: complete
 
 Outcome: complete the shell's explicit detail-state presentation for loading, empty, failed, and content conditions with standard SwiftUI states and deterministic recovery metadata.
 
@@ -808,9 +808,25 @@ Result summary: the focused and full native suites cover all four detail states,
 
 Risk: the default shell still has no real facade-backed state and its retry handler remains injected until a later store/facade unit supplies real loading and recovery work. No localization resource has been added yet. The next ready unit adds contextual menus and toolbar commands through the shared command model.
 
-Commit: pending implementation commit.
+Commit: `19490eac9`
 
 Next after completion: `M4-W5`, route contextual menus and toolbar commands through the shared command model.
+
+### M4-W5: Contextual menus and toolbar commands
+
+Status: ready
+
+Outcome: route instance contextual-menu and toolbar actions through the tested shared command model, preserving one enabled-state, shortcut, accessibility, and invocation contract.
+
+Scope: `macos/PrismNative/App`, directly related native tests/Xcode/project/progress files, and no other platforms. Use system SwiftUI toolbar and context-menu APIs; do not duplicate command handlers or connect unverified backend mutations.
+
+Required evidence: command-model routing tests for toolbar and contextual actions, enabled-state and keyboard behavior, accessibility labels/help, structural system API checks, native Debug/Release builds, native tests, Bundle ID checks, and `git diff --check`.
+
+HIG decision: use system `.toolbar` and `.contextMenu` surfaces backed by `PrismCommandModel`; keep labels, enabled state, shortcuts, and actions shared with the app command manifest. No custom-drawn chrome is allowed.
+
+Commit: not created.
+
+Next after completion: `M4-W6`, add accessibility labels, help, enabled-state, and keyboard tests across the native shell.
 
 ## Completed commit index
 
@@ -837,6 +853,7 @@ Next after completion: `M4-W5`, route contextual menus and toolbar commands thro
 | `127ab52b7` | Added the native command manifest, main-actor command model, SwiftUI menu groups, system shortcuts, enabled-state routing, and accessibility/help metadata | Focused command tests 5/5; native Debug XCTest 37/37; Debug/Release builds; command/accessibility and forbidden API scans; Debug/Release `plutil`; `git diff --check` |
 | `b6007523e` | Added the native NavigationSplitView shell, sidebar selection model, detail loading/empty/content states, and accessibility metadata | Focused shell tests 5/5; native Debug XCTest 42/42; Debug/Release builds; shell API and Swift-boundary scans; Debug/Release `plutil`; `git diff --check` |
 | `1774904a8` | Added stable instance collection state for selection, grouping, sorting, search, deterministic sections, and ten-times fixture coverage | Focused shell-state tests 11/11; native Debug XCTest 48/48; Debug/Release builds; search/selection/accessibility/localization-shape and forbidden API scans; Debug/Release `plutil`; `git diff --check` |
+| `19490eac9` | Added explicit native loading, empty, failed, and content states with deterministic retry recovery metadata | Focused shell-state tests 12/12; native Debug XCTest 49/49; Debug/Release builds; state/accessibility/localization-shape and forbidden API scans; Debug/Release `plutil`; `git diff --check` |
 
 ## Current architecture findings
 
@@ -879,4 +896,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M4-W4`. Do not begin M4-W5 or native visual implementation until loading, empty, failed, content, recovery, accessibility metadata, and structural tests are verified and committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M4-W5`. Do not begin M4-W6 or later native visual implementation until contextual-menu and toolbar routing, accessibility metadata, and structural tests are verified and committed.
