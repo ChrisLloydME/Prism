@@ -5,8 +5,10 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <stdexcept>
 #include <string>
 #include <system_error>
+#include <utility>
 
 namespace {
 
@@ -27,6 +29,29 @@ std::filesystem::path makeFixtureRoot(std::error_code& error)
 
 }  // namespace
 
+FrontendRuntimeDependencies makeFixtureDependencies()
+{
+    FrontendRuntimeDependencies dependencies;
+    dependencies.dispatch = [](FrontendRuntimeDependencies::Work work) {
+        if (work) {
+            work();
+        }
+    };
+    dependencies.now = [] { return std::chrono::system_clock::time_point{}; };
+    return dependencies;
+}
+
+template <typename Function>
+bool throwsInvalidArgument(Function&& function)
+{
+    try {
+        function();
+    } catch (const std::invalid_argument&) {
+        return true;
+    }
+    return false;
+}
+
 int main()
 {
     std::error_code error;
@@ -46,12 +71,30 @@ int main()
     }
 
     {
-        FrontendFacade facade;
-        (void) facade;
+        FrontendFacade facade(fixtureRoot / "nested" / "..", makeFixtureDependencies());
+        if (facade.dataRoot() != fixtureRoot.lexically_normal() || !facade.hasRuntimeDependencies()) {
+            std::filesystem::remove(fixtureMarker, error);
+            std::filesystem::remove(fixtureRoot, error);
+            return 3;
+        }
     }
 
     const bool fixtureWasPreserved = std::filesystem::exists(fixtureMarker);
+    const bool rejectedEmptyRoot = throwsInvalidArgument([] {
+        FrontendFacade facade({}, makeFixtureDependencies());
+        (void) facade;
+    });
+    const bool rejectedRelativeRoot = throwsInvalidArgument([] {
+        FrontendFacade facade(std::filesystem::path("relative-fixture-root"), makeFixtureDependencies());
+        (void) facade;
+    });
+    const bool rejectedIncompleteDependencies = throwsInvalidArgument([&fixtureRoot] {
+        FrontendFacade facade(fixtureRoot, {});
+        (void) facade;
+    });
+
     std::filesystem::remove(fixtureMarker, error);
     std::filesystem::remove(fixtureRoot, error);
-    return fixtureWasPreserved && !error ? 0 : 3;
+    return fixtureWasPreserved && rejectedEmptyRoot && rejectedRelativeRoot && rejectedIncompleteDependencies && !error ? 0
+                                                                                                                       : 4;
 }

@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 2, QWidget-free backend facade
 
-Active work unit: none (M2-W2 complete; activate M2-W3 at next round start)
+Active work unit: none (M2-W3 complete; activate M2-W4 at next round start)
 
-Next ready work unit: M2-W3
+Next ready work unit: M2-W4
 
 ## Safety baseline
 
@@ -246,6 +246,58 @@ Commit: `e87f35fc0`
 
 Next after completion: `M2-W3`, make the facade accept an explicit data root and runtime dependencies.
 
+### M2-W3: Explicit data root and runtime dependencies
+
+Status: complete
+
+Outcome: make the frontend facade require an explicit absolute data root and injected runtime dependencies without creating directories, reading global `Application` state, or performing network work.
+
+Files changed: `launcher/frontend/FrontendFacade.h`, `launcher/frontend/FrontendFacade.cpp`, `launcher/frontend/FrontendFacadeContractTest.cpp`, and this progress file.
+
+Design: use `std::filesystem::path` for an explicit absolute root and normalize it lexically without touching the filesystem. Require injected dispatch and clock ports through `FrontendRuntimeDependencies`; reject incomplete dependencies before any backend work. The facade remains UI-free and does not discover `Application`, process arguments, environment variables, or system application paths.
+
+Tests and exact commands:
+
+- `git diff --check` — passed.
+- `env PKG_CONFIG_PATH="/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/libarchive_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/bzip2_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/liblzma_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/lzo_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/lz4_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/zstd_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/tomlplusplus_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/libqrencode_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/zlib_arm64-osx/lib/pkgconfig:/opt/homebrew/lib/pkgconfig" cmake -S . -B /private/tmp/prism-m2-cmake-pkgconfig -G Ninja -DCMAKE_PREFIX_PATH="/opt/homebrew/opt/qt;/opt/homebrew/opt/cmark;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/ecm_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/cmark_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/libarchive_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/tomlplusplus_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/zlib_arm64-osx" -DVCPKG_MANIFEST_MODE=OFF -DCMAKE_DISABLE_FIND_PACKAGE_LibArchive=TRUE -DBUILD_TESTING=ON -DLauncher_USE_PCH=OFF -DLauncher_ENABLE_JAVA_DOWNLOADER=OFF -DMACOSX_SPARKLE_UPDATE_PUBLIC_KEY="" -DMACOSX_SPARKLE_UPDATE_FEED_URL=""` — passed; existing clang-format and AutoUIC warnings remain non-blocking.
+- `cmake --build /private/tmp/prism-m2-cmake-pkgconfig --target Launcher_frontend Launcher_frontend_contract_test --parallel 2` — passed.
+- `ctest --test-dir /private/tmp/prism-m2-cmake-pkgconfig --output-on-failure -R '^FrontendFacadeContract$'` — passed; 1/1 after the lexical path-normalization fix. The initial run returned exit code 3; direct diagnostic showed the actual root retained a trailing separator while dependencies were complete, so the fix was based on new evidence rather than a blind retry.
+- `cmake --build /private/tmp/prism-m2-cmake-pkgconfig --target Prism --parallel 2` — passed; existing Qt launcher target linked without a frontend dependency.
+- `ctest --test-dir /private/tmp/prism-m2-cmake-pkgconfig --output-on-failure -R '^(FrontendFacadeContract|FileSystem|Task|JavaVersion|Version)$'` — passed; 5/5.
+- `rg -n "launcher/ui|QWidget|QDialog|QtWidgets|QAbstractItemModel|QAbstractListModel|QObject|QModelIndex" launcher/frontend --glob '*.h'` — passed with no public-header matches.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed; 6 tests, 0 failures.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO build` — passed.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native-release/Build/Products/Release/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `git diff --check` — passed after verification.
+
+Result summary: the facade now receives an explicit fixture root and deterministic runtime ports while construction remains side-effect free. Empty, relative, and incomplete-dependency inputs are rejected; the fixture marker remains intact. Existing Qt behavior and the native target remain independent. No application or launcher executable was launched, and no upstream application, Application Support data, account, Keychain, production API, signing, installation, or publishing state was accessed.
+
+HIG decision: this is a backend construction unit, so it adds no SwiftUI/AppKit control or custom drawing. Future native surfaces remain governed by the system-component policy in `PLAN.md`.
+
+Risk: root validation is absolute and lexical, not a symlink-resolving containment policy; later mutation units must assert every write is inside the injected fixture root. The dispatch and clock ports are seams only; backend service initialization and instance behavior remain future work. Existing AutoUIC and missing `clang-format` warnings remain unchanged.
+
+Commit: to be recorded after this work-unit commit.
+
+Next after completion: `M2-W4`, add instance snapshot and instance-change event contracts.
+
+### M2-W4: Instance snapshots and change events
+
+Status: ready
+
+Outcome: add immutable instance summary snapshots and stable instance-change event contracts to the QWidget-free facade.
+
+Scope: `launcher/frontend` and directly required fixture tests only. Do not add lifecycle, launch, Swift, Objective-C++, or UI behavior. Snapshots must use stable identifiers and value data rather than Qt model ownership or row/role metadata.
+
+Required evidence: empty and fixture-backed instance snapshots, stable identifiers, add/update/remove event semantics, temporary-root containment, no network access, public-header dependency scan, existing Qt target build, and native target independence.
+
+HIG decision: none until a native view consumes the immutable contract; no custom control or rendering is allowed in this backend unit.
+
+Commit: not created.
+
+Next after completion: `M2-W5`, add lifecycle and shutdown tests around the facade.
+
 ## Completed commit index
 
 | Commit | Outcome | Verification |
@@ -269,6 +321,8 @@ Next after completion: `M2-W3`, make the facade accept an explicit data root and
 7. M2-W1 keeps the existing Qt composition in `Launcher_logic` while exposing domain, UI, application, and executable-entry source ownership for the upcoming facade target.
 8. M2-W2 is the first independent `launcher/frontend` target; it must remain compilable without `launcher/ui` and must not alter the existing Qt target's link graph.
 9. M2-W2's facade root is deliberately inert; M2-W3 owns the first explicit data-root and runtime-dependency contract.
+10. The native facade must receive an absolute data root and injected runtime ports rather than deriving paths from `Application`, process arguments, environment variables, or global Qt application state.
+11. M2-W3 normalizes the root lexically and rejects invalid construction before any service work; filesystem mutation and backend instance loading remain separate contracts.
 
 ## Custom rendering exceptions
 
@@ -282,4 +336,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M2-W3`. Do not begin native visual implementation or M2-W4 event work before the explicit root/dependency contract is committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M2-W4`. Do not begin M2-W5 lifecycle work or native visual implementation until the snapshot/event contract is committed.
