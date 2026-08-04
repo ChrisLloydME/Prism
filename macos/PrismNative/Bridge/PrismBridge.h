@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import "PrismBridgeErrors.h"
 #import "PrismBridgeModels.h"
 
 NS_ASSUME_NONNULL_BEGIN

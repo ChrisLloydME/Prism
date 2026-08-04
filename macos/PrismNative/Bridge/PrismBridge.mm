@@ -1,6 +1,7 @@
 #import "PrismBridge.h"
 
 #include <cmath>
+#include <dispatch/dispatch.h>
 #include <memory>
 
 namespace {
@@ -106,6 +107,120 @@ bool isValidProgress(PRTaskProgressKind progressKind, double progressFraction)
     }
     return progressFraction == 0.0;
 }
+
+bool isKnownBridgeErrorCode(PRBridgeErrorCode code)
+{
+    switch (code) {
+        case PRBridgeErrorCodeUnknown:
+        case PRBridgeErrorCodeInvalidInput:
+        case PRBridgeErrorCodeDataUnavailable:
+        case PRBridgeErrorCodeAuthenticationRequired:
+        case PRBridgeErrorCodeOperationCancelled:
+        case PRBridgeErrorCodePermissionDenied:
+        case PRBridgeErrorCodeNetworkUnavailable:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownBridgeErrorRecoveryKind(PRBridgeErrorRecoveryKind recoveryKind)
+{
+    switch (recoveryKind) {
+        case PRBridgeErrorRecoveryKindNone:
+        case PRBridgeErrorRecoveryKindRetry:
+        case PRBridgeErrorRecoveryKindAuthenticate:
+        case PRBridgeErrorRecoveryKindChooseFile:
+        case PRBridgeErrorRecoveryKindRevealPath:
+        case PRBridgeErrorRecoveryKindOpenSettings:
+            return true;
+    }
+    return false;
+}
+
+NSDictionary<NSString *, NSString *> *copyStringDictionary(NSDictionary *candidate)
+{
+    if (![candidate isKindOfClass:NSDictionary.class]) {
+        return nil;
+    }
+
+    NSMutableDictionary<NSString *, NSString *> *copy = [NSMutableDictionary dictionaryWithCapacity:candidate.count];
+    for (id key in candidate) {
+        id value = candidate[key];
+        if (![key isKindOfClass:NSString.class] || ![value isKindOfClass:NSString.class] || [key length] == 0) {
+            return nil;
+        }
+        copy[[key copy]] = [value copy];
+    }
+    return [copy copy];
+}
+}
+
+NSErrorDomain const PRBridgeErrorDomain = @"com.lloydME.Prism.bridge";
+NSString *const PRBridgeErrorLocalizationKeyUserInfoKey = @"PRBridgeErrorLocalizationKey";
+NSString *const PRBridgeErrorSubstitutionValuesUserInfoKey = @"PRBridgeErrorSubstitutionValues";
+NSString *const PRBridgeErrorDiagnosticTextUserInfoKey = @"PRBridgeErrorDiagnosticText";
+NSString *const PRBridgeErrorRecoveryKindUserInfoKey = @"PRBridgeErrorRecoveryKind";
+NSString *const PRBridgeErrorPartialChangesRolledBackUserInfoKey = @"PRBridgeErrorPartialChangesRolledBack";
+
+namespace {
+enum class NativeFacadeFailureKind : NSInteger {
+    Unknown = 0,
+    InvalidInput = 1,
+    DataUnavailable = 2,
+    AuthenticationRequired = 3,
+    OperationCancelled = 4,
+    PermissionDenied = 5,
+    NetworkUnavailable = 6,
+};
+
+PRBridgeError *translatedErrorForFailureKind(NSInteger failureKind,
+                                             NSString *diagnosticText,
+                                             NSDictionary<NSString *, NSString *> *substitutionValues)
+{
+    PRBridgeErrorCode code = PRBridgeErrorCodeUnknown;
+    NSString *localizationKey = @"bridge.error.unknown";
+    PRBridgeErrorRecoveryKind recoveryKind = PRBridgeErrorRecoveryKindNone;
+
+    switch (static_cast<NativeFacadeFailureKind>(failureKind)) {
+        case NativeFacadeFailureKind::Unknown:
+            break;
+        case NativeFacadeFailureKind::InvalidInput:
+            code = PRBridgeErrorCodeInvalidInput;
+            localizationKey = @"bridge.error.invalidInput";
+            break;
+        case NativeFacadeFailureKind::DataUnavailable:
+            code = PRBridgeErrorCodeDataUnavailable;
+            localizationKey = @"bridge.error.dataUnavailable";
+            recoveryKind = PRBridgeErrorRecoveryKindRetry;
+            break;
+        case NativeFacadeFailureKind::AuthenticationRequired:
+            code = PRBridgeErrorCodeAuthenticationRequired;
+            localizationKey = @"bridge.error.authenticationRequired";
+            recoveryKind = PRBridgeErrorRecoveryKindAuthenticate;
+            break;
+        case NativeFacadeFailureKind::OperationCancelled:
+            code = PRBridgeErrorCodeOperationCancelled;
+            localizationKey = @"bridge.error.operationCancelled";
+            break;
+        case NativeFacadeFailureKind::PermissionDenied:
+            code = PRBridgeErrorCodePermissionDenied;
+            localizationKey = @"bridge.error.permissionDenied";
+            recoveryKind = PRBridgeErrorRecoveryKindOpenSettings;
+            break;
+        case NativeFacadeFailureKind::NetworkUnavailable:
+            code = PRBridgeErrorCodeNetworkUnavailable;
+            localizationKey = @"bridge.error.networkUnavailable";
+            recoveryKind = PRBridgeErrorRecoveryKindRetry;
+            break;
+    }
+
+    return [[PRBridgeError alloc] initWithCode:code
+                               localizationKey:localizationKey
+                           substitutionValues:substitutionValues ?: @{}
+                               diagnosticText:diagnosticText
+                                  recoveryKind:recoveryKind
+                     partialChangesRolledBack:NO];
+}
 }
 
 typedef void (^PRBridgeObservationDelivery)(id value);
@@ -119,7 +234,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, assign, readonly, getter=isCancelled) BOOL cancelled;
 
 - (BOOL)cancel;
-- (void)deliver:(id)value;
+- (void)deliverOnMainActor:(id)value;
 
 @end
 
@@ -170,19 +285,30 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     return YES;
 }
 
-- (void)deliver:(id)value
+- (void)deliverOnMainActor:(id)value
 {
     [_lock lock];
-    if (!_cancelled && _handler) {
-        try {
-            @try {
-                _handler(value);
-            } @catch (NSException *) {
-            }
-        } catch (...) {
-        }
-    }
+    BOOL canSchedule = !_cancelled && _handler != nil;
     [_lock unlock];
+
+    if (!canSchedule) {
+        return;
+    }
+
+    PRBridgeObservationState *state = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [state->_lock lock];
+        if (!state->_cancelled && state->_handler) {
+            try {
+                @try {
+                    state->_handler(value);
+                } @catch (NSException *) {
+                }
+            } catch (...) {
+            }
+        }
+        [state->_lock unlock];
+    });
 }
 
 - (void)dealloc
@@ -250,6 +376,9 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 - (void)cancelAllObservations;
 - (void)publishInstanceSummary:(PRInstanceSummary *)summary;
 - (void)publishTaskStatus:(PRTaskStatus *)status;
+- (PRBridgeError *)bridgeErrorForFailureKind:(NSInteger)failureKind
+                               diagnosticText:(nullable NSString *)diagnosticText
+                           substitutionValues:(NSDictionary<NSString *, NSString *> *)substitutionValues;
 
 @end
 
@@ -269,6 +398,19 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, assign, readwrite) PRTaskProgressKind progressKind;
 @property(nonatomic, assign, readwrite) double progressFraction;
 @property(nonatomic, assign, readwrite) BOOL cancellationAllowed;
+
+@end
+
+@interface PRBridgeError ()
+
+@property(nonatomic, copy, readwrite) NSString *domain;
+@property(nonatomic, assign, readwrite) PRBridgeErrorCode code;
+@property(nonatomic, copy, readwrite) NSString *localizationKey;
+@property(nonatomic, copy, readwrite) NSDictionary<NSString *, NSString *> *substitutionValues;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readwrite) PRBridgeErrorRecoveryKind recoveryKind;
+@property(nonatomic, assign, readwrite) BOOL partialChangesRolledBack;
+@property(nonatomic, copy, readwrite) NSError *foundationError;
 
 @end
 
@@ -357,6 +499,47 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.progressKind = progressKind;
         self.progressFraction = progressFraction;
         self.cancellationAllowed = cancellationAllowed;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRBridgeError
+
+- (instancetype)initWithCode:(PRBridgeErrorCode)code
+               localizationKey:(NSString *)localizationKey
+           substitutionValues:(NSDictionary<NSString *, NSString *> *)substitutionValues
+               diagnosticText:(NSString *)diagnosticText
+                  recoveryKind:(PRBridgeErrorRecoveryKind)recoveryKind
+     partialChangesRolledBack:(BOOL)partialChangesRolledBack
+{
+    NSDictionary<NSString *, NSString *> *copiedSubstitutionValues = copyStringDictionary(substitutionValues);
+    if (!isKnownBridgeErrorCode(code) || !isNonEmptyString(localizationKey) || !copiedSubstitutionValues
+        || !isKnownBridgeErrorRecoveryKind(recoveryKind)) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.domain = PRBridgeErrorDomain;
+        self.code = code;
+        self.localizationKey = [localizationKey copy];
+        self.substitutionValues = copiedSubstitutionValues;
+        self.diagnosticText = nullableStringCopy(diagnosticText);
+        self.recoveryKind = recoveryKind;
+        self.partialChangesRolledBack = partialChangesRolledBack;
+
+        NSMutableDictionary *userInfo = [@{
+            PRBridgeErrorLocalizationKeyUserInfoKey: self.localizationKey,
+            PRBridgeErrorSubstitutionValuesUserInfoKey: self.substitutionValues,
+            PRBridgeErrorRecoveryKindUserInfoKey: @(self.recoveryKind),
+            PRBridgeErrorPartialChangesRolledBackUserInfoKey: @(self.partialChangesRolledBack),
+        } mutableCopy];
+        if (self.diagnosticText) {
+            userInfo[PRBridgeErrorDiagnosticTextUserInfoKey] = self.diagnosticText;
+        }
+        self.foundationError = [NSError errorWithDomain:self.domain code:self.code userInfo:userInfo];
     }
     return self;
 }
@@ -484,7 +667,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     NSArray<PRBridgeObservationState *> *observations = [self.instanceObservationStates copy];
     [self.observationLock unlock];
     for (PRBridgeObservationState *observation in observations) {
-        [observation deliver:summary];
+        [observation deliverOnMainActor:summary];
     }
 }
 
@@ -498,8 +681,15 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     NSArray<PRBridgeObservationState *> *observations = [self.taskObservationStates copy];
     [self.observationLock unlock];
     for (PRBridgeObservationState *observation in observations) {
-        [observation deliver:status];
+        [observation deliverOnMainActor:status];
     }
+}
+
+- (PRBridgeError *)bridgeErrorForFailureKind:(NSInteger)failureKind
+                               diagnosticText:(NSString *)diagnosticText
+                           substitutionValues:(NSDictionary<NSString *, NSString *> *)substitutionValues
+{
+    return translatedErrorForFailureKind(failureKind, diagnosticText, substitutionValues);
 }
 
 - (PRBridgeLifecycleState)lifecycleState

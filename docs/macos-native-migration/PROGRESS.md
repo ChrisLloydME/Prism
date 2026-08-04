@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 3, Objective-C++ bridge foundation
 
-Active work unit: none (M3-W3 complete; activate M3-W4 at next round start)
+Active work unit: M3-W4
 
-Next ready work unit: M3-W4
+Next ready work unit: none (M3-W4 active)
 
 ## Safety baseline
 
@@ -549,7 +549,7 @@ Next after completion: `M3-W4`, add error translation and main-actor delivery.
 
 ### M3-W4: Error translation and main-actor delivery
 
-Status: ready
+Status: active
 
 Outcome: translate bridge failures into stable Foundation error values and deliver observer callbacks on the main actor without blocking backend work.
 
@@ -559,7 +559,27 @@ Required evidence: stable error domain/code/localization/recovery values, main-a
 
 HIG decision: none, this unit defines error and threading contracts without controls or rendering.
 
-Commit: not created.
+Files changed: `macos/PrismNative/Bridge/PrismBridgeErrors.h`, `macos/PrismNative/Bridge/PrismBridge.h`, `macos/PrismNative/Bridge/PrismBridge.mm`, `macos/PrismNativeTests/PrismBridgeObservationTests.mm`, `macos/PrismNative.xcodeproj/project.pbxproj`, and this progress file. The new public error header is Foundation-only and is registered in the native bridge group; no backend source, UI surface, or runtime data path changed.
+
+Design: add immutable `PRBridgeError` values with fixed domain `com.lloydME.Prism.bridge`, explicit error codes, localization keys, copied substitution values, optional safe diagnostic text, recovery kinds, partial-rollback metadata, and a corresponding `NSError` projection. Keep the failure-kind-to-error mapping private to Objective-C++; tests enter through a private category only, so C++ failure types do not cross the public bridge. Change observer delivery from synchronous callbacks to `dispatch_async(dispatch_get_main_queue(), ...)`: publication returns on the backend queue, the queued state rechecks cancellation before invoking the handler, and token release or bridge shutdown clears the handler before queued work can retain an observer. The main queue is the bridge's Objective-C delivery boundary for Swift `@MainActor` state; no custom control or rendering API is involved.
+
+Tests and exact commands:
+
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed; 20 tests, 0 failures, including 9 bridge-observation tests.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO build` — passed.
+- `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -fsyntax-only -x objective-c -target arm64-apple-macos14.0 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk macos/PrismNative/Bridge/PrismBridge.h` — passed; the umbrella bridge and error/model headers compile without C++ mode.
+- `if rg -n "QWidget|QDialog|QObject|QString|QVariant|QModelIndex|QList|QMap|QHash|QUrl|QAbstractItemModel|QAbstractListModel|QAbstractTableModel|Q_OBJECT|std::|shared_ptr|unique_ptr|reinterpret_cast|static_cast|dynamic_cast|template<|namespace " macos/PrismNative/Bridge --glob '*.h'; then exit 1; else exit 0; fi` — passed with no forbidden public-header matches.
+- `if rg -n "#import <Qt|#include|std::|QWidget|QDialog|QObject|QString|QVariant|QModelIndex|QList|QMap|QHash|QUrl|unique_ptr|shared_ptr|reinterpret_cast|static_cast|dynamic_cast" macos/PrismNative/App --glob '*.swift'; then exit 1; else exit 0; fi` — passed; native Swift app sources remain outside Qt and C++ types.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native-release/Build/Products/Release/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `git diff --check` — passed.
+
+Result summary: the native bridge now translates fixture failure categories into stable Foundation error metadata, preserves safe substitution values by copy, and exposes an `NSError` with the same domain/code and structured user-info keys. Instance and task callbacks run on the main thread, backend publication returns before the callback, cancellation suppresses queued delivery, token release still releases captured observers, and shutdown suppresses already-queued delivery while rejecting later registrations. Tests use only temporary fixture roots; no application or launcher executable was launched.
+
+Risk: the failure-kind mapper is fixture-facing infrastructure until M3-W5/M3-W6 connect real facade errors and snapshots; partial-rollback values are conservatively `false` because this unit performs no mutating backend operation. Localization resources, Swift feature stores, and real facade event ingress remain later units. No CMake command was required because launcher backend sources and build configuration were unchanged.
+
+Commit: pending implementation commit hash; record it in the follow-up progress synchronization commit.
 
 Next after completion: `M3-W5`, add complete bridge contract tests for empty and fixture data, cancellation, shutdown, and released observers.
 
@@ -603,6 +623,7 @@ Next after completion: `M3-W5`, add complete bridge contract tests for empty and
 16. M3-W1 adds an explicit normalized fixture-root `PRPrismBridge`; its private Objective-C++ implementation owns lifecycle state and callback lifetime, while the real `FrontendFacade` link remains deliberately deferred to M3-W6.
 17. M3-W2 adds Foundation-only immutable `PRInstanceSummary` and `PRTaskStatus` contracts; DTO validation and copying remain private to Objective-C++, while backend conversion and task error translation remain later bridge work.
 18. M3-W3 adds typed Foundation observation handlers and private cancellation states; token release removes callbacks deterministically, while main-actor delivery and real facade event wiring remain later bridge work.
+19. M3-W4 adds Foundation error translation and structured `NSError` metadata, while main-queue delivery is asynchronous and cancellation-aware; real facade failure mapping and Swift `@MainActor` feature state remain later work.
 
 ## Custom rendering exceptions
 
@@ -616,4 +637,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M3-W4`. Do not begin M3-W5 or native visual implementation until error translation and main-actor delivery are verified and committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then resume the active `M3-W4`. Do not begin M3-W5 or native visual implementation until error translation and main-actor delivery are verified and committed.

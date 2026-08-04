@@ -30,6 +30,7 @@
 		A2000000000000000000000A /* PrismNativeInfrastructureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrismNativeInfrastructureTests.swift; sourceTree = "<group>"; };
 		A2000000000000000000000B /* PrismBridgeModels.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PrismBridgeModels.h; sourceTree = "<group>"; };
 		A2000000000000000000000C /* PrismBridgeObservationTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = PrismBridgeObservationTests.mm; sourceTree = "<group>"; };
+		A2000000000000000000000D /* PrismBridgeErrors.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PrismBridgeErrors.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -82,6 +83,7 @@
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000003 /* PrismBridge.h */,
+				A2000000000000000000000D /* PrismBridgeErrors.h */,
 				A2000000000000000000000B /* PrismBridgeModels.h */,
 				A20000000000000000000004 /* PrismBridge.mm */,
 			);
