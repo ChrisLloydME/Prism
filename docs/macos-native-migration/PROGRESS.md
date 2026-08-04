@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 4, Native application shell and instance library
 
-Active work unit: M4-W5
+Active work unit: none (M4-W5 complete; activate M4-W6 at next round start)
 
-Next ready work unit: none (M4-W5 active)
+Next ready work unit: M4-W6
 
 ## Safety baseline
 
@@ -814,7 +814,7 @@ Next after completion: `M4-W5`, route contextual menus and toolbar commands thro
 
 ### M4-W5: Contextual menus and toolbar commands
 
-Status: active
+Status: complete
 
 Outcome: route instance contextual-menu and toolbar actions through the tested shared command model, preserving one enabled-state, shortcut, accessibility, and invocation contract.
 
@@ -851,9 +851,25 @@ Result summary: toolbar and detail context-menu surfaces now consume the same co
 
 Risk: toolbar and context-menu actions still terminate at the injected command handler until later units connect fixture-safe facade mutations; the context menu is attached to the current detail boundary while native instance rows remain a later shell/content contract. No localization resource has been added yet. The next ready unit adds cross-surface accessibility, help, enabled-state, and keyboard tests.
 
-Commit: pending implementation commit.
+Commit: `d5249dd8a`
 
 Next after completion: `M4-W6`, add accessibility labels, help, enabled-state, and keyboard tests across the native shell.
+
+### M4-W6: Cross-surface accessibility, help, enabled state, and keyboard tests
+
+Status: ready
+
+Outcome: extend automated accessibility, help, enabled-state, focus, and keyboard contracts across the shared command manifest, toolbar, context menu, and shell selection surfaces.
+
+Scope: `macos/PrismNative/App`, directly related native tests/Xcode/project/progress files, and no other platforms. Keep tests non-launching and fixture-only; do not add backend mutations or visual snapshot acceptance.
+
+Required evidence: cross-surface command and shell tests for labels, values, roles, help, enabled/disabled behavior, keyboard identity, selection focus semantics, localization shape, structural native APIs, Debug/Release builds, native tests, Bundle ID checks, and `git diff --check`.
+
+HIG decision: validate system SwiftUI accessibility modifiers, keyboard shortcuts, toolbar, context-menu, and List selection semantics; no custom accessibility container or self-drawn control is permitted.
+
+Commit: not created.
+
+Next after completion: `M4-W7`, add bounded native instance artwork loading as content rather than control chrome.
 
 ## Completed commit index
 
@@ -881,6 +897,7 @@ Next after completion: `M4-W6`, add accessibility labels, help, enabled-state, a
 | `b6007523e` | Added the native NavigationSplitView shell, sidebar selection model, detail loading/empty/content states, and accessibility metadata | Focused shell tests 5/5; native Debug XCTest 42/42; Debug/Release builds; shell API and Swift-boundary scans; Debug/Release `plutil`; `git diff --check` |
 | `1774904a8` | Added stable instance collection state for selection, grouping, sorting, search, deterministic sections, and ten-times fixture coverage | Focused shell-state tests 11/11; native Debug XCTest 48/48; Debug/Release builds; search/selection/accessibility/localization-shape and forbidden API scans; Debug/Release `plutil`; `git diff --check` |
 | `19490eac9` | Added explicit native loading, empty, failed, and content states with deterministic retry recovery metadata | Focused shell-state tests 12/12; native Debug XCTest 49/49; Debug/Release builds; state/accessibility/localization-shape and forbidden API scans; Debug/Release `plutil`; `git diff --check` |
+| `d5249dd8a` | Routed native toolbar and detail context-menu actions through the shared command model and system command button | Focused command tests 7/7; native Debug XCTest 51/51; Debug/Release builds; toolbar/context-menu, shortcut/accessibility, localization-shape, and forbidden API scans; Debug/Release `plutil`; `git diff --check` |
 
 ## Current architecture findings
 
@@ -924,4 +941,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M4-W5`. Do not begin M4-W6 or later native visual implementation until contextual-menu and toolbar routing, accessibility metadata, and structural tests are verified and committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M4-W6`. Do not begin M4-W7 or later native visual implementation until cross-surface accessibility, help, enabled-state, focus, keyboard, and structural tests are verified and committed.
