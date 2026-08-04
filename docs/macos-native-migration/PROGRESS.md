@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 4, Native application shell and instance library
 
-Active work unit: M4-W1
+Active work unit: none (M4-W1 complete; activate M4-W2 at next round start)
 
-Next ready work unit: none (M4-W1 active)
+Next ready work unit: M4-W2
 
 ## Safety baseline
 
@@ -660,7 +660,7 @@ Next after completion: `M4-W1`, define native app commands and keyboard shortcut
 
 ### M4-W1: Define native app commands and keyboard shortcuts
 
-Status: active
+Status: complete
 
 Outcome: establish one testable native command model and system menu/shortcut definitions before duplicating toolbar actions, so shell commands have stable enabled state, accessibility metadata, and keyboard behavior.
 
@@ -688,9 +688,25 @@ Result summary: the native app now attaches a testable system command surface be
 
 Risk: command actions currently terminate at the injected command handler because native instance mutations and launch/stop facade commands are later work; the model intentionally does not invent backend behavior. The legacy instance-deletion Command-Z shortcut is not rebound until a native reversible mutation/`UndoManager` contract exists, avoiding a conflict with standard text undo. Static `LocalizedStringKey` usage establishes localizable command keys; localized resource coverage remains part of the consuming feature units. No CMake command was required because this unit changes only native Swift command composition and tests.
 
-Commit: not created; implementation in progress.
+Commit: `127ab52b7`
 
-Resume: Continue the active M4-W1 implementation; after verification record the implementation and progress-sync commits, then activate only M4-W2.
+Next after completion: `M4-W2`, implement the sidebar and instance content with `NavigationSplitView`.
+
+### M4-W2: Sidebar and instance content with NavigationSplitView
+
+Status: ready
+
+Outcome: replace the placeholder native hierarchy with a system `NavigationSplitView` shell containing the instance-library sidebar and a testable detail-content boundary, without duplicating toolbar actions or connecting unverified backend mutations.
+
+Scope: `macos/PrismNative/App`, directly related native tests and Xcode project files, and this progress file only. Use SwiftUI `NavigationSplitView`, `List`, and standard content states; do not implement search/grouping/selection policy beyond the contracts required for this shell unit, and do not modify other platforms.
+
+Required evidence: structural SwiftUI API checks, deterministic sidebar/detail state tests, empty/loading/content placeholder state tests, accessibility labels and selection metadata, native Debug/Release builds, native tests, Bundle ID checks, and `git diff --check`. No application launch, screenshot, visual snapshot, real account, Keychain, or upstream data access.
+
+HIG decision: use system `NavigationSplitView`, sidebar-styled `List`, and `ContentUnavailableView`; keep the sidebar hideable and defer toolbar/contextual command duplication to the shared command model. No custom navigation chrome or self-drawn control is allowed.
+
+Commit: not created.
+
+Next after completion: `M4-W3`, implement selection, grouping, sorting, and search in testable Swift state.
 
 ## Completed commit index
 
@@ -714,6 +730,7 @@ Resume: Continue the active M4-W1 implementation; after verification record the 
 | `a9853cbe2` | Added stable Foundation error translation and asynchronous main-actor observation delivery | Native Debug XCTest 20/20; Debug/Release builds; Objective-C public-header syntax; forbidden bridge and Swift boundary scans; Debug/Release `plutil`; `git diff --check` |
 | `6711968f7` | Added dedicated native bridge contract coverage for fixture initialization, empty state, immutable snapshots, cancellation, shutdown, released observers, and errors | Native Debug XCTest 27/27; Debug/Release builds; Objective-C public-header syntax; forbidden bridge and Swift boundary scans; Debug/Release `plutil`; `git diff --check` |
 | `4f3d62c21` | Linked the real QWidget-free frontend facade into the Objective-C++ bridge and converted fixture snapshots, changes, lifecycle, cancellation, and errors | CMake facade/Prism targets; selected C++ tests 6/6; universal facade tests 2/2; native Debug XCTest 32/32; Debug/Release builds; public-header and Swift-boundary scans; Debug/Release `plutil`; `git diff --check` |
+| `127ab52b7` | Added the native command manifest, main-actor command model, SwiftUI menu groups, system shortcuts, enabled-state routing, and accessibility/help metadata | Focused command tests 5/5; native Debug XCTest 37/37; Debug/Release builds; command/accessibility and forbidden API scans; Debug/Release `plutil`; `git diff --check` |
 
 ## Current architecture findings
 
@@ -739,6 +756,7 @@ Resume: Continue the active M4-W1 implementation; after verification record the 
 20. M3-W5 added a dedicated bridge contract suite for temporary-root initialization, empty and fixture snapshots, cancellation, shutdown ordering, released observers, and stable error propagation; M3-W6 extends those contracts through the linked facade.
 21. M3-W6 completes the Milestone 3 boundary: the Objective-C++ bridge consumes the existing QWidget-free `Launcher_frontend` target and keeps the Swift-facing bridge free of Qt, C++, and ownership types.
 22. M3-W6 proves the linker boundary without source copying: Xcode consumes the ignored universal `libLauncher_frontend.a` through `-lLauncher_frontend`, while `PRPrismBridge` alone owns `FrontendFacade` and converts C++ values into Foundation DTOs; the existing Qt `Prism` link remains unchanged and the public bridge/Swift surfaces remain free of Qt and C++.
+23. M4-W1 centralizes native shell actions in a main-actor command manifest; SwiftUI `Commands` consumes the same descriptors for menu placement, shortcuts, enabled state, accessibility labels, and help, while future toolbar and contextual actions must route through the same model.
 
 ## Custom rendering exceptions
 
@@ -752,4 +770,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then resume the active `M4-W1`. Do not begin M4-W2 or native visual implementation until the command model, menu definitions, enabled state, and shortcut tests are verified and committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M4-W2`. Do not begin M4-W3 or native visual implementation until the NavigationSplitView shell, sidebar/detail states, accessibility metadata, and structural tests are verified and committed.
