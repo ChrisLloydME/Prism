@@ -29,6 +29,20 @@ typedef NS_ENUM(NSInteger, PRBridgeLifecycleState) {
 };
 
 typedef void (^PRBridgeLifecycleHandler)(void);
+typedef void (^PRInstanceSummaryObservationHandler)(PRInstanceSummary *summary);
+typedef void (^PRTaskStatusObservationHandler)(PRTaskStatus *status);
+
+/// Owns one bridge observation registration and cancels it when released.
+@interface PRBridgeObservationToken : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+
+@property(nonatomic, assign, readonly, getter=isCancelled) BOOL cancelled;
+
+/// Returns YES only when this call transitions the token to cancelled.
+- (BOOL)cancel;
+
+@end
 
 /// Objective-C++ composition root for the native facade lifecycle.
 ///
@@ -49,6 +63,11 @@ typedef void (^PRBridgeLifecycleHandler)(void);
 /// Cancels pending work, releases lifecycle callbacks, and stops the root.
 /// Repeated calls return NO and do not invoke callbacks again.
 - (BOOL)shutdown;
+
+/// Registers a Foundation callback. Releasing or cancelling the returned token
+/// removes the callback; registration is rejected once shutdown begins.
+- (nullable PRBridgeObservationToken *)observeInstanceSummariesWithHandler:(PRInstanceSummaryObservationHandler)handler;
+- (nullable PRBridgeObservationToken *)observeTaskStatusWithHandler:(PRTaskStatusObservationHandler)handler;
 
 @end
 

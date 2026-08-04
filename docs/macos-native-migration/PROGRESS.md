@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 3, Objective-C++ bridge foundation
 
-Active work unit: none (M3-W2 complete; activate M3-W3 at next round start)
+Active work unit: none (M3-W3 complete; activate M3-W4 at next round start)
 
-Next ready work unit: M3-W3
+Next ready work unit: M3-W4
 
 ## Safety baseline
 
@@ -512,9 +512,9 @@ Next after completion: `M3-W3`, add explicitly cancellable observation tokens an
 
 ### M3-W3: Cancellable bridge observations
 
-Status: ready
+Status: complete
 
-Outcome: add explicit observation registration and cancellation tokens so bridge callbacks cannot outlive their owner or deliver after cancellation.
+Outcome: add explicit Foundation observation registration and cancellation tokens so bridge callbacks cannot outlive their owner or deliver after cancellation.
 
 Scope: `macos/PrismNative/Bridge`, directly related native tests and Xcode project files, and this progress file only. Do not add visual surfaces, live backend credentials, production data access, or UI snapshot tests.
 
@@ -522,9 +522,46 @@ Required evidence: Foundation-only observer/token API, deterministic fixture eve
 
 HIG decision: none, this unit defines event lifetime infrastructure without controls or rendering.
 
-Commit: not created.
+Files changed: `macos/PrismNative/Bridge/PrismBridge.h`, `macos/PrismNative/Bridge/PrismBridge.mm`, `macos/PrismNativeTests/PrismBridgeObservationTests.mm`, `macos/PrismNative.xcodeproj/project.pbxproj`, and this progress file. The new Objective-C++ test source is registered only in the native test target; its category declaration reaches private fixture event ingress methods without widening the public bridge header.
+
+Design: add `PRBridgeObservationToken` with idempotent `cancel` and readonly cancellation state, plus typed instance-summary and task-status handler blocks. The private `.mm` implementation stores observer states behind `NSLock`-protected collections and uses a recursive state lock while a callback is in flight, so cancellation suppresses queued delivery and waits for an active callback to finish. Releasing a token cancels its state, clears the Foundation handler, removes the registration, and releases captured observers. Bridge shutdown removes and cancels every state before lifecycle callbacks, and new registration is rejected after shutdown begins. Fixture event publishing remains a private Objective-C++ ingress for this unit; main-actor delivery and real facade event conversion remain later contracts.
+
+Tests and exact commands:
+
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed; 17 tests, 0 failures, including 6 observation tests.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO -only-testing:PrismNativeTests/PrismBridgeObservationTests/testReleasedObservationTokenReleasesObserverAndStopsDelivery test` — passed; focused release contract passed after isolating ARC lifetimes in the fixture.
+- `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -fsyntax-only -x objective-c -target arm64-apple-macos14.0 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk macos/PrismNative/Bridge/PrismBridge.h` — passed; public bridge and model headers compile without C++ mode.
+- `if rg -n "QWidget|QDialog|QObject|QString|QVariant|QModelIndex|QList|QMap|QHash|QUrl|QAbstractItemModel|QAbstractListModel|QAbstractTableModel|Q_OBJECT|std::|shared_ptr|unique_ptr|reinterpret_cast|static_cast|dynamic_cast|template<|namespace " macos/PrismNative/Bridge --glob '*.h'; then exit 1; fi` — passed with no forbidden public-header matches.
+- `if rg -n "#import <Qt|#include|std::|QWidget|QDialog|QObject|QString|QVariant|QModelIndex|QList|QMap|QHash|QUrl|unique_ptr|shared_ptr|reinterpret_cast|static_cast|dynamic_cast" macos/PrismNative/App --glob '*.swift'; then exit 1; fi` — passed; native Swift app sources contain no Qt or C++ boundary types.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native-release/Build/Products/Release/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `git diff --check` — passed.
+
+Result summary: instance and task fixture events reached their typed handlers with immutable DTOs; cancellation was idempotent; cancellation before a queued event suppressed delivery; cancellation after one queued event stopped later delivery; dropping the token released the captured observer and suppressed later callbacks; shutdown cancelled existing tokens and rejected new observers. All fixture roots were temporary and no upstream application or data was accessed. No application or launcher executable was launched.
+
+Risk: observation registration and token lifetime are now deterministic, but callbacks are not yet marshalled to the main actor, errors are not yet translated, and the private publish ingress is not connected to the real `FrontendFacade`. Those contracts remain M3-W4 through M3-W6. No CMake command was required because this unit does not modify launcher backend sources or build configuration. Existing AppIntents metadata and prior non-blocking CMake warnings remain unchanged.
+
+Commit: pending implementation commit hash; record it in the follow-up progress synchronization commit.
 
 Next after completion: `M3-W4`, add error translation and main-actor delivery.
+
+### M3-W4: Error translation and main-actor delivery
+
+Status: ready
+
+Outcome: translate bridge failures into stable Foundation error values and deliver observer callbacks on the main actor without blocking backend work.
+
+Scope: `macos/PrismNative/Bridge`, directly related native tests and Xcode project files, and this progress file only. Do not access real accounts, credentials, Keychain, production services, or add visual surfaces.
+
+Required evidence: stable error domain/code/localization/recovery values, main-actor callback assertions, cancellation and shutdown interaction tests, no Qt/C++ public types, native Debug/Release builds, native tests, Bundle ID checks, public-header scan, and `git diff --check`.
+
+HIG decision: none, this unit defines error and threading contracts without controls or rendering.
+
+Commit: not created.
+
+Next after completion: `M3-W5`, add complete bridge contract tests for empty and fixture data, cancellation, shutdown, and released observers.
 
 ## Completed commit index
 
@@ -564,6 +601,7 @@ Next after completion: `M3-W4`, add error translation and main-actor delivery.
 15. M2-W7 protects the legacy Qt composition with configure-time link assertions: `Prism` continues through `Launcher_logic`, which retains Qt Widgets, and neither target links `Launcher_frontend`.
 16. M3-W1 adds an explicit normalized fixture-root `PRPrismBridge`; its private Objective-C++ implementation owns lifecycle state and callback lifetime, while the real `FrontendFacade` link remains deliberately deferred to M3-W6.
 17. M3-W2 adds Foundation-only immutable `PRInstanceSummary` and `PRTaskStatus` contracts; DTO validation and copying remain private to Objective-C++, while backend conversion and task error translation remain later bridge work.
+18. M3-W3 adds typed Foundation observation handlers and private cancellation states; token release removes callbacks deterministically, while main-actor delivery and real facade event wiring remain later bridge work.
 
 ## Custom rendering exceptions
 
@@ -577,4 +615,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M3-W3`. Do not begin M3-W4 or native visual implementation until cancellable bridge observation contracts are verified and committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M3-W4`. Do not begin M3-W5 or native visual implementation until error translation and main-actor delivery are verified and committed.
