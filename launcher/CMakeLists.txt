@@ -1406,6 +1406,40 @@ endif()
 
 target_link_libraries(${Launcher_Name} Launcher_logic)
 
+# Preserve the legacy Qt executable composition while the native facade stays
+# an independent target. These configure-time assertions fail before a build
+# if a future extraction accidentally changes the ownership or link boundary.
+if(NOT TARGET Launcher_logic OR NOT TARGET Launcher_frontend OR NOT TARGET ${Launcher_Name})
+    message(FATAL_ERROR "Expected Qt launcher and independent frontend targets were not created")
+endif()
+
+get_target_property(_launcher_app_link_libraries ${Launcher_Name} LINK_LIBRARIES)
+list(FIND _launcher_app_link_libraries Launcher_logic _launcher_app_logic_index)
+if(_launcher_app_logic_index EQUAL -1)
+    message(FATAL_ERROR "The Qt launcher executable must link Launcher_logic")
+endif()
+list(FIND _launcher_app_link_libraries Launcher_frontend _launcher_app_frontend_index)
+if(NOT _launcher_app_frontend_index EQUAL -1)
+    message(FATAL_ERROR "The Qt launcher executable must remain independent from Launcher_frontend")
+endif()
+
+get_target_property(_launcher_logic_link_libraries Launcher_logic LINK_LIBRARIES)
+list(FIND _launcher_logic_link_libraries Launcher_frontend _launcher_logic_frontend_index)
+if(NOT _launcher_logic_frontend_index EQUAL -1)
+    message(FATAL_ERROR "Launcher_logic must remain independent from Launcher_frontend")
+endif()
+list(FIND _launcher_logic_link_libraries "Qt${QT_VERSION_MAJOR}::Widgets" _launcher_logic_widgets_index)
+if(_launcher_logic_widgets_index EQUAL -1)
+    message(FATAL_ERROR "Launcher_logic must retain its Qt Widgets link")
+endif()
+message(STATUS "Qt launcher composition contract passed: ${Launcher_Name}->Launcher_logic; no frontend link")
+unset(_launcher_app_link_libraries)
+unset(_launcher_app_logic_index)
+unset(_launcher_app_frontend_index)
+unset(_launcher_logic_link_libraries)
+unset(_launcher_logic_frontend_index)
+unset(_launcher_logic_widgets_index)
+
 if(DEFINED Launcher_APP_BINARY_NAME)
     set_target_properties(${Launcher_Name} PROPERTIES OUTPUT_NAME "${Launcher_APP_BINARY_NAME}")
 endif()

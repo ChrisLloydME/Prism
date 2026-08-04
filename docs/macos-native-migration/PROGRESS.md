@@ -6,11 +6,11 @@ Branch: `macos-native`
 
 Plan: `docs/macos-native-migration/PLAN.md`
 
-Current milestone: Milestone 2, QWidget-free backend facade
+Current milestone: Milestone 3, Objective-C++ bridge foundation
 
-Active work unit: none (M2-W6 complete; activate M2-W7 at next round start)
+Active work unit: none (M2-W7 complete; activate M3-W1 at next round start)
 
-Next ready work unit: M2-W7
+Next ready work unit: M3-W1
 
 ## Safety baseline
 
@@ -29,8 +29,8 @@ Next ready work unit: M2-W7
 | Milestone | Status | Completion requirement |
 | --- | --- | --- |
 | 1. Contracts, tests, and inventory | complete | Native contract tests, complete feature ledger, and automated bridge/fixture infrastructure |
-| 2. QWidget-free backend facade | active | Facade lists fixture instances without UI headers |
-| 3. Objective-C++ bridge foundation | queued | Swift receives real fixture snapshots and events |
+| 2. QWidget-free backend facade | complete | Facade lists fixture instances without UI headers |
+| 3. Objective-C++ bridge foundation | active | Swift receives real fixture snapshots and events |
 | 4. Native shell and instance library | queued | System-native shell state and commands are tested |
 | 5. Launch, tasks, and logs | queued | Deterministic launch-task contracts are tested |
 | 6. Instance detail and editing | queued | Instance management surfaces have native contracts |
@@ -402,7 +402,7 @@ Next after completion: `M2-W7`, preserve the existing Qt executable link and beh
 
 ### M2-W7: Preserve existing Qt executable composition
 
-Status: ready
+Status: complete
 
 Outcome: add a direct build/link contract proving the existing Qt `Prism` executable remains linked through `Launcher_logic` and behaviorally independent from `Launcher_frontend`.
 
@@ -412,9 +412,48 @@ Required evidence: explicit target/link-graph inspection, isolated Qt `Prism` bu
 
 HIG decision: none, this unit preserves legacy backend composition without controls or rendering.
 
+Files changed: `launcher/CMakeLists.txt` and this progress file.
+
+Design: add configure-time target-property assertions that require `${Launcher_Name}` to link `Launcher_logic`, forbid direct `${Launcher_Name}` or `Launcher_logic` links to `Launcher_frontend`, and require `Launcher_logic` to retain `Qt${QT_VERSION_MAJOR}::Widgets`. The existing source composition and runtime code remain unchanged; no UI control or custom drawing is involved.
+
+Tests and exact commands:
+
+- `git diff --check` — passed before and after implementation changes.
+- `env PKG_CONFIG_PATH="/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/libarchive_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/bzip2_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/liblzma_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/lzo_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/lz4_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/zstd_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/tomlplusplus_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/libqrencode_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/zlib_arm64-osx/lib/pkgconfig:/opt/homebrew/lib/pkgconfig" cmake -S . -B /private/tmp/prism-m2-cmake-pkgconfig -G Ninja -DCMAKE_PREFIX_PATH="/opt/homebrew/opt/qt;/opt/homebrew/opt/cmark;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/ecm_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/cmark_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/libarchive_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/tomlplusplus_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/zlib_arm64-osx" -DVCPKG_MANIFEST_MODE=OFF -DCMAKE_DISABLE_FIND_PACKAGE_LibArchive=TRUE -DBUILD_TESTING=ON -DLauncher_USE_PCH=OFF -DLauncher_ENABLE_JAVA_DOWNLOADER=OFF -DMACOSX_SPARKLE_UPDATE_PUBLIC_KEY="" -DMACOSX_SPARKLE_UPDATE_FEED_URL=""` — passed; output included `Qt launcher composition contract passed: Prism->Launcher_logic; no frontend link`; existing clang-format and AutoUIC warnings remain non-blocking.
+- `cmake --build /private/tmp/prism-m2-cmake-pkgconfig --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test --parallel 2` — passed; independent facade targets remained buildable.
+- `cmake --build /private/tmp/prism-m2-cmake-pkgconfig --target Prism --parallel 2` — passed; existing Qt launcher executable linked.
+- `ctest --test-dir /private/tmp/prism-m2-cmake-pkgconfig --output-on-failure -R '^(FrontendFacadeContract|FrontendFacadePublicHeaders|FileSystem|Task|JavaVersion|Version)$'` — passed; 6/6.
+- `rg -n -A5 -B2 "prismlauncher\\.app/Contents/MacOS/prismlauncher" /private/tmp/prism-m2-cmake-pkgconfig/build.ninja` — passed; generated link rule contains `launcher/libLauncher_logic.a` and Qt Widgets, with no `Launcher_frontend` edge.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed; 6 tests, 0 failures.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO build` — passed.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native-release/Build/Products/Release/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `git diff --check` — passed after verification.
+
+Result summary: configure-time assertions and the generated Ninja rule prove the Qt executable still goes through `Launcher_logic`, retains Qt Widgets, and has no frontend link edge. The facade and selected C++ tests remain green, and native identity/build/test contracts pass. No application or launcher executable was launched, and no upstream application, Application Support data, account, Keychain, production API, signing, installation, or publishing state was accessed.
+
+Risk: target-property checks prove the configured ownership/link boundary and buildability, not runtime behavior of the unlaunched Qt application; the legacy Qt UI remains in place until native parity. Existing AutoUIC and missing `clang-format` warnings remain unchanged.
+
+Commit: to be recorded after this work-unit commit.
+
+Next after completion: `M3-W1`, replace the identity-only bridge composition with a lifecycle-owning bridge root.
+
+### M3-W1: Lifecycle-owning Objective-C++ bridge root
+
+Status: ready
+
+Outcome: replace the identity-only bridge composition with an Objective-C++ root that owns the native facade lifecycle against an injected temporary data root.
+
+Scope: `macos/PrismNative/Bridge`, directly related native tests and Xcode project files, and this progress file only. Do not access upstream data, real credentials, Keychain, or production services; do not add visual surfaces yet.
+
+Required evidence: Foundation-only public bridge API, explicit fixture-root initialization, deterministic shutdown and cancellation, released observers/callbacks, Swift/Objective-C++ compile, native tests, data isolation, and no Qt/C++ types in public bridge headers.
+
+HIG decision: none, this unit is bridge lifecycle infrastructure without controls or rendering.
+
 Commit: not created.
 
-Next after completion: Milestone 3 M3-W1, replace the identity-only bridge composition with a lifecycle-owning bridge root.
+Next after completion: `M3-W2`, add immutable Foundation DTOs for instance summaries and task status.
 
 ## Completed commit index
 
@@ -448,6 +487,7 @@ Next after completion: Milestone 3 M3-W1, replace the identity-only bridge compo
 12. M2-W4 exposes snapshots and ordered instance-change values through loader ports; `InstanceList` remains an internal legacy model and cannot cross the facade boundary.
 13. M2-W5 makes lifecycle ownership explicit: cancellation and release callbacks run once during `ShuttingDown`, injected ports are cleared at `Stopped`, and post-stop facade work is rejected without touching loaders.
 14. M2-W6 makes the facade public-header boundary executable: the current header list is compiled by a standalone no-link target, while forbidden Qt/UI tokens remain absent from the public surface.
+15. M2-W7 protects the legacy Qt composition with configure-time link assertions: `Prism` continues through `Launcher_logic`, which retains Qt Widgets, and neither target links `Launcher_frontend`.
 
 ## Custom rendering exceptions
 
@@ -461,4 +501,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M2-W7`. Do not begin Milestone 3 or native visual implementation until the existing Qt composition contract is committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M3-W1`. Do not begin M3-W2 or native visual implementation until the lifecycle-owning bridge root is committed.
