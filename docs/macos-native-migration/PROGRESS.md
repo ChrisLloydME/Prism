@@ -939,7 +939,7 @@ Result summary: native artwork content now has explicit file-boundary validation
 
 Risk: the store and view are reusable seams; live `PRInstanceSummary.iconKey` resolution and instance-row integration remain future shell/store work. The cache bounds encoded file bytes and entry count; decoded `NSImage` pixel memory can vary, so a later performance audit may refine pixel-cost accounting without changing the public file-boundary contract. No custom rendering exception was added.
 
-Commit: pending implementation commit.
+Commit: `33676df3f`
 
 Next after completion: `M5-W1`, add fixture-controlled launch and stop facade commands using stable instance identifiers.
 
@@ -971,6 +971,7 @@ Next after completion: `M5-W1`, add fixture-controlled launch and stop facade co
 | `19490eac9` | Added explicit native loading, empty, failed, and content states with deterministic retry recovery metadata | Focused shell-state tests 12/12; native Debug XCTest 49/49; Debug/Release builds; state/accessibility/localization-shape and forbidden API scans; Debug/Release `plutil`; `git diff --check` |
 | `d5249dd8a` | Routed native toolbar and detail context-menu actions through the shared command model and system command button | Focused command tests 7/7; native Debug XCTest 51/51; Debug/Release builds; toolbar/context-menu, shortcut/accessibility, localization-shape, and forbidden API scans; Debug/Release `plutil`; `git diff --check` |
 | `b7d53cf84` | Hardened cross-surface accessibility identity, localized values, enabled-state, shortcut, and List selection/focus contracts | Focused command and shell tests 21/21; native Debug XCTest 53/53; Debug/Release builds; native API, localization-shape, boundary, no-drawing, Debug/Release `plutil`, and `git diff --check` validations |
+| `33676df3f` | Added bounded native instance artwork decoding, deterministic LRU caching, invalidation, and SwiftUI content presentation | Focused artwork/Shell tests 17/17; native Debug XCTest 57/57; Debug/Release builds; artwork/localization, boundary, no-drawing, upstream-data, Debug/Release `plutil`, and `git diff --check` validations |
 
 ## Current architecture findings
 
