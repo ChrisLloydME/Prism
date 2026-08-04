@@ -314,7 +314,7 @@ HIG decision: this is a backend value-contract unit, so it adds no SwiftUI/AppKi
 
 Risk: the loader callbacks are fixture/adaptor seams and do not yet connect to the legacy `InstanceList`; event observation, cancellation, lifecycle, and shutdown are intentionally deferred. Existing AutoUIC and missing `clang-format` warnings remain unchanged.
 
-Commit: to be recorded after this work-unit commit.
+Commit: `d19b2144f`
 
 Next after completion: `M2-W5`, add lifecycle and shutdown tests around the facade.
 
@@ -346,6 +346,7 @@ Next after completion: `M2-W6`, ensure all facade public headers compile without
 | `19b45a465` | Classified launcher source ownership without changing Qt composition | Isolated CMake configure/build; Launcher_logic and selected C++ tests; existing Prism target link; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; `git diff --check` |
 | `e87f35fc0` | Added the independent QWidget-free frontend facade target and fixture contract | Facade target and contract test; existing Prism target; selected C++ tests 5/5; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; public-header scan; `git diff --check` |
 | `6d1b08f3b` | Required explicit data-root and runtime dependency inputs for the facade | Facade fixture contract; selected C++ tests 5/5; existing Prism target; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; public-header scan; `git diff --check` |
+| `d19b2144f` | Added immutable instance snapshots and Added/Updated/Removed change contracts | Empty and fixture facade contracts; selected C++ tests 5/5; existing Prism target; native Debug/Release builds; 6 native tests; Debug/Release `plutil`; public-header scan; `git diff --check` |
 
 ## Current architecture findings
 
