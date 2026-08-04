@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 4, Native application shell and instance library
 
-Active work unit: none (M4-W3 complete; activate M4-W4 at next round start)
+Active work unit: M4-W4
 
-Next ready work unit: M4-W4
+Next ready work unit: none (M4-W4 active)
 
 ## Safety baseline
 
@@ -772,7 +772,7 @@ Next after completion: `M4-W4`, implement loading, empty, failed, and content st
 
 ### M4-W4: Loading, empty, failed, and content states
 
-Status: ready
+Status: active
 
 Outcome: complete the shell's explicit detail-state presentation for loading, empty, failed, and content conditions with standard SwiftUI states and deterministic recovery metadata.
 
@@ -782,7 +782,33 @@ Required evidence: state transition tests for loading, empty, failed, content, r
 
 HIG decision: use system progress and content-unavailable/error presentation; error states must state the next useful action and must not use self-drawn chrome.
 
-Commit: not created.
+Files changed: `macos/PrismNative/App/PrismShellModel.swift`, `macos/PrismNative/App/ContentView.swift`, `macos/PrismNativeTests/PrismShellTests.swift`, and this progress file. No backend, bridge, or Xcode project configuration changed because the existing shell sources were already members of both native targets.
+
+Design: add Foundation-only `PrismShellFailure` and `PrismShellRecoveryAction` values with stable localized title, message, accessibility-label, help, and retry metadata. Extend the shell detail state with `.failed`, render loading/empty/failed/content through `ProgressView` and `ContentUnavailableView`, and expose only an injected retry intent. The failed state uses a system `Button`, explicit accessibility identifiers, and `.help`; no custom card, toolbar, drawing, or third-party UI is present.
+
+Architecture: keep error presentation and recovery eligibility in the main-actor `PrismShellModel`. `retry()` routes the injected handler only while the state is failed and the recovery action is `.retry`; loading, empty, content, and a transition away from failure cannot route a stale retry. The view adds no `Task`, `.task`, bridge call, backend mutation, or cancellation-unsafe asynchronous ownership; real facade error mapping and retry work remain outside this unit.
+
+Tests and exact commands:
+
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO -only-testing:PrismNativeTests/PrismShellTests test` — passed; 12/12 focused shell tests.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed; 49 tests, 0 failures.
+- `rg -n 'NavigationSplitView|List\(|selection:|\.tag\(|\.searchable\(|\.listStyle\(\.sidebar\)|ProgressView\(|ContentUnavailableView|Button \{|\.accessibilityLabel\(|\.help\(|\.accessibilityIdentifier\(' macos/PrismNative/App/ContentView.swift` — passed; native shell, state, recovery, and accessibility APIs are present.
+- `rg -n 'PrismShellRecoveryAction|PrismShellFailure|PrismShellDetailState|isRetryAvailable|recoveryAction|func retry\(|setDetailState\(' macos/PrismNative/App/PrismShellModel.swift` — passed; state and recovery contracts are explicit.
+- `rg -n '\.accessibilityLabel\(|\.accessibilityHint\(|\.accessibilityIdentifier\(|\.help\(' macos/PrismNative/App --glob '*.swift'` — passed; shell and command surfaces expose accessibility metadata.
+- `if rg -n '\.toolbar\(|Canvas\(|draw\(' macos/PrismNative/App --glob '*.swift'; then exit 1; else exit 0; fi` — passed with no custom chrome or drawing.
+- `if rg -n '#import <Qt|#include|std::|QWidget|QDialog|QObject|QString|QVariant|QModelIndex|QList|QMap|QHash|QUrl|unique_ptr|shared_ptr|reinterpret_cast|static_cast|dynamic_cast' macos/PrismNative/App --glob '*.swift'; then exit 1; else exit 0; fi` — passed with no Qt, C++, or ownership types in Swift.
+- `rg -n 'LocalizedStringKey|Text\("|String\(format:' macos/PrismNative/App/ContentView.swift macos/PrismNative/App/PrismShellModel.swift` — passed; failure and recovery copy uses localization-aware keys without fragment concatenation. `rg --files macos/PrismNative | rg 'Localizable\.strings|\.stringsdict$'` found no resource yet, so resource-key coverage remains a later unit.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native-release/Build/Products/Release/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `git diff --check` — passed. No CMake command was required because launcher backend sources and build configuration were unchanged.
+
+Result summary: the focused and full native suites cover all four detail states, deterministic failure metadata, retry eligibility, injected retry routing, stale-action suppression after state changes, system presentation APIs, accessibility identifiers/labels/help, localization shape, and forbidden-boundary scans. Debug and Release native builds and both Bundle ID checks passed. No application or launcher executable was launched; no screenshots, visual snapshots, upstream application data, accounts, Keychain, production services, signing, installation, or publishing state were accessed.
+
+Risk: the default shell still has no real facade-backed state and its retry handler remains injected until a later store/facade unit supplies real loading and recovery work. No localization resource has been added yet. The next ready unit adds contextual menus and toolbar commands through the shared command model.
+
+Commit: pending implementation commit.
 
 Next after completion: `M4-W5`, route contextual menus and toolbar commands through the shared command model.
 
@@ -839,6 +865,7 @@ Next after completion: `M4-W5`, route contextual menus and toolbar commands thro
 23. M4-W1 centralizes native shell actions in a main-actor command manifest; SwiftUI `Commands` consumes the same descriptors for menu placement, shortcuts, enabled state, accessibility labels, and help, while future toolbar and contextual actions must route through the same model.
 24. M4-W2 replaces the placeholder hierarchy with a system `NavigationSplitView` and sidebar `List`; `PrismShellModel` keeps sidebar selection and detail loading/empty/content states testable without backend mutations, search, grouping, or custom chrome.
 25. M4-W3 keeps instance collection behavior in a main-actor Swift state seam: immutable stable-ID rows feed deterministic search, grouping, sorting, and section identity, while `ContentView` uses system `.searchable` and the existing selection metadata without introducing custom cells or backend mutations.
+26. M4-W4 keeps failure presentation in the main-actor Swift state seam: stable Foundation-only failure/recovery metadata drives system `ContentUnavailableView` actions, while retry remains an injected intent and no asynchronous or backend ownership crosses into the view.
 
 ## Custom rendering exceptions
 

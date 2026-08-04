@@ -25,7 +25,10 @@ struct ContentView: View {
             .navigationTitle("Prism")
             .accessibilityIdentifier("prism.instance-library.sidebar")
         } detail: {
-            PrismShellDetailView(state: shellModel.detailState)
+            PrismShellDetailView(
+                state: shellModel.detailState,
+                onRetry: { shellModel.retry() }
+            )
         }
         .searchable(
             text: Binding<String>(
@@ -39,6 +42,7 @@ struct ContentView: View {
 
 private struct PrismShellDetailView: View {
     let state: PrismShellDetailState
+    let onRetry: () -> Void
 
     var body: some View {
         switch state {
@@ -46,18 +50,39 @@ private struct PrismShellDetailView: View {
             ProgressView("Loading Instances")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityLabel(Text("Loading Instances"))
+                .accessibilityIdentifier("prism.instance-library.loading-state")
         case .empty:
             ContentUnavailableView(
                 "No Instances",
                 systemImage: "square.grid.2x2",
                 description: Text("Create or import an instance to get started.")
             )
+            .accessibilityIdentifier("prism.instance-library.empty-state")
+        case .failed(let failure):
+            ContentUnavailableView {
+                Label(LocalizedStringKey(failure.titleKey), systemImage: "exclamationmark.triangle")
+            } description: {
+                Text(LocalizedStringKey(failure.messageKey))
+            } actions: {
+                switch failure.recoveryAction {
+                case .retry:
+                    Button {
+                        onRetry()
+                    } label: {
+                        Text(LocalizedStringKey(failure.recoveryAction.titleKey))
+                    }
+                    .accessibilityLabel(Text(LocalizedStringKey(failure.recoveryAction.accessibilityLabelKey)))
+                    .help(Text(LocalizedStringKey(failure.recoveryAction.helpKey)))
+                }
+            }
+            .accessibilityIdentifier("prism.instance-library.failed-state")
         case .content:
             ContentUnavailableView(
                 "Instance Details",
                 systemImage: "rectangle.portrait",
                 description: Text("Select an instance to view its details.")
             )
+            .accessibilityIdentifier("prism.instance-library.content-state")
         }
     }
 }

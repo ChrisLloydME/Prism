@@ -82,9 +82,47 @@ enum PrismShellSidebarItem: String, CaseIterable, Hashable, Identifiable, Sendab
     }
 }
 
+enum PrismShellRecoveryAction: String, Equatable, Sendable {
+    case retry
+
+    var titleKey: String {
+        switch self {
+        case .retry:
+            return "Retry"
+        }
+    }
+
+    var accessibilityLabelKey: String {
+        switch self {
+        case .retry:
+            return "Retry Loading Instances"
+        }
+    }
+
+    var helpKey: String {
+        switch self {
+        case .retry:
+            return "Try loading instances again."
+        }
+    }
+}
+
+struct PrismShellFailure: Equatable, Sendable {
+    let titleKey: String
+    let messageKey: String
+    let recoveryAction: PrismShellRecoveryAction
+
+    static let instanceLoad = Self(
+        titleKey: "Unable to Load Instances",
+        messageKey: "Try again to load your instances.",
+        recoveryAction: .retry
+    )
+}
+
 enum PrismShellDetailState: Equatable, Sendable {
     case loading
     case empty
+    case failed(PrismShellFailure)
     case content
 }
 
@@ -97,6 +135,22 @@ final class PrismShellModel: ObservableObject {
     @Published private(set) var searchText = ""
     @Published private(set) var grouping: PrismInstanceGrouping = .none
     @Published private(set) var sortOrder: PrismInstanceSortOrder = .nameAscending
+    private let onRetry: (() -> Void)?
+
+    init(onRetry: (() -> Void)? = nil) {
+        self.onRetry = onRetry
+    }
+
+    var recoveryAction: PrismShellRecoveryAction? {
+        guard case .failed(let failure) = detailState else {
+            return nil
+        }
+        return failure.recoveryAction
+    }
+
+    var isRetryAvailable: Bool {
+        recoveryAction == .retry
+    }
 
     var visibleInstances: [PrismInstanceRow] {
         visibleInstanceSections.flatMap(\.instances)
@@ -136,6 +190,13 @@ final class PrismShellModel: ObservableObject {
 
     func setDetailState(_ state: PrismShellDetailState) {
         detailState = state
+    }
+
+    func retry() {
+        guard isRetryAvailable else {
+            return
+        }
+        onRetry?()
     }
 
     func setInstances(_ instances: [PrismInstanceRow]) {

@@ -35,8 +35,33 @@ final class PrismShellTests: XCTestCase {
         XCTAssertEqual(model.detailState, .empty)
     }
 
-    func testShellModelRepresentsLoadingEmptyAndContentStates() {
+    func testShellModelRepresentsLoadingEmptyFailedAndContentStates() {
         let model = PrismShellModel()
+        let failure = PrismShellFailure.instanceLoad
+
+        let states: [PrismShellDetailState] = [
+            PrismShellDetailState.loading,
+            .empty,
+            .failed(failure),
+            .content,
+        ]
+
+        for state in states {
+            model.setDetailState(state)
+            XCTAssertEqual(model.detailState, state)
+        }
+
+        XCTAssertEqual(failure.titleKey, "Unable to Load Instances")
+        XCTAssertEqual(failure.messageKey, "Try again to load your instances.")
+        XCTAssertEqual(failure.recoveryAction, .retry)
+        XCTAssertFalse(failure.recoveryAction.titleKey.isEmpty)
+        XCTAssertFalse(failure.recoveryAction.accessibilityLabelKey.isEmpty)
+        XCTAssertFalse(failure.recoveryAction.helpKey.isEmpty)
+    }
+
+    func testRetryIsEligibleOnlyForFailedStateAndDoesNotRouteStaleActions() {
+        var retryCount = 0
+        let model = PrismShellModel(onRetry: { retryCount += 1 })
 
         for state in [
             PrismShellDetailState.loading,
@@ -44,8 +69,22 @@ final class PrismShellTests: XCTestCase {
             .content,
         ] {
             model.setDetailState(state)
-            XCTAssertEqual(model.detailState, state)
+            XCTAssertNil(model.recoveryAction)
+            XCTAssertFalse(model.isRetryAvailable)
+            model.retry()
         }
+
+        XCTAssertEqual(retryCount, 0)
+
+        model.setDetailState(.failed(.instanceLoad))
+        XCTAssertEqual(model.recoveryAction, .retry)
+        XCTAssertTrue(model.isRetryAvailable)
+        model.retry()
+        XCTAssertEqual(retryCount, 1)
+
+        model.setDetailState(.loading)
+        model.retry()
+        XCTAssertEqual(retryCount, 1)
     }
 
     func testSelectionUsesStableInstanceIdentifiersAcrossSortingAndSearch() {
@@ -152,8 +191,11 @@ final class PrismShellTests: XCTestCase {
             ".listStyle(.sidebar)",
             ".searchable(",
             "ContentUnavailableView(",
+            "ContentUnavailableView {",
             "ProgressView(",
+            "Button {",
             ".accessibilityLabel(",
+            ".help(",
             ".accessibilityHint(",
             ".accessibilityIdentifier("
         ] {
@@ -163,6 +205,8 @@ final class PrismShellTests: XCTestCase {
         XCTAssertFalse(source.contains(".toolbar("))
         XCTAssertFalse(source.contains("Canvas("))
         XCTAssertFalse(source.contains("draw("))
+        XCTAssertFalse(source.contains(".task("))
+        XCTAssertFalse(source.contains("Task {"))
     }
 
     func testShellModelSourceDefinesSearchGroupingAndSortingState() throws {
@@ -171,7 +215,12 @@ final class PrismShellTests: XCTestCase {
         for requiredToken in [
             "PrismInstanceGrouping",
             "PrismInstanceSortOrder",
+            "PrismShellFailure",
+            "PrismShellRecoveryAction",
             "visibleInstanceSections",
+            "isRetryAvailable",
+            "recoveryAction",
+            "retry()",
             "setSearchText(",
             "setGrouping(",
             "setSortOrder("
