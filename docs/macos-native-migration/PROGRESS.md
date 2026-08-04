@@ -6,11 +6,11 @@ Branch: `macos-native`
 
 Plan: `docs/macos-native-migration/PLAN.md`
 
-Current milestone: Milestone 3, Objective-C++ bridge foundation
+Current milestone: Milestone 4, Native application shell and instance library
 
-Active work unit: M3-W6
+Active work unit: none (M3-W6 complete; activate M4-W1 at next round start)
 
-Next ready work unit: none (M3-W6 active)
+Next ready work unit: M4-W1
 
 ## Safety baseline
 
@@ -621,7 +621,7 @@ Next after completion: `M3-W6`, link the QWidget-free `FrontendFacade` output in
 
 ### M3-W6: Link the QWidget-free facade into the native bridge
 
-Status: active
+Status: complete
 
 Outcome: link the existing `Launcher_frontend` output into the native Xcode target and convert real facade snapshots, events, lifecycle, and errors through Objective-C++ without copying launcher implementation files into the app target.
 
@@ -631,9 +631,48 @@ Required evidence: isolated CMake facade build and relevant C++ tests, Xcode lin
 
 HIG decision: none, this unit establishes backend linkage and bridge conversion without controls or rendering.
 
-Commit: not created; implementation in progress.
+Files changed: `macos/PrismNative/Bridge/PrismBridge.h`, `macos/PrismNative/Bridge/PrismBridge.mm`, `macos/PrismNative/Bridge/PrismBridgeModels.h`, `macos/PrismNativeTests/PrismBridgeFacadeIntegrationTests.mm`, `macos/PrismNative.xcodeproj/project.pbxproj`, and this progress file. No launcher implementation source was copied into the Xcode target. The native app and test target consume only the ignored universal `libLauncher_frontend.a` output through `-lLauncher_frontend`; the existing Qt `Prism` executable remains linked through `Launcher_logic`.
 
-Resume: Continue the active M3-W6 implementation; after verification record the exact implementation and progress-sync commits, then activate only M4-W1.
+Design: keep the private Objective-C++ initializer as the only owner and type-conversion boundary for `FrontendFacade` and `FrontendRuntimeDependencies`. The bridge converts validated C++ snapshots and Added/Updated/Removed changes into copied Foundation DTOs, translates facade exceptions to stable `PRBridgeError` values, publishes changes on the existing cancellation-aware main-actor observation path, and cancels one-shot requests before invoking completion. The public bridge headers and Swift app surface remain Foundation-only; no controls, rendering, or HIG exception is involved.
+
+Tests and exact commands:
+
+- `env PKG_CONFIG_PATH="/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/libarchive_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/bzip2_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/liblzma_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/lzo_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/lz4_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/zstd_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/tomlplusplus_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/libqrencode_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/zlib_arm64-osx/lib/pkgconfig:/opt/homebrew/lib/pkgconfig" cmake -S . -B /private/tmp/prism-m3-w6-cmake -G Ninja -DCMAKE_PREFIX_PATH="/opt/homebrew/opt/qt;/opt/homebrew/opt/cmark;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/ecm_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/cmark_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/libarchive_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/tomlplusplus_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/zlib_arm64-osx" -DVCPKG_MANIFEST_MODE=OFF -DCMAKE_DISABLE_FIND_PACKAGE_LibArchive=TRUE -DBUILD_TESTING=ON -DLauncher_USE_PCH=OFF -DLauncher_ENABLE_JAVA_DOWNLOADER=OFF -DMACOSX_SPARKLE_UPDATE_PUBLIC_KEY="" -DMACOSX_SPARKLE_UPDATE_FEED_URL="" -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="/Users/lloyd/Developer/Xcode/Prism/.deriveddata-prism-native-backend"` — configured successfully.
+- `cmake --build /private/tmp/prism-m3-w6-cmake --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test --parallel 2`, `cmake --build /private/tmp/prism-m3-w6-cmake --target Prism --parallel 2`, and `cmake --build /private/tmp/prism-m3-w6-cmake --target FileSystem Task JavaVersion Version --parallel 2` — all passed.
+- `ctest --test-dir /private/tmp/prism-m3-w6-cmake --output-on-failure -R '^(FrontendFacadeContract|FrontendFacadePublicHeaders|FileSystem|Task|JavaVersion|Version)$'` — passed 6/6.
+- `env PKG_CONFIG_PATH="/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/libarchive_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/bzip2_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/liblzma_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/lzo_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/lz4_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/zstd_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/tomlplusplus_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/libqrencode_arm64-osx/lib/pkgconfig:/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/zlib_arm64-osx/lib/pkgconfig:/opt/homebrew/lib/pkgconfig" cmake -S . -B /private/tmp/prism-m3-w6-universal -G Ninja -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 -DCMAKE_PREFIX_PATH="/opt/homebrew/opt/qt;/opt/homebrew/opt/cmark;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/ecm_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/cmark_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/libarchive_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/tomlplusplus_arm64-osx;/Users/lloyd/Developer/Xcode/Prism/.deps/vcpkg/packages/zlib_arm64-osx" -DVCPKG_MANIFEST_MODE=OFF -DCMAKE_DISABLE_FIND_PACKAGE_LibArchive=TRUE -DBUILD_TESTING=ON -DLauncher_USE_PCH=OFF -DLauncher_ENABLE_JAVA_DOWNLOADER=OFF -DMACOSX_SPARKLE_UPDATE_PUBLIC_KEY="" -DMACOSX_SPARKLE_UPDATE_FEED_URL="" -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="/Users/lloyd/Developer/Xcode/Prism/.deriveddata-prism-native-backend"` — configured successfully. `cmake --build /private/tmp/prism-m3-w6-universal --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test --parallel 2` passed. `file .deriveddata-prism-native-backend/libLauncher_frontend.a` reported a Mach-O universal binary with `x86_64` and `arm64`; `lipo -info .deriveddata-prism-native-backend/libLauncher_frontend.a` reported both architectures.
+- `ctest --test-dir /private/tmp/prism-m3-w6-universal --output-on-failure -R '^(FrontendFacadeContract|FrontendFacadePublicHeaders)$'` — passed 2/2.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed 32/32.
+- `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -fsyntax-only -x objective-c -target arm64-apple-macos14.0 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk macos/PrismNative/Bridge/PrismBridge.h` and `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++ -fsyntax-only -std=c++20 -fobjc-arc -x objective-c++ -target arm64-apple-macos14.0 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk -Ilauncher/frontend macos/PrismNative/Bridge/PrismBridge.mm` — both passed.
+- The forbidden public bridge scan and Swift app boundary scan passed with no matches. `rg -n 'launcher/ui|QWidget|QDialog|QtWidgets|QAbstractItemModel|QAbstractListModel|QObject|QModelIndex' launcher/frontend --glob '*.h'` returned no matches. The Xcode project inspection confirms `HEADER_SEARCH_PATHS` points only to `launcher/frontend`, `LIBRARY_SEARCH_PATHS` points to `.deriveddata-prism-native-backend`, and `OTHER_LDFLAGS` contains `-lLauncher_frontend`; the successful link command consumed that archive without `launcher/ui` sources.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` and the corresponding Release command both printed `com.lloydME.Prism`.
+- `git diff --check` and `git diff --cached --check` — passed.
+
+Result summary: native tests obtain temporary-fixture snapshots and ordered changes through the real `FrontendFacade` owned by the bridge, verify main-actor delivery, cancellation suppression, stable invalid-input translation, and exactly-once facade shutdown callbacks. The app's default runtime dependencies intentionally provide no loader callbacks yet, so default composition remains empty until a later domain adapter supplies services; no upstream Application Support path is read.
+
+Risk: the universal archive is ignored build output rather than a committed backend artifact. Existing AppIntents metadata, Vulkan/scdoc, AutoUIC, and missing clang-format warnings remain non-blocking and unchanged. No current blocker.
+
+Commit: `4f3d62c21`
+
+Next after completion: `M4-W1`, define native app commands and keyboard shortcuts before toolbar duplication.
+
+### M4-W1: Define native app commands and keyboard shortcuts
+
+Status: ready
+
+Outcome: establish one testable native command model and system menu/shortcut definitions before duplicating toolbar actions, so shell commands have stable enabled state, accessibility metadata, and keyboard behavior.
+
+Scope: `macos/PrismNative/App`, directly related native tests and Xcode project files, and this progress file only. Use SwiftUI `Commands` and system menu APIs; do not begin sidebar/content rendering or modify other platforms.
+
+Required evidence: command/view-model tests for enabled state and invocation routing, menu and keyboard shortcut tests, static source checks for system command/navigation APIs, native Debug/Release builds, native tests, Bundle ID checks, and `git diff --check`. No application launch, screenshot, visual snapshot, real account, Keychain, or upstream data access.
+
+HIG decision: use SwiftUI `Commands`, `CommandGroup`, `CommandMenu`, and `keyboardShortcut` for the app shell; keep toolbar duplication deferred until the command model is tested. No custom-drawn menu or control is allowed.
+
+Commit: not created.
+
+Next after completion: `M4-W2`, implement the sidebar and instance content with `NavigationSplitView`.
 
 ## Completed commit index
 
@@ -656,6 +695,7 @@ Resume: Continue the active M3-W6 implementation; after verification record the 
 | `cacd8d16f` | Added Foundation observation handlers and cancellable tokens with fixture delivery and release contracts | Native Debug XCTest 17/17; Debug/Release builds; Objective-C public-header syntax; forbidden bridge and Swift boundary scans; Debug/Release `plutil`; `git diff --check` |
 | `a9853cbe2` | Added stable Foundation error translation and asynchronous main-actor observation delivery | Native Debug XCTest 20/20; Debug/Release builds; Objective-C public-header syntax; forbidden bridge and Swift boundary scans; Debug/Release `plutil`; `git diff --check` |
 | `6711968f7` | Added dedicated native bridge contract coverage for fixture initialization, empty state, immutable snapshots, cancellation, shutdown, released observers, and errors | Native Debug XCTest 27/27; Debug/Release builds; Objective-C public-header syntax; forbidden bridge and Swift boundary scans; Debug/Release `plutil`; `git diff --check` |
+| `4f3d62c21` | Linked the real QWidget-free frontend facade into the Objective-C++ bridge and converted fixture snapshots, changes, lifecycle, cancellation, and errors | CMake facade/Prism targets; selected C++ tests 6/6; universal facade tests 2/2; native Debug XCTest 32/32; Debug/Release builds; public-header and Swift-boundary scans; Debug/Release `plutil`; `git diff --check` |
 
 ## Current architecture findings
 
@@ -663,7 +703,7 @@ Resume: Continue the active M3-W6 implementation; after verification record the 
 2. `Application` derives from `QApplication` and exposes global application state.
 3. `InstanceList` and `AccountList` derive from Qt list models.
 4. `LaunchController` derives from the existing task system.
-5. The native Xcode target does not yet link a backend library.
+5. The native Xcode target links only the QWidget-free `Launcher_frontend` archive from ignored local build output; it does not copy launcher implementation sources into the app target.
 6. The first backend task is separation and characterization, not Swift reimplementation.
 7. M2-W1 keeps the existing Qt composition in `Launcher_logic` while exposing domain, UI, application, and executable-entry source ownership for the upcoming facade target.
 8. M2-W2 is the first independent `launcher/frontend` target; it must remain compilable without `launcher/ui` and must not alter the existing Qt target's link graph.
@@ -673,13 +713,14 @@ Resume: Continue the active M3-W6 implementation; after verification record the 
 12. M2-W4 exposes snapshots and ordered instance-change values through loader ports; `InstanceList` remains an internal legacy model and cannot cross the facade boundary.
 13. M2-W5 makes lifecycle ownership explicit: cancellation and release callbacks run once during `ShuttingDown`, injected ports are cleared at `Stopped`, and post-stop facade work is rejected without touching loaders.
 14. M2-W6 makes the facade public-header boundary executable: the current header list is compiled by a standalone no-link target, while forbidden Qt/UI tokens remain absent from the public surface.
-15. M2-W7 protects the legacy Qt composition with configure-time link assertions: `Prism` continues through `Launcher_logic`, which retains Qt Widgets, and neither target links `Launcher_frontend`.
-16. M3-W1 adds an explicit normalized fixture-root `PRPrismBridge`; its private Objective-C++ implementation owns lifecycle state and callback lifetime, while the real `FrontendFacade` link remains deliberately deferred to M3-W6.
+15. M2-W7 protects the legacy Qt composition with configure-time link assertions: `Prism` continues through `Launcher_logic`, which retains Qt Widgets, while the separate native target consumes `Launcher_frontend` without changing that Qt link graph.
+16. M3-W1 added an explicit normalized fixture-root `PRPrismBridge`; its private Objective-C++ implementation owns lifecycle state and callback lifetime, and M3-W6 now supplies the real `FrontendFacade` link.
 17. M3-W2 adds Foundation-only immutable `PRInstanceSummary` and `PRTaskStatus` contracts; DTO validation and copying remain private to Objective-C++, while backend conversion and task error translation remain later bridge work.
 18. M3-W3 adds typed Foundation observation handlers and private cancellation states; token release removes callbacks deterministically, while main-actor delivery and real facade event wiring remain later bridge work.
 19. M3-W4 adds Foundation error translation and structured `NSError` metadata, while main-queue delivery is asynchronous and cancellation-aware; real facade failure mapping and Swift `@MainActor` feature state remain later work.
-20. M3-W5 adds a dedicated bridge contract suite for temporary-root initialization, empty and fixture snapshots, cancellation, shutdown ordering, released observers, and stable error propagation; the private fixture ingress remains until M3-W6 backend linkage.
-21. M3-W6 is the remaining Milestone 3 boundary: consume the existing QWidget-free `Launcher_frontend` target from Objective-C++ and keep the Swift-facing bridge free of Qt, C++, and ownership types.
+20. M3-W5 added a dedicated bridge contract suite for temporary-root initialization, empty and fixture snapshots, cancellation, shutdown ordering, released observers, and stable error propagation; M3-W6 extends those contracts through the linked facade.
+21. M3-W6 completes the Milestone 3 boundary: the Objective-C++ bridge consumes the existing QWidget-free `Launcher_frontend` target and keeps the Swift-facing bridge free of Qt, C++, and ownership types.
+22. M3-W6 proves the linker boundary without source copying: Xcode consumes the ignored universal `libLauncher_frontend.a` through `-lLauncher_frontend`, while `PRPrismBridge` alone owns `FrontendFacade` and converts C++ values into Foundation DTOs; the existing Qt `Prism` link remains unchanged and the public bridge/Swift surfaces remain free of Qt and C++.
 
 ## Custom rendering exceptions
 
@@ -693,4 +734,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then resume the active `M3-W6`. Do not begin M4-W1 or native visual implementation until real `FrontendFacade` linkage and bridge conversion are verified and committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M4-W1`. Do not begin M4-W2 or native visual implementation until the command model, menu definitions, enabled state, and shortcut tests are verified and committed.
