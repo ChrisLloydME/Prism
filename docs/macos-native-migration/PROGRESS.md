@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 5, Launch, stop, tasks, and logs
 
-Active work unit: M5-W5
+Active work unit: M5-W6
 
-Next ready work unit: M5-W5
+Next ready work unit: M5-W6
 
 ## Safety baseline
 
@@ -1103,6 +1103,38 @@ Commit: `8ebdcafe5e76fbd088f61fe0a47e66c2de7fe7f0`.
 
 Next after completion: `M5-W5`, add standard large-log text-view behavior without introducing third-party UI or custom drawing.
 
+### M5-W5: Standard large-log text view
+
+Status: complete
+
+Outcome: replace the bounded task-log `ScrollView`/`Text` surface with a standard read-only AppKit `NSTextView` hosted in `NSScrollView`. The native log remains selectable, monospaced, vertically scrollable, and searchable through the system Find bar while retaining the existing empty state, truncation notice, retry state, and accessibility identifiers and values.
+
+Scope: directly required large-log presentation and source-contract tests only. The existing M5-W4 bounded, privacy-filtered `PrismTaskLogPresentation` and Foundation bridge contract are unchanged. No real process output, account, Keychain, upstream data, persistence, network, or backend ownership was accessed. M5-W6 remains responsible for the complete task scenario matrix.
+
+HIG decision: use SwiftUI `NSViewRepresentable` only as the standard integration seam for AppKit `NSTextView` and `NSScrollView`; configure the text view as non-editable and selectable, use the system monospaced font, vertical scrolling, and the built-in Find bar. No control, text layout, scrollbar, accessibility container, or window chrome is self-drawn and no third-party UI is introduced. References: Apple [`NSTextView`](https://developer.apple.com/documentation/appkit/nstextview), [`NSScrollView`](https://developer.apple.com/documentation/appkit/nsscrollview), and [`NSViewRepresentable`](https://developer.apple.com/documentation/swiftui/nsviewrepresentable).
+
+Architecture: `PrismTaskLogTextView` consumes only the already validated `PrismTaskLogPresentation.renderedText` string. It adds no Objective-C++ or C++ type, ownership, process, account, filesystem, network, or log-source lifetime to Swift; the Objective-C++ facade and bounded privacy filter remain the sole data boundary. The view updates the existing AppKit document view only when the validated text changes and leaves selection and Find behavior to the system text view.
+
+Files changed: `macos/PrismNative/App/ContentView.swift`, `macos/PrismNativeTests/PrismShellTests.swift`. No backend, bridge, CMake, Xcode project, or other-platform source changed.
+
+Tests and exact commands:
+
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO -only-testing:PrismNativeTests/PrismShellTests test` — passed; focused Shell tests 23/23. The result bundle was `.deriveddata-prism-native/Logs/Test/Test-PrismNative-2026.08.09_00-15-37-+0800.xcresult`.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed; the full native suite was counted from `.deriveddata-prism-native/Logs/Test/Test-PrismNative-2026.08.09_00-16-13-+0800.xcresult` with `xcrun xcresulttool get test-results tests --path .deriveddata-prism-native/Logs/Test/Test-PrismNative-2026.08.09_00-16-13-+0800.xcresult | rg '"nodeType" : "Test Case"' | wc -l` — `70`.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` and `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO build` — both passed.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` and `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native-release/Build/Products/Release/Prism.app/Contents/Info.plist` — both returned `com.lloydME.Prism`.
+- `rg -n 'NSViewRepresentable|NSTextView|NSScrollView|isEditable = false|isSelectable = true|usesFindBar = true|\.accessibilityLabel\(|\.accessibilityValue\(|\.accessibilityIdentifier\(|ContentUnavailableView' macos/PrismNative/App/ContentView.swift` — passed; the standard AppKit text view, Find bar, empty state, and accessibility APIs are present.
+- `if rg -n 'QWidget|QDialog|Qt[A-Za-z]|std::|Unmanaged|UnsafeMutable|UnsafeRaw|Canvas\(|draw\(|Path\(|CGContext|NSBezierPath' macos/PrismNative/App --glob '*.swift'; then exit 1; else exit 0; fi` and `if rg -n 'QWidget|QDialog|Qt[A-Za-z]|std::|shared_ptr|unique_ptr|Unmanaged|UnsafeMutable|UnsafeRaw' macos/PrismNative/Bridge --glob '*.h'; then exit 1; else exit 0; fi` — passed with no forbidden Swift/bridge-boundary or custom-drawing matches.
+- `git diff --check` — passed. No CMake command was required because launcher backend sources and build configuration were unchanged.
+
+Result summary: the new source contract requires `NSTextView`, `NSScrollView`, non-editable/selectable configuration, the standard Find bar, accessibility metadata, and the existing system empty state; it also asserts that the old `ScrollView(.vertical)` and direct `Text(log.renderedText)` path are gone. The full suite preserves all prior task, bridge, shell, accessibility, localization-shape, cancellation, and bounded-log tests. No application launch, screenshot, recording, visual snapshot, upstream application/data, account, Keychain, network, signing, installation, publishing, or push action was used.
+
+Risk: the AppKit text view presents the bounded snapshot but does not create a live log stream, persist logs, index search results, or own `LaunchController`. The bounded 512-entry/256 KiB privacy contract remains in M5-W4. M5-W6 must add deterministic success, rejection, cancellation, failure, retry, shutdown, and truncation scenario coverage without launching a real process.
+
+Commit: `f5ce26fc307ae83ae3baa514feb9ca2c2b4f03d2`.
+
+Next after completion: `M5-W6`, add the complete deterministic task and log scenario matrix.
+
 ## Completed commit index
 
 | Commit | Outcome | Verification |
@@ -1137,6 +1169,7 @@ Next after completion: `M5-W5`, add standard large-log text-view behavior withou
 | `e55fd3139` | Added immutable task progress, subtask, terminal-result, and idempotent cancellation contracts across facade and bridge | arm64/universal CMake facade tests 2/2; arm64 legacy Prism target; focused native task/bridge tests 26/26; full native tests 61/61; Debug/Release builds; public boundary, recovery/localization/accessibility, Bundle ID, and `git diff --check` validations |
 | `ac2977bfa` | Added native task progress presentation, main-actor state, cancellation/retry intents, and standard SwiftUI recovery surfaces | Focused command/Shell tests 30/30; full native tests 65/65; Debug/Release builds; Objective-C bridge syntax; Qt/C++/ownership and no-drawing scans; localization/accessibility/command API scan; Debug/Release `plutil`; `git diff --check` |
 | `8ebdcafe5` | Added bounded privacy-filtered task log streaming, immutable Foundation log snapshots, cancellable bridge delivery, and standard Swift text presentation | arm64/universal CMake facade tests 2/2; arm64 legacy Prism target 436/436; focused bridge tests 9/9; full native tests 70/70; Debug/Release builds; public Objective-C/Objective-C++ syntax; Qt/ownership/drawing scans; Debug/Release `plutil`; `git diff --check` |
+| `f5ce26fc3` | Replaced the bounded task-log ScrollView/Text surface with a standard selectable and searchable AppKit NSTextView/NSScrollView view | Focused Shell tests 23/23; full native tests 70/70; Debug/Release builds; AppKit/accessibility source inspection; Qt/ownership/drawing scans; Debug/Release `plutil`; `git diff --check` |
 
 ## Current architecture findings
 
@@ -1173,6 +1206,7 @@ Next after completion: `M5-W5`, add standard large-log text-view behavior withou
 31. M5-W2 adds immutable task and subtask values with explicit progress kinds, cancellation eligibility, terminal outcomes, localized diagnostic metadata, rollback status, and idempotent cancellation results. The C++ facade validates the value contract, while Objective-C++ serializes conversion, error/recovery mapping, request-token lifetime, shutdown cancellation, and main-actor delivery; M5-W3 owns native progress presentation.
 32. M5-W3 maps those Foundation DTOs into validated `PrismTaskPresentation` values and an `@MainActor` `PrismTaskPresentationModel`; SwiftUI consumes only standard `ProgressView`, `Button`, `Label`, `List`, and `ContentUnavailableView` surfaces, while stable cancel/retry intents remain injected. Real task observation and `LaunchController` ownership are intentionally deferred to later launch composition; no custom-rendering exception was added.
 33. M5-W4 adds a callback-based `TaskLogStreamer` port; `FrontendFacade` privacy-filters and bounds only a fixed tail before `PRTaskLogSnapshot` crosses Objective-C++, while Swift owns no process or log source and consumes only validated `PrismTaskLogPresentation` state through standard `ScrollView` and `Text`. M5-W5 remains the boundary for large-log text-view behavior.
+34. M5-W5 moves only the presentation seam from SwiftUI `ScrollView`/`Text` to AppKit `NSTextView`/`NSScrollView` through `NSViewRepresentable`; the same validated bounded privacy-filtered string crosses no new bridge boundary, and selectable/find-bar behavior remains native. M5-W6 owns the task scenario matrix, not a new log source or ownership path.
 
 ## Custom rendering exceptions
 
@@ -1186,4 +1220,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M5-W5`. M5-W4 is complete in `8ebdcafe5`; M5-W5 may add large-log TextKit or standard text-view behavior while preserving the facade privacy and bounded-snapshot contract. Do not begin M5-W6 or later work until the M5-W5 evidence is verified and committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M5-W6`. M5-W5 is complete in `f5ce26fc3`; M5-W6 may add only deterministic success, rejection, cancellation, failure, retry, shutdown, and log-truncation scenario coverage while preserving the existing facade, privacy, bounds, and standard AppKit text-view contracts. Do not begin Milestone 6 or later work until M5-W6 evidence is verified and committed.
