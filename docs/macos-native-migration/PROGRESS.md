@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 7, Settings, Java, and accounts
 
-Active work unit: none (M7-W4 complete)
+Active work unit: M7-W6
 
-Next ready work unit: M7-W5
+Next ready work unit: M7-W6
 
 ## Safety baseline
 
@@ -1617,6 +1617,47 @@ Commit: `5a4cef365` (implementation); this entry is completed in the follow-up p
 
 Next after completion: `M7-W5`, add fake authentication and account login/recovery outcomes without credentials or provider requests; do not begin M7-W6 until M7-W5 evidence is verified and committed.
 
+### M7-W5: Fixture-only authentication state machine and recovery
+
+Status: complete
+
+Outcome: replace the legacy Microsoft login/refresh dialog semantics with an explicit native authentication state machine and fake-provider contract. The contract covers preparing, device-code presentation, authenticating, success, retryable refresh failure, permanent failure, cancellation, stale-result rejection, and recoverable account state without authenticating or carrying provider secrets.
+
+Legacy contract evidence: `MSALoginDialog` presents device-flow instructions, progress, copy/cancel actions, and terminal errors; `AuthFlow` distinguishes refresh, device-code login, online, offline, disabled, expired, gone, and errored account states; `ProfileSetupDialog` performs a separate profile-network operation; `ProfileSelectDialog` is the account-selection surface already covered by M7-W4; and `ChooseOfflineNameDialog` remains the next M7-W6 identity workflow. This unit records only the safe state-machine portion of those semantics. Real provider requests and profile creation remain outside the fixture contract.
+
+Working boundary: no Microsoft OAuth/device-code network request, browser launch, Keychain access, account-list persistence, real account identifier, profile setup request, environment lookup, process launch, upstream data, or production service. Fake providers may return only synthetic provider labels, sanitized fixture account identifiers, redacted device-flow presentation metadata, stable localization keys, safe diagnostics, and deterministic state transitions. User codes, authorization codes, bearer tokens, refresh tokens, profiles, and provider-owned authentication state do not cross into Swift, Objective-C++ DTO descriptions, logs, progress files, or test fixtures.
+
+HIG decision: use the standard SwiftUI `Settings` scene with `GroupBox`, `LabeledContent`, `Button`, `ProgressView`, `Label`, `Text`, system disabled states, text selection, and accessibility identifiers/values. Device-flow verification data is rendered as non-clickable selectable text rather than a custom QR surface or browser action; progress and retry/cancel recovery use system controls. This follows Apple’s [Settings HIG](https://developer.apple.com/design/human-interface-guidelines/settings), [Button](https://developer.apple.com/documentation/swiftui/button), [ProgressView](https://developer.apple.com/documentation/swiftui/progressview), [LabeledContent](https://developer.apple.com/documentation/swiftui/labeledcontent), and [ContentUnavailableView](https://developer.apple.com/documentation/swiftui/contentunavailableview) guidance. No custom system-control drawing, third-party UI framework, custom title bar, or rendering exception was added.
+
+Architecture: `FrontendAccountAuthenticationRequest`, immutable progress values, terminal outcomes, and fake-provider runner ports are validated in the QWidget-free facade. The facade enforces action/identity matching, legal phase/outcome metadata, terminal ordering, success-account invariants, and post-shutdown rejection. Objective-C++ is the only C++/Foundation conversion and ownership boundary: it converts immutable DTOs, serializes facade work, delivers repeated progress and final results on the main actor, and suppresses queued callbacks after cancellation or shutdown. Swift owns only sanitized value models and a `@MainActor` generation-guarded state machine; cancellation invalidates stale callbacks, retry repeats only retryable failures, and successful results require a Microsoft online selectable account. The default app composition intentionally leaves the production adapter disconnected, so an unconnected adapter presents a recoverable unavailable state rather than contacting a provider.
+
+Files changed: `launcher/frontend/FrontendFacade.{h,cpp}`, `launcher/frontend/FrontendFacadeContractTest.cpp`, `macos/PrismNative/Bridge/PrismBridgeModels.h`, `macos/PrismNative/Bridge/PrismBridge.{h,mm}`, new `macos/PrismNative/App/PrismAccountAuthentication.swift`, `macos/PrismNative/App/PrismAccountSettings.swift`, `macos/PrismNative/App/PrismNativeApp.swift`, `macos/PrismNative/App/PrismSettings.swift`, `macos/PrismNativeTests/PrismBridgeFacadeIntegrationTests.mm`, `macos/PrismNativeTests/PrismShellTests.swift`, and `macos/PrismNative.xcodeproj/project.pbxproj`. No other-platform behavior, installed upstream application, upstream Application Support data, account, Keychain, credential, production service, signature, publishing state, or build configuration outside the direct native target changed.
+
+Tests and exact commands:
+
+- `git diff --check` and final `git diff --cached --check` — passed. The staged EOF whitespace issue found before the implementation commit was corrected before committing.
+- `cmake --build .deriveddata-prism-native-backend --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test --parallel 2` — passed. `ctest --test-dir .deriveddata-prism-native-backend --output-on-failure -R '^(FrontendFacadeContract|FrontendFacadePublicHeaders)$'` — passed 2/2. The fixture C++ tests cover synthetic login progress, device-flow presentation, success, retryable refresh failure, invalid progress/result rejection, cancellation suppression, and post-shutdown rejection.
+- `cmake --build /private/tmp/prism-m5-w4-cmake --target Prism --parallel 2` — passed; the existing arm64 Qt `Prism` target reconfigured and linked without execution. The known macOS 26-versus-14 deployment warnings remain non-blocking.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` and the equivalent Release command with `.deriveddata-prism-native-release` — passed. The corresponding full Debug and Release XCTest runs passed 112/112 with zero failures; after the final verification-expiration text interpolation correction, the same `xcodebuild -quiet ... test` commands rebuilt and passed in both configurations with exit code 0. No application process was launched.
+- `plutil -p .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` and the Release equivalent — both reported `CFBundleIdentifier = com.lloydME.Prism`. `file` and `lipo -info` on both `Prism` binaries — passed; Debug and Release artifacts retain `x86_64 arm64` universal architecture.
+- Native integration tests cover immutable Foundation conversion, main-actor progress/result delivery, queued-callback cancellation suppression, shutdown, Swift generation guards, success validation, retry recovery, cancelled state, stale results, and unavailable-adapter recovery. Structure scans found standard Settings controls, progress/cancel/retry affordances, stable `accounts.authentication.*` localization keys, and accessibility identifiers/values. Targeted production scans found no token-bearing field/API, URLSession, Keychain, process launch, Qt/C++/ownership type, or custom drawing in the new authentication model or public authentication DTO contract; broad existing bridge comments mentioning Java process ownership are unrelated and do not cross the authentication contract.
+
+Result summary: the native Settings Accounts surface now has an independently testable, fake-provider authentication state machine with explicit progress, cancellation, success, failure, and retry contracts. The C++ facade, Foundation-only Objective-C++ bridge, and Swift model are independently validated; the legacy Qt dialogs remain untouched and no live provider behavior is claimed.
+
+Risk: real Microsoft device-code/OAuth refresh, account persistence, profile setup, provider reconciliation, Keychain policy, and offline launch identity remain future contracts. M7-W6 owns offline launch identity; M7-W7 owns the final secret-crossing audit. The known macOS 26-versus-14 deployment warnings remain non-blocking. No custom-rendering exception was added.
+
+Commit: `15d2863af` (implementation); this entry is completed in the follow-up progress-ledger commit.
+
+Next after completion: `M7-W6`, implement fixture-only offline launch identity and safe name recovery without launching a game process or reading persisted upstream account data.
+
+### M7-W6: Fixture-only offline launch identity
+
+Status: active
+
+Outcome: in progress. Inspect and implement the native offline-launch identity contract corresponding to `ChooseOfflineNameDialog`, preserving explicit name validation, cancellation, recovery, and confirmed state without launching Minecraft or persisting to an upstream data root.
+
+Working boundary: no game-process launch, account persistence, real account data, Keychain access, provider request, environment lookup, upstream Application Support access, signing, installation, or production runtime wiring. The next round must first re-read the plan/progress ledger and legacy offline-name consumers, then define the narrowest Foundation-only facade/bridge/model contract and fixture tests.
+
 ## Completed commit index
 
 | Commit | Outcome | Verification |
@@ -1663,6 +1704,7 @@ Next after completion: `M7-W5`, add fake authentication and account login/recove
 | `12c6ba49a` | Added the typed native global Settings scene, non-secret facade/bridge round trips, draft rollback, and cancellation-safe directory selection | arm64/universal facade CMake/CTest 2/2; arm64 Qt Prism target; focused native tests 65/65; full native tests 103/103; Debug/Release builds; Bundle ID `com.lloydME.Prism`; Objective-C/Objective-C++ syntax; Settings/menu/accessibility/localization-shape and Qt/ownership/data/no-drawing scans; `git diff --check` |
 | `76cfc19dd` | Added fixture-only native Java discovery, invalid-row handling, cancellable progress, and confirmed selection across facade, bridge, and SwiftUI Settings | arm64/universal facade CMake/CTest 2/2; arm64 Qt Prism target; focused native tests 68/68; full native tests 106/106; PLAN §9 Debug/Release builds; Bundle ID `com.lloydME.Prism`; universal `x86_64 arm64` binaries; Objective-C/Objective-C++ syntax; accessibility/command/localization and Qt/ownership/data/process/network/no-drawing scans; `git diff --check` |
 | `5a4cef365` | Added fixture-only native account snapshots, active-account selection, cancellation, and confirmed draft-preserving Settings state | facade/public-header CMake targets; CTest 2/2; arm64 Qt Prism target; native XCTest 109/109; PLAN §9 Debug/Release builds; Bundle ID `com.lloydME.Prism`; universal `x86_64 arm64` facade archive; accessibility/localization and Qt/ownership/data/process/network/no-drawing scans; `git diff --check` |
+| `15d2863af` | Added the fixture-only authentication state machine, fake-provider progress/result contract, main-actor bridge delivery, cancellation suppression, and native Settings recovery UI | facade/public-header CMake targets; CTest 2/2; arm64 Qt Prism target; native XCTest 112/112 plus post-fix Debug/Release reruns; PLAN §9 Debug/Release builds; Bundle ID `com.lloydME.Prism`; universal `x86_64 arm64` artifacts; accessibility/localization and Qt/ownership/secret/network/process/no-drawing scans; `git diff --check` |
 
 ## Current architecture findings
 
@@ -1710,6 +1752,7 @@ Next after completion: `M7-W5`, add fake authentication and account login/recove
 42. M6-W7 closes the instance-detail failure and reconciliation evidence with fixture-only semantic outcomes, Foundation result/cancellation tests, and authoritative snapshot handling. Every refreshed detail list clears the corresponding stale mutation intent before accepting external values; this protects the native presentation from late results without claiming a live watcher, permission probe, archive parser, conflict detector, or backend rollback adapter.
 43. M7-W3 keeps Java discovery and selection behind explicit fixture-only facade ports. The bridge converts only sanitized Foundation values, owns cancellation and shutdown delivery, and the SwiftUI Settings pane uses system list/progress/unavailable surfaces; real Java process, filesystem, environment, network, installation, and removal semantics remain deferred.
 44. M7-W4 keeps account snapshots and active-account selection behind explicit fixture-only, non-secret facade ports. Objective-C++ remains the sole C++/Foundation and request-lifetime boundary, while Swift owns only sanitized value models, confirmed-versus-draft selection, generation guards, and standard Settings controls; real authentication, refresh, persistence, profile, Keychain, provider, and token semantics remain deferred.
+45. M7-W5 keeps authentication behind a fixture-only, terminal-validated facade runner. Synthetic provider labels, safe verification instructions, localization keys, redacted diagnostics, and account snapshots cross the Objective-C++ boundary as immutable Foundation DTOs; device-code/user codes, authorization codes, bearer/refresh tokens, profiles, Keychain state, browser/network ownership, and provider persistence remain excluded. Swift owns only the main-actor state machine, generation/cancellation guards, retry recovery, and standard Settings presentation; the default composition intentionally reports an unavailable adapter until a later separately approved provider contract exists.
 
 ## Custom rendering exceptions
 
@@ -1723,4 +1766,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M7-W5`. M6-W1 is complete in `d3f319c494a61d559643964a6253a3ec8c495df3`; M6-W2 is complete in `467bb275e04a087e00a4dd85365273bdcf130185`; M6-W3 is complete in `789502d804528d39098fd21fd227d4572ae18040`; M6-W4 is complete in `891138f6ea639c3af718d74e8f63f65e74650cf6`; M6-W5 is complete in `ebcccb3761bbfdbf66d042e75dae85ace9450823`; M6-W6 is complete in `ed31c77fbedcacfcd5e691d0f67ab08c25dff9e4`; M6-W7 is complete in `a0c6456c1`; M7-W1 is complete in `6149bb3a2`; M7-W2 is complete in `12c6ba49a`; M7-W3 is complete in `76cfc19dd`; and M7-W4 is complete in `5a4cef365`. Preserve all existing fixture-root, Bundle ID, no-launch, no-secrets, and Objective-C++ boundary constraints; do not reopen completed M6 or M7 evidence.
+Read `PLAN.md` and `PROGRESS.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M7-W6`. M6-W1 is complete in `d3f319c494a61d559643964a6253a3ec8c495df3`; M6-W2 is complete in `467bb275e04a087e00a4dd85365273bdcf130185`; M6-W3 is complete in `789502d804528d39098fd21fd227d4572ae18040`; M6-W4 is complete in `891138f6ea639c3af718d74e8f63f65e74650cf6`; M6-W5 is complete in `ebcccb3761bbfdbf66d042e75dae85ace9450823`; M6-W6 is complete in `ed31c77fbedcacfcd5e691d0f67ab08c25dff9e4`; M6-W7 is complete in `a0c6456c1`; M7-W1 is complete in `6149bb3a2`; M7-W2 is complete in `12c6ba49a`; M7-W3 is complete in `76cfc19dd`; M7-W4 is complete in `5a4cef365`; and M7-W5 is complete in `15d2863af`. Preserve all existing fixture-root, Bundle ID, no-launch, no-secrets, and Objective-C++ boundary constraints; do not reopen completed M6 or M7 evidence.
