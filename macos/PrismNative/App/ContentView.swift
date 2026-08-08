@@ -4,9 +4,11 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var shellModel = PrismShellModel()
     @ObservedObject private var commandModel: PrismCommandModel
+    @ObservedObject private var taskModel: PrismTaskPresentationModel
 
-    init(commandModel: PrismCommandModel) {
+    init(commandModel: PrismCommandModel, taskModel: PrismTaskPresentationModel) {
         _commandModel = ObservedObject(wrappedValue: commandModel)
+        _taskModel = ObservedObject(wrappedValue: taskModel)
     }
 
     var body: some View {
@@ -33,10 +35,25 @@ struct ContentView: View {
             .navigationTitle("Prism")
             .accessibilityIdentifier("prism.instance-library.sidebar")
         } detail: {
-            PrismShellDetailView(
-                state: shellModel.detailState,
-                onRetry: { shellModel.retry() }
-            )
+            VStack(alignment: .leading, spacing: 12) {
+                if let task = taskModel.task {
+                    PrismTaskProgressView(
+                        task: task,
+                        cancellationEnabled: taskModel.isCancellationAvailable,
+                        onCancel: { _ = taskModel.cancel() }
+                    )
+                }
+                if let failure = taskModel.failure {
+                    PrismTaskFailureView(
+                        failure: failure,
+                        onRetry: { _ = taskModel.retry() }
+                    )
+                }
+                PrismShellDetailView(
+                    state: shellModel.detailState,
+                    onRetry: { shellModel.retry() }
+                )
+            }
             .contextMenu {
                 PrismInstanceContextMenu(model: commandModel)
             }
@@ -58,6 +75,135 @@ struct ContentView: View {
                 PrismCommandButton(model: commandModel, command: .stopSelected)
             }
         }
+    }
+}
+
+@MainActor
+struct PrismTaskProgressView: View {
+    let task: PrismTaskPresentation
+    let cancellationEnabled: Bool
+    let onCancel: () -> Void
+
+    init(
+        task: PrismTaskPresentation,
+        cancellationEnabled: Bool? = nil,
+        onCancel: @escaping () -> Void
+    ) {
+        self.task = task
+        self.cancellationEnabled = cancellationEnabled ?? task.canCancel
+        self.onCancel = onCancel
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Label {
+                    Text(task.title)
+                } icon: {
+                    Image(systemName: task.state.systemImage)
+                }
+                Spacer()
+                if cancellationEnabled {
+                    Button {
+                        onCancel()
+                    } label: {
+                        Label("Cancel Task", systemImage: "xmark.circle")
+                    }
+                    .accessibilityLabel(Text(LocalizedStringKey("Cancel Task")))
+                    .help(Text(LocalizedStringKey("Stop this task before it finishes.")))
+                    .accessibilityIdentifier("prism.task.cancel")
+                }
+            }
+            .accessibilityValue(Text(LocalizedStringKey(task.state.accessibilityValueKey)))
+
+            Text(LocalizedStringKey(task.state.titleKey))
+                .font(.subheadline)
+                .accessibilityIdentifier("prism.task.state")
+
+            PrismTaskProgressIndicator(
+                progress: task.progress,
+                identifier: "prism.task.progress.\(task.id)"
+            )
+
+            if !task.subtasks.isEmpty {
+                List(task.subtasks) { subtask in
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading) {
+                            Text(subtask.name)
+                            Text(LocalizedStringKey(subtask.state.titleKey))
+                                .font(.caption)
+                        }
+                        Spacer()
+                        PrismTaskProgressIndicator(
+                            progress: subtask.progress,
+                            identifier: "prism.task.progress.\(task.id).\(subtask.id)"
+                        )
+                    }
+                    .accessibilityLabel(Text(subtask.name))
+                    .accessibilityValue(Text(LocalizedStringKey(subtask.state.accessibilityValueKey)))
+                    .accessibilityIdentifier("prism.task.subtask.\(subtask.id)")
+                }
+                .listStyle(.inset)
+                .frame(minHeight: 0, maxHeight: 180)
+            }
+
+            if let terminalResult = task.terminalResult {
+                Text(LocalizedStringKey(terminalResult.localizationKey))
+                    .accessibilityIdentifier("prism.task.terminal-result")
+                if terminalResult.partialChangesRolledBack {
+                    Text(LocalizedStringKey("Partial Changes Rolled Back"))
+                        .font(.caption)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("prism.task.\(task.id)")
+    }
+}
+
+@MainActor
+private struct PrismTaskProgressIndicator: View {
+    let progress: PrismTaskProgress
+    let identifier: String
+
+    var body: some View {
+        Group {
+            switch progress {
+            case .none:
+                EmptyView()
+            case .indeterminate:
+                ProgressView()
+            case .determinate(let fraction):
+                ProgressView(value: fraction)
+            }
+        }
+        .accessibilityValue(Text(LocalizedStringKey(progress.accessibilityValueKey)))
+        .accessibilityIdentifier(identifier)
+    }
+}
+
+@MainActor
+private struct PrismTaskFailureView: View {
+    let failure: PrismTaskPresentationFailure
+    let onRetry: () -> Void
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("Task Failed", systemImage: "exclamationmark.triangle")
+        } description: {
+            Text(LocalizedStringKey(failure.localizationKey))
+        } actions: {
+            if failure.isRetryAvailable {
+                Button {
+                    onRetry()
+                } label: {
+                    Text(LocalizedStringKey("Retry Task"))
+                }
+                .accessibilityLabel(Text(LocalizedStringKey("Retry Task")))
+                .help(Text(LocalizedStringKey("Try this task again.")))
+            }
+        }
+        .accessibilityIdentifier("prism.task.failed-state")
     }
 }
 
@@ -130,5 +276,8 @@ private struct PrismShellDetailView: View {
 }
 
 #Preview {
-    ContentView(commandModel: PrismCommandModel())
+    ContentView(
+        commandModel: PrismCommandModel(),
+        taskModel: PrismTaskPresentationModel()
+    )
 }

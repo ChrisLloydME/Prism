@@ -87,6 +87,263 @@ final class PrismShellTests: XCTestCase {
         XCTAssertEqual(retryCount, 1)
     }
 
+    func testTaskPresentationMapsAllStatesProgressSubtasksAndTerminalMetadata() throws {
+        let subtask = try XCTUnwrap(
+            PRTaskSubtaskStatus(
+                identifier: "subtask.fixture",
+                name: "Download fixture",
+                state: .running,
+                progressKind: .determinate,
+                progressFraction: 0.25
+            )
+        )
+        let succeededResult = try XCTUnwrap(
+            PRTaskTerminalResult(
+                outcome: .succeeded,
+                localizationKey: "task.completed",
+                substitutionValues: ["taskIdentifier": "task.succeeded"],
+                diagnosticText: nil,
+                partialChangesRolledBack: false
+            )
+        )
+        let failedResult = try XCTUnwrap(
+            PRTaskTerminalResult(
+                outcome: .failed,
+                localizationKey: "task.failed",
+                substitutionValues: ["taskIdentifier": "task.failed"],
+                diagnosticText: "fixture failure",
+                partialChangesRolledBack: true
+            )
+        )
+        let cancelledResult = try XCTUnwrap(
+            PRTaskTerminalResult(
+                outcome: .cancelled,
+                localizationKey: "task.cancelled",
+                substitutionValues: [:],
+                diagnosticText: nil,
+                partialChangesRolledBack: false
+            )
+        )
+
+        let queued = try XCTUnwrap(
+            PrismTaskPresentation(
+                bridgeStatus: try XCTUnwrap(
+                    PRTaskStatus(
+                        identifier: "task.queued",
+                        title: nil,
+                        state: .queued,
+                        progressKind: .none,
+                        progressFraction: 0,
+                        cancellationAllowed: true,
+                        subtasks: [],
+                        terminalResult: nil
+                    )
+                )
+            )
+        )
+        let running = try XCTUnwrap(
+            PrismTaskPresentation(
+                bridgeStatus: try XCTUnwrap(
+                    PRTaskStatus(
+                        identifier: "task.running",
+                        title: "Fixture Task",
+                        state: .running,
+                        progressKind: .determinate,
+                        progressFraction: 0.5,
+                        cancellationAllowed: true,
+                        subtasks: [subtask],
+                        terminalResult: nil
+                    )
+                )
+            )
+        )
+        let cancelling = try XCTUnwrap(
+            PrismTaskPresentation(
+                bridgeStatus: try XCTUnwrap(
+                    PRTaskStatus(
+                        identifier: "task.cancelling",
+                        title: "Cancelling Task",
+                        state: .cancelling,
+                        progressKind: .indeterminate,
+                        progressFraction: 0,
+                        cancellationAllowed: false,
+                        subtasks: [],
+                        terminalResult: nil
+                    )
+                )
+            )
+        )
+        let succeeded = try XCTUnwrap(
+            PrismTaskPresentation(
+                bridgeStatus: try XCTUnwrap(
+                    PRTaskStatus(
+                        identifier: "task.succeeded",
+                        title: "Succeeded Task",
+                        state: .succeeded,
+                        progressKind: .determinate,
+                        progressFraction: 1,
+                        cancellationAllowed: false,
+                        subtasks: [],
+                        terminalResult: succeededResult
+                    )
+                )
+            )
+        )
+        let failed = try XCTUnwrap(
+            PrismTaskPresentation(
+                bridgeStatus: try XCTUnwrap(
+                    PRTaskStatus(
+                        identifier: "task.failed",
+                        title: "Failed Task",
+                        state: .failed,
+                        progressKind: .determinate,
+                        progressFraction: 1,
+                        cancellationAllowed: false,
+                        subtasks: [],
+                        terminalResult: failedResult
+                    )
+                )
+            )
+        )
+        let cancelled = try XCTUnwrap(
+            PrismTaskPresentation(
+                bridgeStatus: try XCTUnwrap(
+                    PRTaskStatus(
+                        identifier: "task.cancelled",
+                        title: "Cancelled Task",
+                        state: .cancelled,
+                        progressKind: .indeterminate,
+                        progressFraction: 0,
+                        cancellationAllowed: false,
+                        subtasks: [],
+                        terminalResult: cancelledResult
+                    )
+                )
+            )
+        )
+
+        XCTAssertEqual(queued.state, .queued)
+        XCTAssertEqual(queued.progress, .none)
+        XCTAssertEqual(queued.title, "task.queued")
+        XCTAssertTrue(queued.canCancel)
+        XCTAssertEqual(running.state, .running)
+        XCTAssertEqual(running.progress, .determinate(0.5))
+        XCTAssertEqual(running.subtasks.map(\.id), ["subtask.fixture"])
+        XCTAssertTrue(running.canCancel)
+        XCTAssertEqual(cancelling.state, .cancelling)
+        XCTAssertEqual(cancelling.progress, .indeterminate)
+        XCTAssertFalse(cancelling.canCancel)
+        XCTAssertEqual(succeeded.terminalResult?.outcome, .succeeded)
+        XCTAssertEqual(failed.terminalResult?.diagnosticText, "fixture failure")
+        XCTAssertTrue(failed.terminalResult?.partialChangesRolledBack == true)
+        XCTAssertEqual(cancelled.terminalResult?.outcome, .cancelled)
+        XCTAssertFalse(succeeded.canCancel || failed.canCancel || cancelled.canCancel)
+    }
+
+    func testTaskPresentationModelRoutesCancellationAndRetryWithStableIntents() throws {
+        var intents: [PrismTaskCommandIntent] = []
+        let model = PrismTaskPresentationModel(onTaskCommand: { intents.append($0) })
+        let runningStatus = try XCTUnwrap(
+            PRTaskStatus(
+                identifier: "task.running",
+                title: "Fixture Task",
+                state: .running,
+                progressKind: .determinate,
+                progressFraction: 0.5,
+                cancellationAllowed: true,
+                subtasks: [],
+                terminalResult: nil
+            )
+        )
+
+        XCTAssertTrue(model.apply(status: runningStatus))
+        XCTAssertTrue(model.isCancellationAvailable)
+        XCTAssertTrue(model.cancel())
+        XCTAssertFalse(model.isCancellationAvailable)
+        XCTAssertFalse(model.cancel())
+        XCTAssertEqual(
+            intents,
+            [PrismTaskCommandIntent(action: .cancel, identifier: "task.running")]
+        )
+
+        let cancellingStatus = try XCTUnwrap(
+            PRTaskStatus(
+                identifier: "task.running",
+                title: "Fixture Task",
+                state: .cancelling,
+                progressKind: .indeterminate,
+                progressFraction: 0,
+                cancellationAllowed: false,
+                subtasks: [],
+                terminalResult: nil
+            )
+        )
+        XCTAssertTrue(model.apply(status: cancellingStatus))
+        XCTAssertFalse(model.isCancellationAvailable)
+
+        let bridgeError = try XCTUnwrap(
+            PRBridgeError(
+                code: .networkUnavailable,
+                localizationKey: "task.failed",
+                substitutionValues: ["taskIdentifier": "task.failed"],
+                diagnosticText: "fixture failure",
+                recoveryKind: .retry,
+                partialChangesRolledBack: true
+            )
+        )
+        XCTAssertTrue(model.apply(error: bridgeError, taskIdentifier: "task.failed"))
+        XCTAssertNil(model.task)
+        XCTAssertTrue(model.isRetryAvailable)
+        XCTAssertEqual(model.failure?.substitutionValues, ["taskIdentifier": "task.failed"])
+        XCTAssertTrue(model.failure?.partialChangesRolledBack == true)
+        XCTAssertTrue(model.retry())
+        XCTAssertFalse(model.isRetryAvailable)
+        XCTAssertEqual(
+            intents,
+            [
+                PrismTaskCommandIntent(action: .cancel, identifier: "task.running"),
+                PrismTaskCommandIntent(action: .retry, identifier: "task.failed"),
+            ]
+        )
+    }
+
+    func testTaskPresentationSourceUsesSystemProgressAndRecoveryAPIs() throws {
+        let contentSource = try contentSource()
+        let shellModelSource = try shellModelSource()
+
+        for requiredToken in [
+            "PrismTaskProgressView",
+            "ProgressView(value:",
+            "ProgressView()",
+            "List(task.subtasks)",
+            "ContentUnavailableView",
+            "LocalizedStringKey(task.state.titleKey)",
+            ".accessibilityValue(",
+            ".accessibilityIdentifier(\"prism.task."
+        ] {
+            XCTAssertTrue(contentSource.contains(requiredToken), "Missing native task API: \(requiredToken)")
+        }
+
+        for requiredToken in [
+            "PrismTaskPresentation",
+            "PrismTaskPresentationModel",
+            "PRTaskStatus",
+            "PRBridgeError",
+            "isCancellationAvailable",
+            "apply(status:",
+            "apply(error:",
+            "PrismTaskCommandIntent"
+        ] {
+            XCTAssertTrue(shellModelSource.contains(requiredToken), "Missing task state contract: \(requiredToken)")
+        }
+
+        XCTAssertFalse(contentSource.contains("Canvas("))
+        XCTAssertFalse(contentSource.contains("draw("))
+        XCTAssertFalse(contentSource.contains("Path("))
+        XCTAssertFalse(shellModelSource.contains("Unmanaged"))
+        XCTAssertFalse(shellModelSource.contains("UnsafeMutable"))
+    }
+
     func testSelectionUsesStableInstanceIdentifiersAcrossSortingAndSearch() {
         let model = PrismShellModel()
         model.setInstances(fixtureInstances())

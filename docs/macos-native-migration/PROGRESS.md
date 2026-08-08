@@ -1,6 +1,6 @@
 # Prism macOS Native Migration Progress
 
-Last updated: 2026-08-05
+Last updated: 2026-08-08
 
 Branch: `macos-native`
 
@@ -1032,19 +1032,37 @@ Next after completion: `M5-W3`, map task state to `ProgressView` or `NSProgressI
 
 ### M5-W3: Native progress presentation semantics
 
-Status: active
+Status: complete
 
-Outcome: activated after M5-W2. Map immutable task and subtask DTOs to standard SwiftUI `ProgressView` or AppKit `NSProgressIndicator` semantics, including determinate, indeterminate, queued, cancelling, terminal, and cancellation-capability states without custom controls or drawing.
+Outcome: map immutable task and subtask DTOs into a main-actor Swift presentation model and standard SwiftUI progress surfaces. The native shell now represents queued, running, cancelling, succeeded, failed, and cancelled states; none, indeterminate, and determinate progress; stable subtasks; terminal localization/diagnostic/rollback metadata; cancellation capability; and retryable bridge errors. Cancellation and retry emit stable Foundation intents and are one-shot or state-gated without owning a process or backend object.
 
 Scope: directly required native SwiftUI/AppKit task state, view-model, command, accessibility, localization, and fixture tests only; preserve the M5-W2 Foundation DTO contract, explicit fixture roots, and injected runtime ports. Do not add process ownership, account access, logs, third-party UI, or changes to other platforms.
 
-Required evidence: main-actor task view-model states, determinate/indeterminate progress mapping, stable subtask rendering semantics, cancellation enabled-state and intent routing, terminal success/failure/cancelled presentation, retry/recovery metadata, accessibility labels/values/hints, keyboard/menu behavior, localization-key shape and long strings, no custom drawing, native tests, Debug/Release builds, Bundle ID checks, and `git diff --check`.
+Required evidence: main-actor task view-model states, determinate/indeterminate progress mapping, stable subtask rendering semantics, cancellation enabled-state and intent routing, terminal success/failure/cancelled presentation, retry/recovery metadata, accessibility labels/values/help, standard button keyboard behavior, localized-key presentation, missing optional metadata, no custom drawing, native tests, Debug/Release builds, Bundle ID checks, and `git diff --check`.
 
-HIG decision: use the system `ProgressView`/`NSProgressIndicator`, standard `Button`, `Label`, `List`, and existing command model. Do not recreate system progress indicators, draw progress bars, or expose bridge objects directly to SwiftUI. Follow the existing menu, toolbar, accessibility, and localization contracts.
+HIG decision: use SwiftUI `ProgressView()` for indeterminate work and `ProgressView(value:)` for validated determinate fractions; use standard `Button`, `Label`, `List`, `ContentUnavailableView`, and the existing command-intent model for cancellation and retry. No progress bar, task row, accessibility container, or error chrome is self-drawn. The decision follows Apple's [Progress Indicators](https://developer.apple.com/design/human-interface-guidelines/progress-indicators), [accessibility](https://developer.apple.com/documentation/swiftui/accessibility), [buttons](https://developer.apple.com/design/human-interface-guidelines/buttons), and [lists](https://developer.apple.com/design/human-interface-guidelines/lists) guidance.
 
-Architecture: keep the task presentation state in a main-actor Swift view-model that consumes immutable Foundation values and emits explicit cancellation/retry intents. The view-model must not own C++, Objective-C++, processes, accounts, filesystem discovery, or network work; the bridge remains the only composition boundary.
+Architecture: `PrismTaskPresentation` and its subtask/terminal/failure values copy and validate immutable Foundation bridge DTOs before SwiftUI consumes them. `PrismTaskPresentationModel` is `@MainActor`, publishes task/failure state, clears stale cancellation state on cancelling/terminal transitions, and emits `PrismTaskCommandIntent` values through an injected callback. Swift app code contains no Qt/C++/ownership/process/account/filesystem/network handling; Objective-C++ remains the conversion and lifetime boundary. The current app wiring intentionally instantiates the model without a real task source; later launch composition will connect the existing bridge/task ports.
 
-Files changed: not started; activation record only.
+Files changed: `macos/PrismNative/App/ContentView.swift`, `macos/PrismNative/App/PrismCommandModel.swift`, `macos/PrismNative/App/PrismNativeApp.swift`, `macos/PrismNative/App/PrismShellModel.swift`, `macos/PrismNativeTests/PrismCommandTests.swift`, `macos/PrismNativeTests/PrismShellTests.swift`, and this progress file. No backend, bridge header, CMake, Xcode project, or other-platform source changed.
+
+Tests and exact commands:
+
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO -only-testing:PrismNativeTests/PrismShellTests -only-testing:PrismNativeTests/PrismCommandTests test` — passed; focused command and shell tests 30/30. This covers all task states, progress kinds, subtasks, terminal outcomes, stable command identifiers, cancellation idempotence, `PRBridgeError` retry mapping, accessibility/localization/no-drawing source contracts, and existing sidebar contracts.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed; full native suite 65/65. The exact final xcresult was counted with `xcrun xcresulttool get test-results tests --path .deriveddata-prism-native/Logs/Test/Test-PrismNative-2026.08.08_23-35-14-+0800.xcresult | rg '"nodeType" : "Test Case"' | wc -l` — `65`.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` — passed.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO build` — passed.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native-release/Build/Products/Release/Prism.app/Contents/Info.plist` — `com.lloydME.Prism`.
+- `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -fsyntax-only -x objective-c -target arm64-apple-macos14.0 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk macos/PrismNative/Bridge/PrismBridge.h` — passed.
+- `rg -n 'QWidget|QDialog|Qt[A-Za-z]|std::|Unmanaged|UnsafeMutable' macos/PrismNative/Bridge --glob '*.h' macos/PrismNative/App --glob '*.swift'` — no matches (exit 1).
+- `rg -n 'Canvas\(|draw\(|Path\(|CGContext|NSBezierPath' macos/PrismNative/App --glob '*.swift'` — no matches (exit 1).
+- `rg -n 'LocalizedStringKey|ProgressView|List\(|accessibilityLabel|accessibilityValue|accessibilityHint|\.help\(|keyboardShortcut|Commands' macos/PrismNative/App/ContentView.swift macos/PrismNative/App/PrismCommandModel.swift macos/PrismNative/App/PrismCommands.swift` — passed; standard progress, localization, accessibility, command, and keyboard APIs present.
+- `git diff --check` — passed.
+
+Result summary: Swift mapping rejects invalid identifiers, progress fractions, unknown enum values, duplicate/invalid subtasks, invalid terminal metadata, and state/outcome mismatches. Standard `ProgressView` branches are visible in the view source; each task/subtask progress indicator has a stable accessibility identifier, and cancellation/retry controls expose localized labels/help. No app, process, account, Keychain, upstream data, network, screenshot, or visual snapshot was used. No CMake/legacy Qt build was rerun because this unit changed no backend or C++ source; the M5-W2 CMake and arm64 legacy-target evidence remains in commit `e55fd3139`.
+
+Risk: the presentation model and intents are complete but the fixture/default app composition does not yet own a real task observer or connect to `LaunchController`; M5-W4 must add bounded, privacy-filtered log streaming without moving process or backend ownership into Swift. Localization resources are not yet part of the native target, so this unit preserves stable localization keys/substitution dictionaries and tests their shape; later feature units must add resource existence/formatting coverage when their strings are introduced.
 
 Commit: pending implementation.
 

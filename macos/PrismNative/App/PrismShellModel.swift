@@ -125,6 +125,382 @@ final class PrismInstanceArtworkStore {
     }
 }
 
+enum PrismTaskState: String, CaseIterable, Equatable, Sendable {
+    case queued
+    case running
+    case cancelling
+    case succeeded
+    case failed
+    case cancelled
+
+    var isTerminal: Bool {
+        switch self {
+        case .succeeded, .failed, .cancelled:
+            return true
+        case .queued, .running, .cancelling:
+            return false
+        }
+    }
+
+    var titleKey: String {
+        switch self {
+        case .queued:
+            return "Queued"
+        case .running:
+            return "In Progress"
+        case .cancelling:
+            return "Cancelling"
+        case .succeeded:
+            return "Completed"
+        case .failed:
+            return "Failed"
+        case .cancelled:
+            return "Cancelled"
+        }
+    }
+
+    var accessibilityValueKey: String {
+        switch self {
+        case .queued:
+            return "Task is queued."
+        case .running:
+            return "Task is in progress."
+        case .cancelling:
+            return "Task cancellation is in progress."
+        case .succeeded:
+            return "Task completed successfully."
+        case .failed:
+            return "Task failed."
+        case .cancelled:
+            return "Task was cancelled."
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .queued:
+            return "clock"
+        case .running:
+            return "arrow.triangle.2.circlepath"
+        case .cancelling:
+            return "xmark.circle"
+        case .succeeded:
+            return "checkmark.circle"
+        case .failed:
+            return "exclamationmark.triangle"
+        case .cancelled:
+            return "minus.circle"
+        }
+    }
+
+    init?(bridgeState: PRTaskState) {
+        switch bridgeState {
+        case .queued:
+            self = .queued
+        case .running:
+            self = .running
+        case .cancelling:
+            self = .cancelling
+        case .succeeded:
+            self = .succeeded
+        case .failed:
+            self = .failed
+        case .cancelled:
+            self = .cancelled
+        @unknown default:
+            return nil
+        }
+    }
+}
+
+enum PrismTaskProgress: Equatable, Sendable {
+    case none
+    case indeterminate
+    case determinate(Double)
+
+    init?(bridgeKind: PRTaskProgressKind, fraction: Double) {
+        guard fraction.isFinite else {
+            return nil
+        }
+
+        switch bridgeKind {
+        case .none:
+            guard fraction == 0 else { return nil }
+            self = .none
+        case .indeterminate:
+            guard fraction == 0 else { return nil }
+            self = .indeterminate
+        case .determinate:
+            guard (0...1).contains(fraction) else { return nil }
+            self = .determinate(fraction)
+        @unknown default:
+            return nil
+        }
+    }
+
+    var fraction: Double? {
+        if case let .determinate(value) = self {
+            return value
+        }
+        return nil
+    }
+
+    var accessibilityValueKey: String {
+        switch self {
+        case .none:
+            return "No progress is reported."
+        case .indeterminate:
+            return "Progress is indeterminate."
+        case .determinate:
+            return "Progress is determinate."
+        }
+    }
+}
+
+struct PrismTaskSubtaskPresentation: Identifiable, Equatable, Sendable {
+    let id: String
+    let name: String
+    let state: PrismTaskState
+    let progress: PrismTaskProgress
+
+    init?(bridgeStatus: PRTaskSubtaskStatus) {
+        let identifier = bridgeStatus.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = bridgeStatus.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !identifier.isEmpty,
+              !name.isEmpty,
+              let state = PrismTaskState(bridgeState: bridgeStatus.state),
+              let progress = PrismTaskProgress(
+                  bridgeKind: bridgeStatus.progressKind,
+                  fraction: bridgeStatus.progressFraction
+              ) else {
+            return nil
+        }
+
+        self.id = identifier
+        self.name = name
+        self.state = state
+        self.progress = progress
+    }
+}
+
+enum PrismTaskTerminalOutcome: String, Equatable, Sendable {
+    case succeeded
+    case failed
+    case cancelled
+
+    init?(bridgeOutcome: PRTaskTerminalOutcome) {
+        switch bridgeOutcome {
+        case .succeeded:
+            self = .succeeded
+        case .failed:
+            self = .failed
+        case .cancelled:
+            self = .cancelled
+        @unknown default:
+            return nil
+        }
+    }
+}
+
+struct PrismTaskTerminalPresentation: Equatable, Sendable {
+    let outcome: PrismTaskTerminalOutcome
+    let localizationKey: String
+    let substitutionValues: [String: String]
+    let diagnosticText: String?
+    let partialChangesRolledBack: Bool
+
+    init?(bridgeResult: PRTaskTerminalResult) {
+        let localizationKey = bridgeResult.localizationKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !localizationKey.isEmpty,
+              let outcome = PrismTaskTerminalOutcome(bridgeOutcome: bridgeResult.outcome) else {
+            return nil
+        }
+
+        self.outcome = outcome
+        self.localizationKey = localizationKey
+        self.substitutionValues = bridgeResult.substitutionValues
+        self.diagnosticText = bridgeResult.diagnosticText
+        self.partialChangesRolledBack = bridgeResult.partialChangesRolledBack
+    }
+}
+
+struct PrismTaskPresentation: Identifiable, Equatable, Sendable {
+    let id: String
+    let title: String
+    let state: PrismTaskState
+    let progress: PrismTaskProgress
+    let cancellationAllowed: Bool
+    let subtasks: [PrismTaskSubtaskPresentation]
+    let terminalResult: PrismTaskTerminalPresentation?
+
+    var canCancel: Bool {
+        cancellationAllowed && (state == .queued || state == .running)
+    }
+
+    init?(bridgeStatus: PRTaskStatus) {
+        let identifier = bridgeStatus.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !identifier.isEmpty,
+              let state = PrismTaskState(bridgeState: bridgeStatus.state),
+              let progress = PrismTaskProgress(
+                  bridgeKind: bridgeStatus.progressKind,
+                  fraction: bridgeStatus.progressFraction
+              ) else {
+            return nil
+        }
+
+        let subtasks = bridgeStatus.subtasks.compactMap(PrismTaskSubtaskPresentation.init(bridgeStatus:))
+        guard subtasks.count == bridgeStatus.subtasks.count,
+              Set(subtasks.map(\.id)).count == subtasks.count else {
+            return nil
+        }
+
+        let terminalResult: PrismTaskTerminalPresentation?
+        if let bridgeResult = bridgeStatus.terminalResult {
+            guard let mappedResult = PrismTaskTerminalPresentation(bridgeResult: bridgeResult) else {
+                return nil
+            }
+            terminalResult = mappedResult
+        } else {
+            terminalResult = nil
+        }
+
+        guard (terminalResult != nil) == state.isTerminal else {
+            return nil
+        }
+        if let terminalResult {
+            let matchesState = (state == .succeeded && terminalResult.outcome == .succeeded)
+                || (state == .failed && terminalResult.outcome == .failed)
+                || (state == .cancelled && terminalResult.outcome == .cancelled)
+            guard matchesState else {
+                return nil
+            }
+        }
+
+        self.id = identifier
+        self.title = bridgeStatus.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? bridgeStatus.title!
+            : identifier
+        self.state = state
+        self.progress = progress
+        self.cancellationAllowed = bridgeStatus.cancellationAllowed
+        self.subtasks = subtasks
+        self.terminalResult = terminalResult
+    }
+}
+
+enum PrismTaskRecoveryAction: String, Equatable, Sendable {
+    case retry
+    case none
+}
+
+struct PrismTaskPresentationFailure: Equatable, Sendable {
+    let taskIdentifier: String
+    let localizationKey: String
+    let substitutionValues: [String: String]
+    let diagnosticText: String?
+    let recoveryAction: PrismTaskRecoveryAction
+    let partialChangesRolledBack: Bool
+
+    var isRetryAvailable: Bool {
+        recoveryAction == .retry
+    }
+}
+
+@MainActor
+final class PrismTaskPresentationModel: ObservableObject {
+    @Published private(set) var task: PrismTaskPresentation?
+    @Published private(set) var failure: PrismTaskPresentationFailure?
+    private(set) var cancellationPending = false
+    private let onTaskCommand: ((PrismTaskCommandIntent) -> Void)?
+
+    init(onTaskCommand: ((PrismTaskCommandIntent) -> Void)? = nil) {
+        self.onTaskCommand = onTaskCommand
+    }
+
+    var isCancellationAvailable: Bool {
+        task?.canCancel == true && !cancellationPending
+    }
+
+    var isRetryAvailable: Bool {
+        failure?.isRetryAvailable == true
+    }
+
+    @discardableResult
+    func apply(status: PRTaskStatus) -> Bool {
+        guard let presentation = PrismTaskPresentation(bridgeStatus: status) else {
+            return false
+        }
+
+        if presentation.id != task?.id || presentation.state == .cancelling || presentation.state.isTerminal {
+            cancellationPending = false
+        }
+        task = presentation
+        failure = nil
+        return true
+    }
+
+    @discardableResult
+    func apply(error: PRBridgeError, taskIdentifier: String) -> Bool {
+        let normalizedIdentifier = taskIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let localizationKey = error.localizationKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedIdentifier.isEmpty, !localizationKey.isEmpty else {
+            return false
+        }
+
+        let recoveryAction: PrismTaskRecoveryAction = error.recoveryKind == .retry ? .retry : .none
+        return apply(
+            failure: PrismTaskPresentationFailure(
+                taskIdentifier: normalizedIdentifier,
+                localizationKey: localizationKey,
+                substitutionValues: error.substitutionValues,
+                diagnosticText: error.diagnosticText,
+                recoveryAction: recoveryAction,
+                partialChangesRolledBack: error.partialChangesRolledBack
+            )
+        )
+    }
+
+    @discardableResult
+    func apply(failure: PrismTaskPresentationFailure) -> Bool {
+        guard !failure.taskIdentifier.isEmpty, !failure.localizationKey.isEmpty else {
+            return false
+        }
+
+        task = nil
+        self.failure = failure
+        cancellationPending = false
+        return true
+    }
+
+    @discardableResult
+    func cancel() -> Bool {
+        guard let task, isCancellationAvailable else {
+            return false
+        }
+
+        cancellationPending = true
+        onTaskCommand?(PrismTaskCommandIntent(action: .cancel, identifier: task.id))
+        return true
+    }
+
+    @discardableResult
+    func retry() -> Bool {
+        guard let failure, failure.isRetryAvailable else {
+            return false
+        }
+
+        self.failure = nil
+        onTaskCommand?(PrismTaskCommandIntent(action: .retry, identifier: failure.taskIdentifier))
+        return true
+    }
+
+    func clear() {
+        task = nil
+        failure = nil
+        cancellationPending = false
+    }
+}
+
 enum PrismInstanceGrouping: String, CaseIterable, Sendable {
     case none
     case group

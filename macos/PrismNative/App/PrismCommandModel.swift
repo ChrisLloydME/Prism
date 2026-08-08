@@ -45,6 +45,16 @@ struct PrismInstanceCommandIntent: Equatable, Sendable {
     let identifier: String
 }
 
+enum PrismTaskCommandAction: Equatable, Sendable {
+    case cancel
+    case retry
+}
+
+struct PrismTaskCommandIntent: Equatable, Sendable {
+    let action: PrismTaskCommandAction
+    let identifier: String
+}
+
 struct PrismCommandShortcut: Equatable, Sendable {
     let key: PrismCommandKey
     let modifiers: PrismCommandModifiers

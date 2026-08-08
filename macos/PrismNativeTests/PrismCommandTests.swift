@@ -120,6 +120,21 @@ final class PrismCommandTests: XCTestCase {
         )
     }
 
+    func testTaskCommandIntentsPreserveStableIdentifiersAndActions() {
+        XCTAssertEqual(
+            PrismTaskCommandIntent(action: .cancel, identifier: "task.fixture"),
+            PrismTaskCommandIntent(action: .cancel, identifier: "task.fixture")
+        )
+        XCTAssertNotEqual(
+            PrismTaskCommandIntent(action: .cancel, identifier: "task.fixture"),
+            PrismTaskCommandIntent(action: .retry, identifier: "task.fixture")
+        )
+        XCTAssertEqual(
+            PrismTaskCommandIntent(action: .retry, identifier: "task.fixture").identifier,
+            "task.fixture"
+        )
+    }
+
     func testToolbarAndContextMenuUseStableSharedCommandSets() {
         XCTAssertEqual(
             PrismCommandModel.toolbarCommandIDs,

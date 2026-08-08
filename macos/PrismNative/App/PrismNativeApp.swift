@@ -3,10 +3,11 @@ import SwiftUI
 @main
 struct PrismNativeApp: App {
     @StateObject private var commandModel = PrismCommandModel()
+    @StateObject private var taskModel = PrismTaskPresentationModel()
 
     var body: some Scene {
         WindowGroup {
-            ContentView(commandModel: commandModel)
+            ContentView(commandModel: commandModel, taskModel: taskModel)
         }
         .defaultSize(width: 1040, height: 680)
         .commands {
