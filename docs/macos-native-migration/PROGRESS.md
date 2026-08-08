@@ -1,6 +1,6 @@
 # Prism macOS Native Migration Progress
 
-Last updated: 2026-08-08
+Last updated: 2026-08-09
 
 Branch: `macos-native`
 
@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 5, Launch, stop, tasks, and logs
 
-Active work unit: M5-W4
+Active work unit: M5-W5
 
-Next ready work unit: M5-W4
+Next ready work unit: M5-W5
 
 ## Safety baseline
 
@@ -1068,6 +1068,41 @@ Commit: `ac2977bfa`.
 
 Next after completion: `M5-W4`, add bounded and privacy-filtered log streaming.
 
+### M5-W4: Bounded privacy-filtered task log streaming
+
+Status: complete
+
+Outcome: add deterministic task log snapshots that retain a bounded tail, redact credential and account-like values, and present logs through the native task detail surface. The facade filters sensitive values and local paths before Objective-C++ conversion; the bridge delivers immutable Foundation snapshots on the main actor with cancellation suppression; Swift validates the copied snapshot and exposes standard text presentation with empty, failure, retry, truncation, and accessibility states.
+
+Scope: directly required bounded log buffering, privacy filtering, UTF-8-safe truncation, Foundation DTO conversion, cancellable bridge requests, main-actor presentation state, standard SwiftUI text presentation, and fixture tests only. No real process, account, Keychain, upstream data, or live log source was accessed. M5-W5 remains responsible for large-log TextKit or standard text-view behavior.
+
+HIG decision: use system `ScrollView`, `Text`, `.textSelection(.enabled)`, `.monospaced()`, `Label`, `Button`, and `ContentUnavailableView` for task-log presentation. The log surface is selectable and readable without self-drawn controls or custom drawing; truncation and retry state use standard accessibility labels and values. No custom-rendering exception was added.
+
+Architecture: `FrontendFacade` accepts an injected `TaskLogStreamer`, applies deterministic credential/account-key and local-path redaction, then stores at most 512 entries and 256 KiB with sequence and byte-count validation. `PRPrismBridge` is the only Objective-C++ conversion and lifetime boundary: it creates immutable `PRTaskLogEntry`/`PRTaskLogSnapshot` values, serializes facade access, maps errors, delivers on the main actor, and suppresses cancelled completions. Swift owns only validated `PrismTaskLogPresentation` values and the `@MainActor` `PrismTaskLogPresentationModel`; it contains no Qt, C++, ownership, process, account, filesystem, or network code.
+
+Files changed: `launcher/frontend/FrontendFacade.cpp`, `launcher/frontend/FrontendFacade.h`, `launcher/frontend/FrontendFacadeContractTest.cpp`, `launcher/frontend/FrontendFacadePublicHeaderTest.cpp`, `macos/PrismNative/App/ContentView.swift`, `macos/PrismNative/App/PrismShellModel.swift`, `macos/PrismNative/Bridge/PrismBridge.h`, `macos/PrismNative/Bridge/PrismBridge.mm`, `macos/PrismNative/Bridge/PrismBridgeModels.h`, `macos/PrismNativeTests/PrismBridgeFacadeIntegrationTests.mm`, and `macos/PrismNativeTests/PrismShellTests.swift`.
+
+Tests and exact commands:
+
+- `cmake --build /private/tmp/prism-m5-w4-cmake --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test --parallel 2` — passed for the fresh arm64 facade configuration; `ctest --test-dir /private/tmp/prism-m5-w4-cmake --output-on-failure -R '^(FrontendFacadeContract|FrontendFacadePublicHeaders)$'` — passed 2/2.
+- `cmake --build /private/tmp/prism-m5-w4-universal --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test --parallel 2` — passed for the fresh `arm64;x86_64` configuration; `ctest --test-dir /private/tmp/prism-m5-w4-universal --output-on-failure -R '^(FrontendFacadeContract|FrontendFacadePublicHeaders)$'` — passed 2/2.
+- `file .deriveddata-prism-native-backend/libLauncher_frontend.a && lipo -info .deriveddata-prism-native-backend/libLauncher_frontend.a` — passed; the archive contains `x86_64` and `arm64` slices.
+- `cmake --build /private/tmp/prism-m5-w4-cmake --target Prism --parallel 2` — passed; the existing arm64 Qt `Prism` target completed 436/436 build steps without execution.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO -only-testing:PrismNativeTests/PrismBridgeFacadeIntegrationTests test` — passed; focused bridge tests 9/9, including bounded filtering, main-actor delivery, unknown-log retry mapping, shutdown, and queued cancellation suppression.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed; the final native suite was counted from `Test-PrismNative-2026.08.09_00-06-33-+0800.xcresult` with `xcrun xcresulttool get test-results tests --path .deriveddata-prism-native/Logs/Test/Test-PrismNative-2026.08.09_00-06-33-+0800.xcresult | rg '"nodeType" : "Test Case"' | wc -l` — `70`.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` and `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO build` — both passed.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` and the Release Info.plist equivalent — both returned `com.lloydME.Prism`.
+- `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -fsyntax-only -x objective-c -target arm64-apple-macos14.0 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk macos/PrismNative/Bridge/PrismBridge.h` and `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++ -fsyntax-only -std=c++20 -fobjc-arc -x objective-c++ -target arm64-apple-macos14.0 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk -Ilauncher/frontend macos/PrismNative/Bridge/PrismBridge.mm` — both passed.
+- Forbidden-token, no-drawing, standard UI API, and `git diff --check` scans — passed; no `QWidget`, `QDialog`, Qt, C++ ownership, Swift unsafe ownership, or custom drawing crossed the native boundary.
+
+Result summary: facade tests cover 520-entry tail eviction, exact 512-entry and 256 KiB bounds, sequence continuity, privacy filtering for credentials, account-like fields and data-root/home paths, safe oversized UTF-8 truncation, missing stream ports, invalid identifiers, unknown tasks, and post-shutdown rejection. Native tests cover immutable DTO conversion, byte-count and sequence validation, main-actor completion, retry metadata, standard text rendering, accessibility metadata, invalid snapshots, shutdown, and cancellation suppression. No application launch, screenshot, recording, visual snapshot, upstream application/data, account, Keychain, network, signing, installation, publishing, or push action was used.
+
+Risk: the log source remains an injected fixture/runtime port and does not start a real process or claim `LaunchController` ownership. Generic redaction patterns are deterministic and intentionally conservative; later source-contract work may add fields once a real log producer is connected. W5 must add the large-log editor behavior without moving ownership into Swift. Existing non-blocking build warnings remain unchanged.
+
+Commit: `8ebdcafe5e76fbd088f61fe0a47e66c2de7fe7f0`.
+
+Next after completion: `M5-W5`, add standard large-log text-view behavior without introducing third-party UI or custom drawing.
+
 ## Completed commit index
 
 | Commit | Outcome | Verification |
@@ -1101,6 +1136,7 @@ Next after completion: `M5-W4`, add bounded and privacy-filtered log streaming.
 | `fd58b4b40` | Added fixture-controlled launch and stop commands with stable identifiers, explicit outcomes, cancellation, and main-actor bridge delivery | CMake facade tests 2/2; focused native command/bridge tests 15/15; full native tests 59/59; arm64 legacy Prism target; Debug/Release builds; public boundary, command, localization-shape, Bundle ID, and `git diff --check` validations |
 | `e55fd3139` | Added immutable task progress, subtask, terminal-result, and idempotent cancellation contracts across facade and bridge | arm64/universal CMake facade tests 2/2; arm64 legacy Prism target; focused native task/bridge tests 26/26; full native tests 61/61; Debug/Release builds; public boundary, recovery/localization/accessibility, Bundle ID, and `git diff --check` validations |
 | `ac2977bfa` | Added native task progress presentation, main-actor state, cancellation/retry intents, and standard SwiftUI recovery surfaces | Focused command/Shell tests 30/30; full native tests 65/65; Debug/Release builds; Objective-C bridge syntax; Qt/C++/ownership and no-drawing scans; localization/accessibility/command API scan; Debug/Release `plutil`; `git diff --check` |
+| `8ebdcafe5` | Added bounded privacy-filtered task log streaming, immutable Foundation log snapshots, cancellable bridge delivery, and standard Swift text presentation | arm64/universal CMake facade tests 2/2; arm64 legacy Prism target 436/436; focused bridge tests 9/9; full native tests 70/70; Debug/Release builds; public Objective-C/Objective-C++ syntax; Qt/ownership/drawing scans; Debug/Release `plutil`; `git diff --check` |
 
 ## Current architecture findings
 
@@ -1136,6 +1172,7 @@ Next after completion: `M5-W4`, add bounded and privacy-filtered log streaming.
 30. M5-W1 adds explicit launch and stop callback ports with stable-ID result outcomes; the Objective-C++ bridge copies Foundation identifiers, serializes facade calls, owns cancellation and main-actor delivery, and the Swift command model preserves a generic-handler compatibility path. The default composition intentionally rejects commands until task/process wiring is introduced.
 31. M5-W2 adds immutable task and subtask values with explicit progress kinds, cancellation eligibility, terminal outcomes, localized diagnostic metadata, rollback status, and idempotent cancellation results. The C++ facade validates the value contract, while Objective-C++ serializes conversion, error/recovery mapping, request-token lifetime, shutdown cancellation, and main-actor delivery; M5-W3 owns native progress presentation.
 32. M5-W3 maps those Foundation DTOs into validated `PrismTaskPresentation` values and an `@MainActor` `PrismTaskPresentationModel`; SwiftUI consumes only standard `ProgressView`, `Button`, `Label`, `List`, and `ContentUnavailableView` surfaces, while stable cancel/retry intents remain injected. Real task observation and `LaunchController` ownership are intentionally deferred to later launch composition; no custom-rendering exception was added.
+33. M5-W4 adds a callback-based `TaskLogStreamer` port; `FrontendFacade` privacy-filters and bounds only a fixed tail before `PRTaskLogSnapshot` crosses Objective-C++, while Swift owns no process or log source and consumes only validated `PrismTaskLogPresentation` state through standard `ScrollView` and `Text`. M5-W5 remains the boundary for large-log text-view behavior.
 
 ## Custom rendering exceptions
 
@@ -1149,4 +1186,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M5-W4`. M5-W3 is complete in `ac2977bfa`; M5-W4 must add bounded, privacy-filtered log streaming with standard text presentation and deterministic truncation tests. Do not begin M5-W5 or later work until the M5-W4 evidence is verified and committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M5-W5`. M5-W4 is complete in `8ebdcafe5`; M5-W5 may add large-log TextKit or standard text-view behavior while preserving the facade privacy and bounded-snapshot contract. Do not begin M5-W6 or later work until the M5-W5 evidence is verified and committed.
