@@ -302,6 +302,60 @@ int main()
                (void) taskFacade.cancelTask("task.running");
            });
 
+    bool logRootMatches = true;
+    auto logDependencies = makeFixtureDependencies();
+    logDependencies.streamTaskLogs = [&logRootMatches, &fixtureRoot](
+                                         const std::filesystem::path& root,
+                                         const std::string& identifier,
+                                         const FrontendRuntimeDependencies::LogEntryHandler& handler) {
+        logRootMatches = logRootMatches && root == fixtureRoot.lexically_normal();
+        if (identifier == "task.logs") {
+            for (std::uint64_t sequence = 0; sequence < kFrontendLogMaxEntries + 8; ++sequence) {
+                std::string text = "fixture log " + std::to_string(sequence);
+                if (sequence == kFrontendLogMaxEntries + 7) {
+                    text = "Authorization: Bearer fixture-secret access_token=fixture-token path="
+                        + fixtureRoot.string() + "/instances/fixture username=fixture-user";
+                }
+                handler(FrontendLogEntry{ sequence, std::move(text), false });
+            }
+            return true;
+        }
+        if (identifier == "task.long-log") {
+            handler(FrontendLogEntry{ 1, std::string(kFrontendLogMaxBytes + 32, 'x'), false });
+            return true;
+        }
+        return false;
+    };
+    FrontendFacade logFacade(fixtureRoot / "nested" / "..", std::move(logDependencies));
+    const auto logSnapshot = logFacade.taskLogSnapshot("task.logs");
+    const auto longLogSnapshot = logFacade.taskLogSnapshot("task.long-log");
+    const auto unknownLogSnapshot = logFacade.taskLogSnapshot("unknown-log");
+    const bool logPrivacyAndBounds = logSnapshot.has_value() && logSnapshot->hasStableIdentifier()
+        && logSnapshot->entries.size() == kFrontendLogMaxEntries
+        && logSnapshot->droppedEntryCount == 8
+        && logSnapshot->truncated
+        && logSnapshot->entries.front().sequence == 8
+        && logSnapshot->entries.back().text.find("fixture-secret") == std::string::npos
+        && logSnapshot->entries.back().text.find("fixture-token") == std::string::npos
+        && logSnapshot->entries.back().text.find("fixture-user") == std::string::npos
+        && logSnapshot->entries.back().text.find(fixtureRoot.string()) == std::string::npos
+        && logSnapshot->entries.back().text.find("<redacted>") != std::string::npos
+        && logSnapshot->entries.back().text.find("<data-root>") != std::string::npos
+        && logSnapshot->totalByteCount <= kFrontendLogMaxBytes && logRootMatches;
+    const bool longLogIsTruncated = longLogSnapshot.has_value() && longLogSnapshot->entries.size() == 1
+        && longLogSnapshot->entries.front().truncated
+        && longLogSnapshot->entries.front().text.size() == kFrontendLogMaxBytes
+        && longLogSnapshot->truncated && longLogSnapshot->totalByteCount == kFrontendLogMaxBytes;
+    const bool missingLogPortIsSafe = !emptyFacade.taskLogSnapshot("task.logs").has_value()
+        && throwsInvalidArgument([&logFacade] {
+               (void) logFacade.taskLogSnapshot("");
+           })
+        && !unknownLogSnapshot.has_value()
+        && logFacade.shutdown()
+        && throwsLogicError([&logFacade] {
+               (void) logFacade.taskLogSnapshot("task.logs");
+           });
+
     auto invalidTaskProgressDependencies = makeFixtureDependencies();
     invalidTaskProgressDependencies.loadTaskSnapshot = [](const std::filesystem::path&, const std::string&)
         -> std::optional<FrontendTaskSnapshot> {
@@ -443,7 +497,8 @@ int main()
                && taskCancellationContract && taskForwardingContract && rejectedInvalidTaskIdentifiers
                && missingTaskPortsAreSafe && rejectedPostShutdownTaskWork && rejectedInvalidTaskProgress
                && rejectedInvalidTaskSubtasks && rejectedInvalidTaskTerminalResult && rejectedInvalidSnapshot
-               && rejectedInvalidChange && rejectedEmptyRoot && rejectedRelativeRoot && rejectedIncompleteDependencies
+               && rejectedInvalidChange && logPrivacyAndBounds && longLogIsTruncated && missingLogPortIsSafe
+               && rejectedEmptyRoot && rejectedRelativeRoot && rejectedIncompleteDependencies
                && lifecycleContract && callbacksRanExactlyOnce && destructorShutdownContract && !error
         ? 0
         : 4;

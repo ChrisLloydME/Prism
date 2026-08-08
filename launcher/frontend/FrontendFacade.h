@@ -3,6 +3,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -70,6 +71,25 @@ struct FrontendTaskSnapshot final {
     bool hasStableIdentifier() const noexcept { return !id.empty(); }
 };
 
+inline constexpr std::size_t kFrontendLogMaxEntries = 512;
+inline constexpr std::size_t kFrontendLogMaxBytes = 256 * 1024;
+
+struct FrontendLogEntry final {
+    std::uint64_t sequence = 0;
+    std::string text;
+    bool truncated = false;
+};
+
+struct FrontendLogSnapshot final {
+    std::string taskId;
+    std::vector<FrontendLogEntry> entries;
+    std::uint64_t droppedEntryCount = 0;
+    std::uint64_t totalByteCount = 0;
+    bool truncated = false;
+
+    bool hasStableIdentifier() const noexcept { return !taskId.empty(); }
+};
+
 /// Runtime ports are supplied by the owning composition root so the facade
 /// does not discover global application state or create hidden workers.
 struct FrontendRuntimeDependencies final {
@@ -83,6 +103,8 @@ struct FrontendRuntimeDependencies final {
     using InstanceCommand = std::function<FrontendInstanceCommandResult(const std::filesystem::path&, const std::string&)>;
     using TaskSnapshotLoader = std::function<std::optional<FrontendTaskSnapshot>(const std::filesystem::path&, const std::string&)>;
     using TaskCancellation = std::function<FrontendTaskCancellationResult(const std::filesystem::path&, const std::string&)>;
+    using LogEntryHandler = std::function<void(FrontendLogEntry)>;
+    using TaskLogStreamer = std::function<bool(const std::filesystem::path&, const std::string&, const LogEntryHandler&)>;
 
     Dispatch dispatch;
     Clock now;
@@ -94,6 +116,7 @@ struct FrontendRuntimeDependencies final {
     InstanceCommand stopInstance;
     TaskSnapshotLoader loadTaskSnapshot;
     TaskCancellation cancelTask;
+    TaskLogStreamer streamTaskLogs;
 
     bool isComplete() const noexcept
     {
@@ -127,6 +150,7 @@ class FrontendFacade final {
     FrontendInstanceCommandResult stopInstance(const std::string& instanceIdentifier) const;
     std::optional<FrontendTaskSnapshot> taskSnapshot(const std::string& taskIdentifier) const;
     FrontendTaskCancellationResult cancelTask(const std::string& taskIdentifier) const;
+    std::optional<FrontendLogSnapshot> taskLogSnapshot(const std::string& taskIdentifier) const;
 
    private:
     std::filesystem::path m_dataRoot;

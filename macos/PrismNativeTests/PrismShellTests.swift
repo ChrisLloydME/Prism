@@ -307,6 +307,77 @@ final class PrismShellTests: XCTestCase {
         )
     }
 
+    func testTaskLogPresentationMapsBoundedFixtureValuesAndRendersPlainText() throws {
+        let firstEntry = try XCTUnwrap(
+            PRTaskLogEntry(sequence: 8, text: "first fixture line", truncated: false)
+        )
+        let secondEntry = try XCTUnwrap(
+            PRTaskLogEntry(sequence: 9, text: "second fixture line", truncated: true)
+        )
+        let snapshot = try XCTUnwrap(
+            PRTaskLogSnapshot(
+                taskIdentifier: " task.logs ",
+                entries: [firstEntry, secondEntry],
+                droppedEntryCount: 8,
+                totalByteCount: UInt64(firstEntry.text.utf8.count + secondEntry.text.utf8.count),
+                truncated: true
+            )
+        )
+
+        let presentation = try XCTUnwrap(PrismTaskLogPresentation(bridgeSnapshot: snapshot))
+        XCTAssertEqual(presentation.id, "task.logs")
+        XCTAssertEqual(presentation.entries.map(\.id), [8, 9])
+        XCTAssertEqual(presentation.renderedText, "first fixture line\nsecond fixture line")
+        XCTAssertEqual(presentation.droppedEntryCount, 8)
+        XCTAssertTrue(presentation.isTruncated)
+        XCTAssertNil(
+            PRTaskLogSnapshot(
+                taskIdentifier: "task.duplicate",
+                entries: [firstEntry, firstEntry],
+                droppedEntryCount: 0,
+                totalByteCount: UInt64(firstEntry.text.utf8.count * 2),
+                truncated: false
+            )
+        )
+    }
+
+    func testTaskLogPresentationModelRoutesRetryAndRejectsInvalidSnapshots() throws {
+        var retriedIdentifiers: [String] = []
+        let model = PrismTaskLogPresentationModel(onRetry: { retriedIdentifiers.append($0) })
+        let entry = try XCTUnwrap(PRTaskLogEntry(sequence: 1, text: "fixture output", truncated: false))
+        let snapshot = try XCTUnwrap(
+            PRTaskLogSnapshot(
+                taskIdentifier: "task.logs",
+                entries: [entry],
+                droppedEntryCount: 0,
+                totalByteCount: UInt64(entry.text.utf8.count),
+                truncated: false
+            )
+        )
+
+        XCTAssertTrue(model.apply(snapshot: snapshot))
+        XCTAssertEqual(model.log?.id, "task.logs")
+        XCTAssertNil(model.failure)
+
+        let error = try XCTUnwrap(
+            PRBridgeError(
+                code: .dataUnavailable,
+                localizationKey: "bridge.error.dataUnavailable",
+                substitutionValues: ["taskIdentifier": "task.logs"],
+                diagnosticText: "fixture log unavailable",
+                recoveryKind: .retry,
+                partialChangesRolledBack: false
+            )
+        )
+        XCTAssertTrue(model.apply(error: error, taskIdentifier: " task.logs "))
+        XCTAssertNil(model.log)
+        XCTAssertTrue(model.failure?.isRetryAvailable == true)
+        XCTAssertTrue(model.retry())
+        XCTAssertEqual(retriedIdentifiers, ["task.logs"])
+        XCTAssertFalse(model.retry())
+        XCTAssertFalse(model.apply(error: error, taskIdentifier: "   "))
+    }
+
     func testTaskPresentationSourceUsesSystemProgressAndRecoveryAPIs() throws {
         let contentSource = try contentSource()
         let shellModelSource = try shellModelSource()
@@ -335,6 +406,42 @@ final class PrismShellTests: XCTestCase {
             "PrismTaskCommandIntent"
         ] {
             XCTAssertTrue(shellModelSource.contains(requiredToken), "Missing task state contract: \(requiredToken)")
+        }
+
+        XCTAssertFalse(contentSource.contains("Canvas("))
+        XCTAssertFalse(contentSource.contains("draw("))
+        XCTAssertFalse(contentSource.contains("Path("))
+        XCTAssertFalse(shellModelSource.contains("Unmanaged"))
+        XCTAssertFalse(shellModelSource.contains("UnsafeMutable"))
+    }
+
+    func testTaskLogSourceUsesBoundedFoundationStateAndStandardTextPresentation() throws {
+        let contentSource = try contentSource()
+        let shellModelSource = try shellModelSource()
+
+        for requiredToken in [
+            "PrismTaskLogView",
+            "ScrollView(.vertical)",
+            ".textSelection(.enabled)",
+            ".monospaced",
+            "ContentUnavailableView",
+            "prism.task-log.",
+            "Older log entries were omitted."
+        ] {
+            XCTAssertTrue(contentSource.contains(requiredToken), "Missing native log API: \(requiredToken)")
+        }
+
+        for requiredToken in [
+            "PrismTaskLogEntry",
+            "PrismTaskLogPresentation",
+            "PrismTaskLogPresentationModel",
+            "PRTaskLogSnapshot",
+            "droppedEntryCount",
+            "totalByteCount",
+            "apply(snapshot:",
+            "apply(error:"
+        ] {
+            XCTAssertTrue(shellModelSource.contains(requiredToken), "Missing log state contract: \(requiredToken)")
         }
 
         XCTAssertFalse(contentSource.contains("Canvas("))

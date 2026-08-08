@@ -439,6 +439,122 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     XCTAssertTrue([observerToken cancel]);
 }
 
+- (void)testFacadeTaskLogsArePrivacyFilteredBoundedAndDeliveredOnMainActor
+{
+    auto logRootMatches = std::make_shared<std::atomic<bool>>(true);
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.streamTaskLogs = [logRootMatches, fixtureRoot = self.fixtureRootURL.path.UTF8String](
+                                       const std::filesystem::path& root,
+                                       const std::string& identifier,
+                                       const FrontendRuntimeDependencies::LogEntryHandler& handler) {
+        *logRootMatches = *logRootMatches && root == std::filesystem::path(fixtureRoot).lexically_normal();
+        if (identifier != "task.logs") {
+            return false;
+        }
+
+        for (std::uint64_t sequence = 0; sequence < kFrontendLogMaxEntries + 8; ++sequence) {
+            std::string text = "fixture log " + std::to_string(sequence);
+            if (sequence == kFrontendLogMaxEntries + 7) {
+                text = "Authorization: Bearer fixture-secret access_token=fixture-token path="
+                    + std::string(fixtureRoot) + "/instances/fixture";
+            }
+            handler(FrontendLogEntry{ sequence, std::move(text), false });
+        }
+        return true;
+    };
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    XCTestExpectation *completion = [self expectationWithDescription:@"Facade logs completed"];
+    __block PRTaskLogSnapshot *receivedSnapshot = nil;
+    __block PRBridgeError *receivedError = nil;
+    __block BOOL callbackRanOnMainThread = NO;
+    PRBridgeObservationToken *token = [bridge loadTaskLogWithIdentifier:@" task.logs "
+                                                             completion:^(PRTaskLogSnapshot *snapshot,
+                                                                          PRBridgeError *error) {
+        callbackRanOnMainThread = [NSThread isMainThread];
+        receivedSnapshot = snapshot;
+        receivedError = error;
+        [completion fulfill];
+    }];
+
+    XCTAssertNotNil(token);
+    [self waitForExpectations:@[ completion ] timeout:2.0];
+    XCTAssertTrue(callbackRanOnMainThread);
+    XCTAssertNil(receivedError);
+    XCTAssertEqualObjects(receivedSnapshot.taskIdentifier, @"task.logs");
+    XCTAssertEqual(receivedSnapshot.entries.count, (NSUInteger)kFrontendLogMaxEntries);
+    XCTAssertEqual(receivedSnapshot.droppedEntryCount, (uint64_t)8);
+    XCTAssertTrue(receivedSnapshot.truncated);
+    XCTAssertEqual(receivedSnapshot.entries.firstObject.sequence, (uint64_t)8);
+    XCTAssertFalse([receivedSnapshot.entries.lastObject.text containsString:@"fixture-secret"]);
+    XCTAssertFalse([receivedSnapshot.entries.lastObject.text containsString:@"fixture-token"]);
+    XCTAssertFalse([receivedSnapshot.entries.lastObject.text containsString:self.fixtureRootURL.path]);
+    XCTAssertTrue([receivedSnapshot.entries.lastObject.text containsString:@"<redacted>"]);
+    XCTAssertTrue([receivedSnapshot.entries.lastObject.text containsString:@"<data-root>"]);
+    XCTAssertLessThanOrEqual(receivedSnapshot.totalByteCount, (uint64_t)kFrontendLogMaxBytes);
+    XCTAssertTrue(logRootMatches->load());
+    XCTAssertTrue(token.isCancelled);
+
+    XCTestExpectation *unknownCompletion = [self expectationWithDescription:@"Unknown facade log rejected"];
+    __block PRTaskLogSnapshot *unknownSnapshot = nil;
+    __block PRBridgeError *unknownError = nil;
+    PRBridgeObservationToken *unknownToken = [bridge loadTaskLogWithIdentifier:@"unknown-log"
+                                                                    completion:^(PRTaskLogSnapshot *snapshot,
+                                                                                 PRBridgeError *error) {
+        unknownSnapshot = snapshot;
+        unknownError = error;
+        [unknownCompletion fulfill];
+    }];
+    XCTAssertNotNil(unknownToken);
+    [self waitForExpectations:@[ unknownCompletion ] timeout:2.0];
+    XCTAssertNil(unknownSnapshot);
+    XCTAssertEqual(unknownError.code, PRBridgeErrorCodeDataUnavailable);
+    XCTAssertEqual(unknownError.recoveryKind, PRBridgeErrorRecoveryKindRetry);
+}
+
+- (void)testCancellingQueuedFacadeLogRequestSuppressesCompletion
+{
+    auto enteredStreamer = dispatch_semaphore_create(0);
+    auto releaseStreamer = dispatch_semaphore_create(0);
+    auto streamerFinished = dispatch_semaphore_create(0);
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.streamTaskLogs = [enteredStreamer, releaseStreamer, streamerFinished](
+                                       const std::filesystem::path&,
+                                       const std::string&,
+                                       const FrontendRuntimeDependencies::LogEntryHandler& handler) {
+        dispatch_semaphore_signal(enteredStreamer);
+        dispatch_semaphore_wait(releaseStreamer, DISPATCH_TIME_FOREVER);
+        handler(FrontendLogEntry{ 1, "fixture queued log", false });
+        dispatch_semaphore_signal(streamerFinished);
+        return true;
+    };
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    __block NSUInteger completionCount = 0;
+    PRBridgeObservationToken *token = [bridge loadTaskLogWithIdentifier:@"task.logs"
+                                                             completion:^(PRTaskLogSnapshot *, PRBridgeError *) {
+        completionCount += 1;
+    }];
+    XCTAssertNotNil(token);
+    XCTAssertEqual(dispatch_semaphore_wait(enteredStreamer, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC)), 0);
+    XCTAssertTrue([token cancel]);
+    dispatch_semaphore_signal(releaseStreamer);
+    XCTAssertEqual(dispatch_semaphore_wait(streamerFinished, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC)), 0);
+
+    XCTestExpectation *drained = [self expectationWithDescription:@"Cancelled log request queue drained"];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [drained fulfill];
+    });
+    [self waitForExpectations:@[ drained ] timeout:2.0];
+    XCTAssertEqual(completionCount, (NSUInteger)0);
+}
+
 - (void)testInvalidFacadeSnapshotBecomesStableBridgeError
 {
     FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
@@ -535,6 +651,8 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     XCTAssertNil([bridge loadInstanceSummariesWithCompletion:^(NSArray<PRInstanceSummary *> *, PRBridgeError *) {
     }]);
     XCTAssertNil([bridge loadTaskStatusWithIdentifier:@"task.fixture" completion:^(PRTaskStatus *, PRBridgeError *) {
+    }]);
+    XCTAssertNil([bridge loadTaskLogWithIdentifier:@"task.fixture" completion:^(PRTaskLogSnapshot *, PRBridgeError *) {
     }]);
     XCTAssertNil([bridge cancelTaskWithIdentifier:@"task.fixture"
                                            completion:^(PRTaskCancellationResult *, PRBridgeError *) {

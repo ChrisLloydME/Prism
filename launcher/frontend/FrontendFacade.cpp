@@ -2,7 +2,10 @@
 
 #include "FrontendFacade.h"
 
+#include <algorithm>
 #include <cmath>
+#include <deque>
+#include <regex>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -175,6 +178,129 @@ void validateTaskSnapshot(const FrontendTaskSnapshot& snapshot)
     }
 }
 
+std::string truncateUTF8(std::string value, std::size_t maxBytes)
+{
+    if (value.size() <= maxBytes) {
+        return std::string(value);
+    }
+
+    value.resize(maxBytes);
+    std::size_t boundary = value.size();
+    while (boundary > 0 && (static_cast<unsigned char>(value[boundary - 1]) & 0xC0U) == 0x80U) {
+        --boundary;
+    }
+
+    if (boundary < value.size() && boundary > 0) {
+        const auto leadingByte = static_cast<unsigned char>(value[boundary - 1]);
+        std::size_t expectedBytes = 1;
+        if ((leadingByte & 0xE0U) == 0xC0U) {
+            expectedBytes = 2;
+        } else if ((leadingByte & 0xF0U) == 0xE0U) {
+            expectedBytes = 3;
+        } else if ((leadingByte & 0xF8U) == 0xF0U) {
+            expectedBytes = 4;
+        }
+
+        const std::size_t leadingByteOffset = boundary - 1;
+        if (expectedBytes != value.size() - leadingByteOffset) {
+            boundary = leadingByteOffset;
+        }
+    }
+    value.resize(boundary);
+    return std::string(value);
+}
+
+void replaceAll(std::string& value, const std::string& search, const std::string& replacement)
+{
+    if (search.empty()) {
+        return;
+    }
+
+    std::size_t offset = 0;
+    while ((offset = value.find(search, offset)) != std::string::npos) {
+        value.replace(offset, search.size(), replacement);
+        offset += replacement.size();
+    }
+}
+
+std::string privacyFilteredLogText(std::string value, const std::filesystem::path& dataRoot)
+{
+    const std::regex credentialPattern(
+        R"(((--)?(access[_-]?token|refresh[_-]?token|client[_-]?secret|password|authorization|username|email|account|uuid|token)\s*([:=]|\s)\s*(Bearer\s+)?)([^\s,;]+))",
+        std::regex_constants::icase);
+    value = std::regex_replace(value, credentialPattern, "$1<redacted>");
+
+    const std::string genericRoot = dataRoot.generic_string();
+    const std::string nativeRoot = dataRoot.string();
+    replaceAll(value, genericRoot, "<data-root>");
+    if (nativeRoot != genericRoot) {
+        replaceAll(value, nativeRoot, "<data-root>");
+    }
+
+    const std::regex homePathPattern(R"(((/Users|/home)/)[^/ \t\r\n]+)");
+    value = std::regex_replace(value, homePathPattern, "$1<redacted>");
+    return value;
+}
+
+class FrontendLogBuffer final {
+   public:
+    void append(FrontendLogEntry entry)
+    {
+        const bool lineWasTooLong = entry.text.size() > kFrontendLogMaxBytes;
+        entry.text = truncateUTF8(std::move(entry.text), kFrontendLogMaxBytes);
+        if (entry.truncated || lineWasTooLong) {
+            entry.truncated = true;
+            m_truncated = true;
+        }
+
+        m_totalByteCount += entry.text.size();
+        m_entries.push_back(std::move(entry));
+        while (m_entries.size() > kFrontendLogMaxEntries || m_totalByteCount > kFrontendLogMaxBytes) {
+            m_totalByteCount -= m_entries.front().text.size();
+            m_entries.pop_front();
+            ++m_droppedEntryCount;
+            m_truncated = true;
+        }
+    }
+
+    FrontendLogSnapshot snapshot(std::string taskIdentifier) const
+    {
+        FrontendLogSnapshot result;
+        result.taskId = std::move(taskIdentifier);
+        result.entries.assign(m_entries.begin(), m_entries.end());
+        result.droppedEntryCount = static_cast<std::uint64_t>(m_droppedEntryCount);
+        result.totalByteCount = static_cast<std::uint64_t>(m_totalByteCount);
+        result.truncated = m_truncated;
+        return result;
+    }
+
+   private:
+    std::deque<FrontendLogEntry> m_entries;
+    std::size_t m_droppedEntryCount = 0;
+    std::size_t m_totalByteCount = 0;
+    bool m_truncated = false;
+};
+
+void validateLogSnapshot(const FrontendLogSnapshot& snapshot)
+{
+    if (!snapshot.hasStableIdentifier() || snapshot.entries.size() > kFrontendLogMaxEntries
+        || snapshot.totalByteCount > kFrontendLogMaxBytes) {
+        throw std::invalid_argument("Log snapshots require a stable identifier and bounded contents");
+    }
+
+    std::set<std::uint64_t> sequences;
+    std::uint64_t totalByteCount = 0;
+    for (const auto& entry : snapshot.entries) {
+        if (!sequences.insert(entry.sequence).second || entry.text.size() > kFrontendLogMaxBytes) {
+            throw std::invalid_argument("Log snapshots require unique sequences and bounded entries");
+        }
+        totalByteCount += static_cast<std::uint64_t>(entry.text.size());
+    }
+    if (totalByteCount != snapshot.totalByteCount) {
+        throw std::invalid_argument("Log snapshots require an accurate byte count");
+    }
+}
+
 void ensureRunning(FrontendLifecycleState state)
 {
     if (state != FrontendLifecycleState::Running) {
@@ -340,4 +466,31 @@ FrontendTaskCancellationResult FrontendFacade::cancelTask(const std::string& tas
 {
     ensureRunning(m_lifecycleState);
     return executeTaskCancellation(m_runtimeDependencies.cancelTask, m_dataRoot, taskIdentifier);
+}
+
+std::optional<FrontendLogSnapshot> FrontendFacade::taskLogSnapshot(const std::string& taskIdentifier) const
+{
+    ensureRunning(m_lifecycleState);
+    if (taskIdentifier.empty()) {
+        throw std::invalid_argument("Log operations require a stable identifier");
+    }
+    if (!m_runtimeDependencies.streamTaskLogs) {
+        return std::nullopt;
+    }
+
+    FrontendLogBuffer buffer;
+    const bool available = m_runtimeDependencies.streamTaskLogs(
+        m_dataRoot,
+        taskIdentifier,
+        [&](FrontendLogEntry entry) {
+            entry.text = privacyFilteredLogText(std::move(entry.text), m_dataRoot);
+            buffer.append(std::move(entry));
+        });
+    if (!available) {
+        return std::nullopt;
+    }
+
+    auto snapshot = buffer.snapshot(taskIdentifier);
+    validateLogSnapshot(snapshot);
+    return snapshot;
 }

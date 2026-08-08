@@ -351,6 +351,43 @@ PRTaskStatus *taskStatusFromFacadeSnapshot(const FrontendTaskSnapshot& snapshot)
     return converted;
 }
 
+PRTaskLogEntry *logEntryFromFacadeEntry(const FrontendLogEntry& entry)
+{
+    NSString *text = [[NSString alloc] initWithBytes:entry.text.data()
+                                              length:entry.text.size()
+                                            encoding:NSUTF8StringEncoding];
+    if (!text) {
+        throw std::invalid_argument("Facade returned invalid UTF-8 log text");
+    }
+
+    PRTaskLogEntry *converted = [[PRTaskLogEntry alloc] initWithSequence:entry.sequence
+                                                                      text:text
+                                                                 truncated:entry.truncated];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid log entry");
+    }
+    return converted;
+}
+
+PRTaskLogSnapshot *logSnapshotFromFacadeSnapshot(const FrontendLogSnapshot& snapshot)
+{
+    NSMutableArray<PRTaskLogEntry *> *entries = [NSMutableArray arrayWithCapacity:snapshot.entries.size()];
+    for (const FrontendLogEntry& entry : snapshot.entries) {
+        [entries addObject:logEntryFromFacadeEntry(entry)];
+    }
+
+    PRTaskLogSnapshot *converted = [[PRTaskLogSnapshot alloc]
+        initWithTaskIdentifier:foundationStringFromUTF8(snapshot.taskId)
+                        entries:entries
+            droppedEntryCount:snapshot.droppedEntryCount
+                 totalByteCount:snapshot.totalByteCount
+                     truncated:snapshot.truncated];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid log snapshot");
+    }
+    return converted;
+}
+
 bool isKnownTaskState(PRTaskState state)
 {
     switch (state) {
@@ -729,6 +766,31 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@interface PRBridgeTaskLogResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithSnapshot:(nullable PRTaskLogSnapshot *)snapshot
+                             error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRTaskLogSnapshot *snapshot;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeTaskLogResult
+
+- (instancetype)initWithSnapshot:(PRTaskLogSnapshot *)snapshot error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _snapshot = snapshot;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
 @interface PRBridgeTaskCancellationResult : NSObject
 
 - (instancetype)init NS_UNAVAILABLE;
@@ -813,6 +875,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *snapshotRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *changeRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *taskRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *taskLogRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *taskCancellationRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *commandRequestStates;
 @property(nonatomic, strong) NSLock *observationLock;
@@ -828,6 +891,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 - (void)removeSnapshotRequest:(PRBridgeObservationState *)request;
 - (void)removeChangeRequest:(PRBridgeObservationState *)request;
 - (void)removeTaskRequest:(PRBridgeObservationState *)request;
+- (void)removeTaskLogRequest:(PRBridgeObservationState *)request;
 - (void)removeTaskCancellationRequest:(PRBridgeObservationState *)request;
 - (void)removeCommandRequest:(PRBridgeObservationState *)request;
 - (nullable PRBridgeObservationToken *)loadTaskStatusWithIdentifier:(NSString *)identifier
@@ -910,6 +974,24 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @property(nonatomic, copy, readwrite) NSString *identifier;
 @property(nonatomic, assign, readwrite) PRTaskCancellationOutcome outcome;
+
+@end
+
+@interface PRTaskLogEntry ()
+
+@property(nonatomic, assign, readwrite) uint64_t sequence;
+@property(nonatomic, copy, readwrite) NSString *text;
+@property(nonatomic, assign, readwrite) BOOL truncated;
+
+@end
+
+@interface PRTaskLogSnapshot ()
+
+@property(nonatomic, copy, readwrite) NSString *taskIdentifier;
+@property(nonatomic, copy, readwrite) NSArray<PRTaskLogEntry *> *entries;
+@property(nonatomic, assign, readwrite) uint64_t droppedEntryCount;
+@property(nonatomic, assign, readwrite) uint64_t totalByteCount;
+@property(nonatomic, assign, readwrite) BOOL truncated;
 
 @end
 
@@ -1190,6 +1272,78 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@implementation PRTaskLogEntry
+
+- (instancetype)initWithSequence:(uint64_t)sequence
+                              text:(NSString *)text
+                         truncated:(BOOL)truncated
+{
+    if (![text isKindOfClass:NSString.class]) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.sequence = sequence;
+        self.text = [text copy];
+        self.truncated = truncated;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRTaskLogSnapshot
+
+- (instancetype)initWithTaskIdentifier:(NSString *)taskIdentifier
+                                entries:(NSArray<PRTaskLogEntry *> *)entries
+                    droppedEntryCount:(uint64_t)droppedEntryCount
+                         totalByteCount:(uint64_t)totalByteCount
+                             truncated:(BOOL)truncated
+{
+    if (!isNonEmptyString(taskIdentifier) || ![entries isKindOfClass:NSArray.class]
+        || entries.count > kFrontendLogMaxEntries || totalByteCount > kFrontendLogMaxBytes) {
+        return nil;
+    }
+
+    NSMutableSet<NSNumber *> *sequences = [NSMutableSet setWithCapacity:entries.count];
+    uint64_t calculatedByteCount = 0;
+    BOOL containsTruncatedEntry = NO;
+    for (id candidate in entries) {
+        if (![candidate isKindOfClass:PRTaskLogEntry.class]) {
+            return nil;
+        }
+        PRTaskLogEntry *entry = (PRTaskLogEntry *)candidate;
+        NSNumber *sequence = @(entry.sequence);
+        if ([sequences containsObject:sequence]) {
+            return nil;
+        }
+        [sequences addObject:sequence];
+
+        NSUInteger byteCount = [entry.text lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+        if (byteCount > kFrontendLogMaxBytes || UINT64_MAX - calculatedByteCount < byteCount) {
+            return nil;
+        }
+        calculatedByteCount += byteCount;
+        containsTruncatedEntry = containsTruncatedEntry || entry.truncated;
+    }
+    if (calculatedByteCount != totalByteCount || (!truncated && (droppedEntryCount > 0 || containsTruncatedEntry))) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.taskIdentifier = [taskIdentifier copy];
+        self.entries = [entries copy];
+        self.droppedEntryCount = droppedEntryCount;
+        self.totalByteCount = totalByteCount;
+        self.truncated = truncated;
+    }
+    return self;
+}
+
+@end
+
 @implementation PRBridgeError
 
 - (instancetype)initWithCode:(PRBridgeErrorCode)code
@@ -1271,6 +1425,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.snapshotRequestStates = [NSMutableArray array];
         self.changeRequestStates = [NSMutableArray array];
         self.taskRequestStates = [NSMutableArray array];
+        self.taskLogRequestStates = [NSMutableArray array];
         self.taskCancellationRequestStates = [NSMutableArray array];
         self.commandRequestStates = [NSMutableArray array];
         self.observationLock = [[NSLock alloc] init];
@@ -1614,6 +1769,92 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     return [[PRBridgeObservationToken alloc] initWithState:request];
 }
 
+- (PRBridgeObservationToken *)loadTaskLogWithIdentifier:(NSString *)identifier
+                                                 completion:(PRTaskLogCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    NSString *identifierCopy = [identifier copy];
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeTaskLogResult *logResult = (PRBridgeTaskLogResult *)value;
+        [weakRequest cancel];
+        completion(logResult.snapshot, logResult.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeTaskLogRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.taskLogRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRTaskLogSnapshot *snapshot = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    const std::string taskIdentifier = stableIdentifierFromFoundation(identifierCopy);
+                    const std::optional<FrontendLogSnapshot> logSnapshot = bridge->_facade->taskLogSnapshot(taskIdentifier);
+                    if (!logSnapshot.has_value()) {
+                        error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                                   diagnosticText:@"Task log is not available"
+                                               substitutionValues:@{ @"taskIdentifier": identifierCopy ?: @"" }];
+                    } else {
+                        snapshot = logSnapshotFromFacadeSnapshot(*logSnapshot);
+                    }
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid task log identifier"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Task log operation cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Task log data unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown task log failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeTaskLogResult alloc] initWithSnapshot:snapshot error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
 - (PRBridgeObservationToken *)performTaskCancellationWithIdentifier:(NSString *)identifier
                                                             completion:(PRTaskCancellationCompletionHandler)completion
 {
@@ -1868,6 +2109,16 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.observationLock unlock];
 }
 
+- (void)removeTaskLogRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.taskLogRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.taskLogRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
 - (void)removeTaskCancellationRequest:(PRBridgeObservationState *)request
 {
     [self.observationLock lock];
@@ -1898,6 +2149,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [observations addObjectsFromArray:self.snapshotRequestStates];
     [observations addObjectsFromArray:self.changeRequestStates];
     [observations addObjectsFromArray:self.taskRequestStates];
+    [observations addObjectsFromArray:self.taskLogRequestStates];
     [observations addObjectsFromArray:self.taskCancellationRequestStates];
     [observations addObjectsFromArray:self.commandRequestStates];
     [self.instanceObservationStates removeAllObjects];
@@ -1906,6 +2158,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.snapshotRequestStates removeAllObjects];
     [self.changeRequestStates removeAllObjects];
     [self.taskRequestStates removeAllObjects];
+    [self.taskLogRequestStates removeAllObjects];
     [self.taskCancellationRequestStates removeAllObjects];
     [self.commandRequestStates removeAllObjects];
     [self.observationLock unlock];

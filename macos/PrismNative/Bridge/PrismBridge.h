@@ -35,6 +35,8 @@ typedef void (^PRInstanceChangeObservationHandler)(PRInstanceChange *change);
 typedef void (^PRTaskStatusObservationHandler)(PRTaskStatus *status);
 typedef void (^PRTaskStatusCompletionHandler)(PRTaskStatus * _Nullable status,
                                                PRBridgeError * _Nullable error);
+typedef void (^PRTaskLogCompletionHandler)(PRTaskLogSnapshot * _Nullable snapshot,
+                                            PRBridgeError * _Nullable error);
 typedef void (^PRTaskCancellationCompletionHandler)(PRTaskCancellationResult * _Nullable result,
                                                      PRBridgeError * _Nullable error);
 typedef void (^PRInstanceSummariesCompletionHandler)(NSArray<PRInstanceSummary *> *summaries,
@@ -92,6 +94,11 @@ typedef void (^PRInstanceCommandCompletionHandler)(PRInstanceCommandResult * _Nu
 /// runs on the main actor.
 - (nullable PRBridgeObservationToken *)loadTaskStatusWithIdentifier:(NSString *)identifier
                                                           completion:(PRTaskStatusCompletionHandler)completion;
+
+/// Loads one bounded, privacy-filtered task log snapshot. The completion
+/// runs on the main actor and exposes only immutable Foundation values.
+- (nullable PRBridgeObservationToken *)loadTaskLogWithIdentifier:(NSString *)identifier
+                                                        completion:(PRTaskLogCompletionHandler)completion;
 
 /// Requests cancellation through the injected facade port. The result is
 /// idempotent and distinguishes requested, already-terminal, unknown-task,

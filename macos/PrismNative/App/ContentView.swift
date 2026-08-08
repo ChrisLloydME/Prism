@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var shellModel = PrismShellModel()
+    @StateObject private var logModel = PrismTaskLogPresentationModel()
     @ObservedObject private var commandModel: PrismCommandModel
     @ObservedObject private var taskModel: PrismTaskPresentationModel
 
@@ -49,6 +50,12 @@ struct ContentView: View {
                         onRetry: { _ = taskModel.retry() }
                     )
                 }
+                if let log = logModel.log {
+                    PrismTaskLogView(log: log)
+                }
+                if let logFailure = logModel.failure {
+                    PrismTaskLogFailureView(failure: logFailure, onRetry: { _ = logModel.retry() })
+                }
                 PrismShellDetailView(
                     state: shellModel.detailState,
                     onRetry: { shellModel.retry() }
@@ -75,6 +82,81 @@ struct ContentView: View {
                 PrismCommandButton(model: commandModel, command: .stopSelected)
             }
         }
+    }
+}
+
+@MainActor
+struct PrismTaskLogView: View {
+    let log: PrismTaskLogPresentation
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Task Log", systemImage: "text.alignleft")
+                .accessibilityLabel(Text("Task Log"))
+                .accessibilityValue(Text(log.accessibilityValueKey))
+                .accessibilityIdentifier("prism.task-log.\(log.id).heading")
+
+            if log.isTruncated {
+                Label("Older log entries were omitted.", systemImage: "ellipsis")
+                    .font(.caption)
+                    .accessibilityIdentifier("prism.task-log.\(log.id).truncated")
+            }
+
+            if log.entries.isEmpty {
+                ContentUnavailableView(
+                    "No Log Entries",
+                    systemImage: "text.alignleft",
+                    description: Text("No output has been recorded for this task.")
+                )
+                .accessibilityIdentifier("prism.task-log.\(log.id).empty")
+            } else {
+                ScrollView(.vertical) {
+                    Text(log.renderedText)
+                        .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                }
+                .accessibilityLabel(Text("Task Log Output"))
+                .accessibilityIdentifier("prism.task-log.\(log.id).output")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("prism.task-log.\(log.id)")
+    }
+}
+
+private extension PrismTaskLogPresentation {
+    var accessibilityValueKey: String {
+        if isTruncated {
+            return "Task log is truncated."
+        }
+        return "Task log is complete."
+    }
+}
+
+@MainActor
+private struct PrismTaskLogFailureView: View {
+    let failure: PrismTaskLogFailure
+    let onRetry: () -> Void
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("Task Log Unavailable", systemImage: "exclamationmark.triangle")
+        } description: {
+            Text(LocalizedStringKey(failure.localizationKey))
+        } actions: {
+            if failure.isRetryAvailable {
+                Button {
+                    onRetry()
+                } label: {
+                    Text("Retry Loading Log")
+                }
+                .accessibilityLabel(Text("Retry Loading Log"))
+                .help(Text("Try loading this task log again."))
+            }
+        }
+        .accessibilityIdentifier("prism.task-log.failed-state")
     }
 }
 

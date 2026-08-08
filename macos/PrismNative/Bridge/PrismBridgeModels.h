@@ -1,5 +1,7 @@
 #import <Foundation/Foundation.h>
 
+#include <stdint.h>
+
 NS_ASSUME_NONNULL_BEGIN
 
 typedef NS_ENUM(NSInteger, PRTaskState) {
@@ -151,6 +153,39 @@ typedef NS_ENUM(NSInteger, PRInstanceCommandOutcome) {
 
 @property(nonatomic, copy, readonly) NSString *identifier;
 @property(nonatomic, assign, readonly) PRTaskCancellationOutcome outcome;
+
+@end
+
+/// One privacy-filtered, immutable log line. The facade guarantees that the
+/// sequence is stable and that the text has already passed its byte bound.
+@interface PRTaskLogEntry : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithSequence:(uint64_t)sequence
+                                      text:(NSString *)text
+                                 truncated:(BOOL)truncated NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, assign, readonly) uint64_t sequence;
+@property(nonatomic, copy, readonly) NSString *text;
+@property(nonatomic, assign, readonly) BOOL truncated;
+
+@end
+
+/// One bounded, privacy-filtered task log snapshot for native presentation.
+@interface PRTaskLogSnapshot : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithTaskIdentifier:(NSString *)taskIdentifier
+                                         entries:(NSArray<PRTaskLogEntry *> *)entries
+                             droppedEntryCount:(uint64_t)droppedEntryCount
+                                  totalByteCount:(uint64_t)totalByteCount
+                                      truncated:(BOOL)truncated NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *taskIdentifier;
+@property(nonatomic, copy, readonly) NSArray<PRTaskLogEntry *> *entries;
+@property(nonatomic, assign, readonly) uint64_t droppedEntryCount;
+@property(nonatomic, assign, readonly) uint64_t totalByteCount;
+@property(nonatomic, assign, readonly) BOOL truncated;
 
 @end
 

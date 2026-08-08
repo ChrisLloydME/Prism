@@ -501,6 +501,123 @@ final class PrismTaskPresentationModel: ObservableObject {
     }
 }
 
+struct PrismTaskLogEntry: Identifiable, Equatable, Sendable {
+    let id: UInt64
+    let text: String
+    let isTruncated: Bool
+
+    init?(bridgeEntry: PRTaskLogEntry) {
+        guard !bridgeEntry.text.contains("\u{0}") else {
+            return nil
+        }
+
+        self.id = bridgeEntry.sequence
+        self.text = bridgeEntry.text
+        self.isTruncated = bridgeEntry.truncated
+    }
+}
+
+struct PrismTaskLogPresentation: Identifiable, Equatable, Sendable {
+    let id: String
+    let entries: [PrismTaskLogEntry]
+    let droppedEntryCount: UInt64
+    let totalByteCount: UInt64
+    let isTruncated: Bool
+
+    var renderedText: String {
+        entries.map(\.text).joined(separator: "\n")
+    }
+
+    init?(bridgeSnapshot: PRTaskLogSnapshot) {
+        let taskIdentifier = bridgeSnapshot.taskIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !taskIdentifier.isEmpty else {
+            return nil
+        }
+
+        let entries = bridgeSnapshot.entries.compactMap(PrismTaskLogEntry.init(bridgeEntry:))
+        let calculatedByteCount = entries.reduce(into: UInt64(0)) {
+            $0 += UInt64($1.text.utf8.count)
+        }
+        guard entries.count == bridgeSnapshot.entries.count,
+              Set(entries.map(\.id)).count == entries.count,
+              bridgeSnapshot.totalByteCount == calculatedByteCount,
+              bridgeSnapshot.truncated || (bridgeSnapshot.droppedEntryCount == 0 && entries.allSatisfy { !$0.isTruncated }) else {
+            return nil
+        }
+
+        self.id = taskIdentifier
+        self.entries = entries
+        self.droppedEntryCount = bridgeSnapshot.droppedEntryCount
+        self.totalByteCount = bridgeSnapshot.totalByteCount
+        self.isTruncated = bridgeSnapshot.truncated
+    }
+}
+
+struct PrismTaskLogFailure: Equatable, Sendable {
+    let taskIdentifier: String
+    let localizationKey: String
+    let substitutionValues: [String: String]
+    let diagnosticText: String?
+    let isRetryAvailable: Bool
+}
+
+@MainActor
+final class PrismTaskLogPresentationModel: ObservableObject {
+    @Published private(set) var log: PrismTaskLogPresentation?
+    @Published private(set) var failure: PrismTaskLogFailure?
+    private let onRetry: ((String) -> Void)?
+
+    init(onRetry: ((String) -> Void)? = nil) {
+        self.onRetry = onRetry
+    }
+
+    @discardableResult
+    func apply(snapshot: PRTaskLogSnapshot) -> Bool {
+        guard let presentation = PrismTaskLogPresentation(bridgeSnapshot: snapshot) else {
+            return false
+        }
+
+        log = presentation
+        failure = nil
+        return true
+    }
+
+    @discardableResult
+    func apply(error: PRBridgeError, taskIdentifier: String) -> Bool {
+        let normalizedIdentifier = taskIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let localizationKey = error.localizationKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedIdentifier.isEmpty, !localizationKey.isEmpty else {
+            return false
+        }
+
+        log = nil
+        failure = PrismTaskLogFailure(
+            taskIdentifier: normalizedIdentifier,
+            localizationKey: localizationKey,
+            substitutionValues: error.substitutionValues,
+            diagnosticText: error.diagnosticText,
+            isRetryAvailable: error.recoveryKind == .retry
+        )
+        return true
+    }
+
+    @discardableResult
+    func retry() -> Bool {
+        guard let failure, failure.isRetryAvailable else {
+            return false
+        }
+
+        self.failure = nil
+        onRetry?(failure.taskIdentifier)
+        return true
+    }
+
+    func clear() {
+        log = nil
+        failure = nil
+    }
+}
+
 enum PrismInstanceGrouping: String, CaseIterable, Sendable {
     case none
     case group
