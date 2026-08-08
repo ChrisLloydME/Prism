@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 5, Launch, stop, tasks, and logs
 
-Active work unit: M5-W3
+Active work unit: M5-W4
 
-Next ready work unit: M5-W3
+Next ready work unit: M5-W4
 
 ## Safety baseline
 
@@ -1064,7 +1064,7 @@ Result summary: Swift mapping rejects invalid identifiers, progress fractions, u
 
 Risk: the presentation model and intents are complete but the fixture/default app composition does not yet own a real task observer or connect to `LaunchController`; M5-W4 must add bounded, privacy-filtered log streaming without moving process or backend ownership into Swift. Localization resources are not yet part of the native target, so this unit preserves stable localization keys/substitution dictionaries and tests their shape; later feature units must add resource existence/formatting coverage when their strings are introduced.
 
-Commit: pending implementation.
+Commit: `ac2977bfa`.
 
 Next after completion: `M5-W4`, add bounded and privacy-filtered log streaming.
 
@@ -1100,6 +1100,7 @@ Next after completion: `M5-W4`, add bounded and privacy-filtered log streaming.
 
 | `fd58b4b40` | Added fixture-controlled launch and stop commands with stable identifiers, explicit outcomes, cancellation, and main-actor bridge delivery | CMake facade tests 2/2; focused native command/bridge tests 15/15; full native tests 59/59; arm64 legacy Prism target; Debug/Release builds; public boundary, command, localization-shape, Bundle ID, and `git diff --check` validations |
 | `e55fd3139` | Added immutable task progress, subtask, terminal-result, and idempotent cancellation contracts across facade and bridge | arm64/universal CMake facade tests 2/2; arm64 legacy Prism target; focused native task/bridge tests 26/26; full native tests 61/61; Debug/Release builds; public boundary, recovery/localization/accessibility, Bundle ID, and `git diff --check` validations |
+| `ac2977bfa` | Added native task progress presentation, main-actor state, cancellation/retry intents, and standard SwiftUI recovery surfaces | Focused command/Shell tests 30/30; full native tests 65/65; Debug/Release builds; Objective-C bridge syntax; Qt/C++/ownership and no-drawing scans; localization/accessibility/command API scan; Debug/Release `plutil`; `git diff --check` |
 
 ## Current architecture findings
 
@@ -1134,6 +1135,7 @@ Next after completion: `M5-W4`, add bounded and privacy-filtered log streaming.
 29. M4-W7 keeps instance artwork behind an explicit file-URL input and a main-actor deterministic LRU store with 32-entry/8 MiB defaults; SwiftUI `Image` owns presentation and accessibility, while bridge icon-key resolution and live row integration remain downstream of this isolated content seam.
 30. M5-W1 adds explicit launch and stop callback ports with stable-ID result outcomes; the Objective-C++ bridge copies Foundation identifiers, serializes facade calls, owns cancellation and main-actor delivery, and the Swift command model preserves a generic-handler compatibility path. The default composition intentionally rejects commands until task/process wiring is introduced.
 31. M5-W2 adds immutable task and subtask values with explicit progress kinds, cancellation eligibility, terminal outcomes, localized diagnostic metadata, rollback status, and idempotent cancellation results. The C++ facade validates the value contract, while Objective-C++ serializes conversion, error/recovery mapping, request-token lifetime, shutdown cancellation, and main-actor delivery; M5-W3 owns native progress presentation.
+32. M5-W3 maps those Foundation DTOs into validated `PrismTaskPresentation` values and an `@MainActor` `PrismTaskPresentationModel`; SwiftUI consumes only standard `ProgressView`, `Button`, `Label`, `List`, and `ContentUnavailableView` surfaces, while stable cancel/retry intents remain injected. Real task observation and `LaunchController` ownership are intentionally deferred to later launch composition; no custom-rendering exception was added.
 
 ## Custom rendering exceptions
 
@@ -1147,4 +1149,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M5-W3`. M5-W2 is complete in `e55fd3139`; do not begin M5-W4 or later task/log implementation until M5-W3's standard progress presentation, view-model, command, accessibility, localization, and no-custom-drawing evidence is verified and committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M5-W4`. M5-W3 is complete in `ac2977bfa`; M5-W4 must add bounded, privacy-filtered log streaming with standard text presentation and deterministic truncation tests. Do not begin M5-W5 or later work until the M5-W4 evidence is verified and committed.
