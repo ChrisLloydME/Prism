@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 6, Instance detail and editing
 
-Active work unit: M6-W1
+Active work unit: M6-W2
 
-Next ready work unit: M6-W1
+Next ready work unit: M6-W2
 
 ## Safety baseline
 
@@ -1168,6 +1168,42 @@ Commit: `54f74badcb81ab7cb1c5ab6b8138b647eb356d69`.
 
 Next after completion: `M6-W1`, implement native instance metadata and notes.
 
+### M6-W1: Native instance metadata and notes
+
+Status: complete
+
+Outcome: add the first native instance-detail workflow for immutable metadata and editable notes. The native detail surface now represents loading, empty, failed, and content states; presents name, type, group, stable identifier, and exact notes text; and exposes a confirmed notes-save action with standard retry and error recovery.
+
+Scope: directly required `launcher/frontend` value contracts and fixture ports, the Foundation-only Objective-C++ bridge, native Swift state/view code, and related facade/bridge/Shell tests. No Qt UI composition, other platform behavior, live `BaseInstance` ownership, upstream data, account, Keychain, process, or production service was accessed.
+
+Required evidence: immutable metadata and notes DTOs, stable identifier validation, optional metadata handling, exact whitespace/newline preservation, notes editability, confirmed success/unknown/rejected results, invalid-input and unavailable recovery, cancellation-aware main-actor bridge delivery, draft preservation after rejected/failed writes, standard `Form`/`LabeledContent`/`TextEditor`/`ProgressView`/`ContentUnavailableView`, accessibility labels/values/help/identifiers, keyboard default action, facade C++ tests, native tests, Debug/Release builds, Bundle ID checks, bridge/Swift boundary scans, no-drawing scans, and `git diff --check`.
+
+HIG decision: use SwiftUI `Form`, `Section`, `LabeledContent`, `TextEditor`, `Button`, `ProgressView`, and `ContentUnavailableView` for the detail workflow. Notes remain user content and are selectable/editable through the system text editor; metadata uses native labeled rows; save/retry/error states use system controls and roles. The implementation follows Apple [`Form`](https://developer.apple.com/documentation/swiftui/form), [`TextEditor`](https://developer.apple.com/documentation/swiftui/texteditor), [`LabeledContent`](https://developer.apple.com/documentation/swiftui/labeledcontent), [`accessibility`](https://developer.apple.com/documentation/swiftui/accessibility), and HIG [`forms`](https://developer.apple.com/design/human-interface-guidelines/forms) guidance. No custom control, custom drawing, third-party UI, or rendering exception was added.
+
+Architecture: `FrontendInstanceDetailsSnapshot` and `FrontendInstanceNotesUpdateResult` are QWidget-free value contracts with explicit `loadInstanceDetails` and `updateInstanceNotes` runtime ports. `PRPrismBridge` remains the sole C++ ownership, conversion, serial-access, cancellation, error-translation, and main-actor delivery boundary; public bridge headers expose only Foundation `PRInstanceDetails` and `PRInstanceNotesUpdateResult`. `PrismInstanceDetailsModel` is `@MainActor` and updates confirmed notes only after a succeeded result; rejected or failed mutations retain the draft and expose structured recovery. No `BaseInstance`, settings object, path, Qt type, or ownership pointer crosses into Swift.
+
+Files changed: `launcher/frontend/FrontendFacade.cpp`, `launcher/frontend/FrontendFacade.h`, `launcher/frontend/FrontendFacadeContractTest.cpp`, `launcher/frontend/FrontendFacadePublicHeaderTest.cpp`, `macos/PrismNative/Bridge/PrismBridge.h`, `macos/PrismNative/Bridge/PrismBridge.mm`, `macos/PrismNative/Bridge/PrismBridgeModels.h`, `macos/PrismNative/App/ContentView.swift`, `macos/PrismNative/App/PrismShellModel.swift`, `macos/PrismNativeTests/PrismBridgeFacadeIntegrationTests.mm`, and `macos/PrismNativeTests/PrismShellTests.swift`. No Xcode project or CMake source-composition change was required because existing target membership and facade linkage already cover these files.
+
+Tests and exact commands:
+
+- `cmake --build /private/tmp/prism-m5-w4-cmake --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test --parallel 2` and `ctest --test-dir /private/tmp/prism-m5-w4-cmake --output-on-failure -R '^(FrontendFacadeContract|FrontendFacadePublicHeaders)$'` — passed; arm64 facade targets and focused C++ tests passed 2/2.
+- `cmake --build /private/tmp/prism-m5-w4-cmake --target Prism --parallel 2` — passed; the existing arm64 Qt `Prism` target linked successfully without execution. Existing macOS deployment-version and dependency-library warnings remain unchanged.
+- `cmake --build /private/tmp/prism-m5-w4-universal --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test --parallel 2` and `ctest --test-dir /private/tmp/prism-m5-w4-universal --output-on-failure -R '^(FrontendFacadeContract|FrontendFacadePublicHeaders)$'` — passed; universal facade CTest passed 2/2. `file .deriveddata-prism-native-backend/libLauncher_frontend.a && lipo -info .deriveddata-prism-native-backend/libLauncher_frontend.a` — passed; the final archive contains `x86_64` and `arm64`.
+- The first focused Xcode command reached Swift/Objective-C++ compilation but failed at the x86_64 link because the reused backend archive was arm64-only. Log inspection matched the prior recorded architecture issue; rebuilding the explicit universal facade archive resolved it. The first post-rebuild focused run then exposed one source-contract assertion with the wrong selector spelling; the test was corrected to match `apply(notesResult bridgeResult:)` before the final run.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO -only-testing:PrismNativeTests/PrismBridgeFacadeIntegrationTests -only-testing:PrismNativeTests/PrismShellTests test` — passed; focused bridge and Shell tests passed 38/38.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed; full native suite passed 76/76, counted from `Test-PrismNative-2026.08.09_00-52-25-+0800.xcresult` with `xcrun xcresulttool get test-results tests --path .deriveddata-prism-native/Logs/Test/Test-PrismNative-2026.08.09_00-52-25-+0800.xcresult | rg '"nodeType" : "Test Case"' | wc -l` — `76`.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` and the equivalent Release command with `.deriveddata-prism-native-release` — both passed.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` and the Release equivalent — both returned `com.lloydME.Prism`.
+- Objective-C public-header syntax and Objective-C++ bridge syntax passed. Foundation-only bridge, Swift Qt/C++/ownership, upstream-path/network, and custom-drawing scans passed with no forbidden matches. Structural API inspection found `Form`, metadata `LabeledContent`, `TextEditor`, system progress/empty/error states, accessibility metadata, and the default keyboard shortcut. `git diff --cached --check` passed before the implementation commit and `git diff --check` passed after verification.
+
+Result summary: the C++ facade contract validates stable metadata and notes outcomes through temporary roots; the bridge copies mutable Foundation inputs, preserves exact notes text, maps unknown/rejected/error outcomes, delivers on the main actor, and suppresses cancelled requests. Swift tests cover metadata normalization, loading, confirmed save, rejection rollback, failed-save retry, stale-result rejection, read-only notes, accessibility/source contracts, and no custom drawing. No application launch, screenshot, recording, visual snapshot, upstream application/data, account, Keychain, signing, installation, publishing, push, or destructive action was used.
+
+Risk: the detail and notes runtime adapters remain injected fixture ports; default composition intentionally does not discover or mutate live `BaseInstance` settings. M6-W2 must add instance settings through the same temporary-root, confirmed-state, Foundation-only facade/bridge pattern. No custom-rendering exception was added.
+
+Commit: `d3f319c494a61d559643964a6253a3ec8c495df3`.
+
+Next after completion: `M6-W2`, implement instance settings with `Form` and standard controls.
+
 ## Completed commit index
 
 | Commit | Outcome | Verification |
@@ -1204,6 +1240,7 @@ Next after completion: `M6-W1`, implement native instance metadata and notes.
 | `8ebdcafe5` | Added bounded privacy-filtered task log streaming, immutable Foundation log snapshots, cancellable bridge delivery, and standard Swift text presentation | arm64/universal CMake facade tests 2/2; arm64 legacy Prism target 436/436; focused bridge tests 9/9; full native tests 70/70; Debug/Release builds; public Objective-C/Objective-C++ syntax; Qt/ownership/drawing scans; Debug/Release `plutil`; `git diff --check` |
 | `f5ce26fc3` | Replaced the bounded task-log ScrollView/Text surface with a standard selectable and searchable AppKit NSTextView/NSScrollView view | Focused Shell tests 23/23; full native tests 70/70; Debug/Release builds; AppKit/accessibility source inspection; Qt/ownership/drawing scans; Debug/Release `plutil`; `git diff --check` |
 | `54f74badc` | Added bridge integration scenario coverage for terminal task outcomes, launch rejection, cancellation, retry eligibility, shutdown, and log truncation | arm64/universal CMake facade tests 2/2; arm64 Qt Prism target; focused bridge tests 11/11; full native tests 72/72; Debug/Release builds; Objective-C/Objective-C++ syntax; boundary and no-drawing scans; Debug/Release `plutil`; `git diff --check` |
+| `d3f319c49` | Added native instance metadata and confirmed notes editing across the QWidget-free facade, Objective-C++ bridge, and SwiftUI detail form | arm64/universal CMake facade tests 2/2; arm64 Qt Prism target; focused native tests 38/38; full native tests 76/76; Bundle ID `com.lloydME.Prism`; Debug/Release builds; Objective-C/Objective-C++ syntax; boundary/accessibility/no-drawing scans; `git diff --check` |
 
 ## Current architecture findings
 
@@ -1242,6 +1279,7 @@ Next after completion: `M6-W1`, implement native instance metadata and notes.
 33. M5-W4 adds a callback-based `TaskLogStreamer` port; `FrontendFacade` privacy-filters and bounds only a fixed tail before `PRTaskLogSnapshot` crosses Objective-C++, while Swift owns no process or log source and consumes only validated `PrismTaskLogPresentation` state through standard `ScrollView` and `Text`. M5-W5 remains the boundary for large-log text-view behavior.
 34. M5-W5 moves only the presentation seam from SwiftUI `ScrollView`/`Text` to AppKit `NSTextView`/`NSScrollView` through `NSViewRepresentable`; the same validated bounded privacy-filtered string crosses no new bridge boundary, and selectable/find-bar behavior remains native. M5-W6 owns the task scenario matrix, not a new log source or ownership path.
 35. M5-W6 closes Milestone 5 scenario evidence at the bridge boundary: C++ facade ports provide fixture success/rejection/cancellation/failure/terminal/log-bound behavior, while Objective-C++ tests now prove Foundation conversion, main-actor delivery, retry errors, shutdown, and cancellation suppression without introducing a production launch or process source.
+36. M6-W1 defines immutable instance-detail metadata and confirmed notes-update contracts. The facade accepts only explicit fixture/runtime ports; Objective-C++ owns C++ values, Foundation copies, errors, cancellation, and main-actor delivery; Swift owns validated detail state and preserves unconfirmed drafts. The native surface uses only standard `Form`, `LabeledContent`, `TextEditor`, `ProgressView`, `ContentUnavailableView`, and accessibility/help APIs, with no paths, Qt types, or custom drawing crossing the boundary.
 
 ## Custom rendering exceptions
 
@@ -1255,4 +1293,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M6-W1`. M5-W6 is complete in `54f74badc`; M6-W1 may implement only native instance metadata and notes while preserving the existing facade/bridge ownership and temporary-fixture safety contracts. Do not begin M6-W2 or later work until M6-W1 evidence is verified and committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M6-W2`. M6-W1 is complete in `d3f319c494a61d559643964a6253a3ec8c495df3`; M6-W2 may implement only instance settings with standard native controls while preserving the existing facade/bridge ownership and temporary-fixture safety contracts. Do not begin M6-W3 or later work until M6-W2 evidence is verified and committed.
