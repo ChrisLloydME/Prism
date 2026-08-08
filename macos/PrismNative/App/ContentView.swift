@@ -110,19 +110,55 @@ struct PrismTaskLogView: View {
                 )
                 .accessibilityIdentifier("prism.task-log.\(log.id).empty")
             } else {
-                ScrollView(.vertical) {
-                    Text(log.renderedText)
-                        .font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
-                }
-                .accessibilityLabel(Text("Task Log Output"))
-                .accessibilityIdentifier("prism.task-log.\(log.id).output")
+                PrismTaskLogTextView(text: log.renderedText)
+                    .frame(minHeight: 180, idealHeight: 280, maxHeight: 420)
+                    .accessibilityLabel(Text("Task Log Output"))
+                    .accessibilityValue(Text(log.accessibilityValueKey))
+                    .accessibilityIdentifier("prism.task-log.\(log.id).output")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("prism.task-log.\(log.id)")
+    }
+}
+
+@MainActor
+private struct PrismTaskLogTextView: NSViewRepresentable {
+    let text: String
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let textView = NSTextView(frame: .zero)
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.usesFindBar = true
+        textView.font = NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        textView.string = text
+        textView.textContainerInset = NSSize(width: 8, height: 8)
+        textView.textContainer?.widthTracksTextView = true
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+
+        let scrollView = NSScrollView(frame: .zero)
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .bezelBorder
+        scrollView.drawsBackground = true
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView,
+              textView.string != text else {
+            return
+        }
+
+        textView.string = text
     }
 }
 

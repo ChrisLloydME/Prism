@@ -421,12 +421,18 @@ final class PrismShellTests: XCTestCase {
 
         for requiredToken in [
             "PrismTaskLogView",
-            "ScrollView(.vertical)",
-            ".textSelection(.enabled)",
-            ".monospaced",
+            "PrismTaskLogTextView",
+            "NSViewRepresentable",
+            "NSTextView",
+            "NSScrollView",
+            "isEditable = false",
+            "isSelectable = true",
+            "usesFindBar = true",
             "ContentUnavailableView",
             "prism.task-log.",
-            "Older log entries were omitted."
+            "Older log entries were omitted.",
+            ".accessibilityLabel(Text(\"Task Log Output\"))",
+            ".accessibilityValue(Text(log.accessibilityValueKey))"
         ] {
             XCTAssertTrue(contentSource.contains(requiredToken), "Missing native log API: \(requiredToken)")
         }
@@ -444,6 +450,8 @@ final class PrismShellTests: XCTestCase {
             XCTAssertTrue(shellModelSource.contains(requiredToken), "Missing log state contract: \(requiredToken)")
         }
 
+        XCTAssertFalse(contentSource.contains("ScrollView(.vertical)"))
+        XCTAssertFalse(contentSource.contains("Text(log.renderedText)"))
         XCTAssertFalse(contentSource.contains("Canvas("))
         XCTAssertFalse(contentSource.contains("draw("))
         XCTAssertFalse(contentSource.contains("Path("))
