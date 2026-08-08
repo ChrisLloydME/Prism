@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 8, Creation, discovery, and installation
 
-Active work unit: M8-W1
+Active work unit: M8-W2
 
-Next ready work unit: M8-W1
+Next ready work unit: M8-W2
 
 ## Safety baseline
 
@@ -1682,7 +1682,7 @@ Risk: live `LaunchController::askOfflineName` wiring, actual `LastOfflinePlayerN
 
 Commit: `4eac74821` (implementation); this entry is completed in the follow-up progress-ledger commit.
 
-Next after completion: M8-W1, add a fixture-controlled vanilla instance creation contract without production network mutation or real-data access.
+Next after completion: M8-W2, import from a local file or URL through system file presentation and a fixture-controlled backend contract.
 
 ### M7-W7: No secret crossing audit
 
@@ -1721,11 +1721,51 @@ Next after completion: M8-W1, add a fixture-controlled vanilla instance creation
 
 ### M8-W1: Fixture-controlled vanilla instance creation
 
+Status: complete
+
+Outcome: Implemented the first Milestone 8 native creation seam for a fixture-controlled vanilla instance. The facade validates explicit version, loader, name, group, and icon values, reports task progress and terminal outcomes, and returns only immutable non-UI metadata. Swift owns the editing and recovery state while the existing backend remains the source of truth.
+
+Working boundary: re-read the legacy NewInstanceDialog/CustomPage/VanillaCreationTask path and retained Qt composition before editing. Added only the QWidget-free facade contract, Foundation-only bridge conversion, native SwiftUI creation model/surface, Xcode source entries, and non-launch tests required for fixture-controlled creation. The runner is injected and receives an explicit temporary fixture root; real staging, downloads, task ownership, and commit behavior remain backend adapter responsibilities. No provider network request, live download, account access, upstream data access, production mutation, signing, installation, publishing, or destructive cleanup was performed.
+
+Files changed:
+
+- `launcher/frontend/FrontendFacade.cpp`
+- `launcher/frontend/FrontendFacade.h`
+- `launcher/frontend/FrontendFacadeContractTest.cpp`
+- `macos/PrismNative.xcodeproj/project.pbxproj`
+- `macos/PrismNative/Bridge/PrismBridge.h`
+- `macos/PrismNative/Bridge/PrismBridge.mm`
+- `macos/PrismNative/Bridge/PrismBridgeModels.h`
+- `macos/PrismNative/App/PrismVanillaCreation.swift`
+- `macos/PrismNativeTests/PrismVanillaCreationTests.swift`
+- `macos/PrismNativeTests/PrismBridgeFacadeIntegrationTests.mm`
+
+Verification:
+
+- Focused native creation and bridge XCTest: `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-m8-w1-focused-tests CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test -only-testing:PrismNativeTests/PrismVanillaCreationTests -only-testing:PrismNativeTests/PrismBridgeFacadeIntegrationTests/testVanillaCreationConvertsFoundationRequestProgressAndResult`; 6/6 passed.
+- Universal macOS 14 facade configure/build and CTest: `cmake -S launcher/frontend -B .deriveddata-prism-native-backend -DCMAKE_OSX_ARCHITECTURES='x86_64;arm64' -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON`; `cmake --build .deriveddata-prism-native-backend --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test --parallel 2`; `ctest --test-dir .deriveddata-prism-native-backend --output-on-failure -R '^(FrontendFacadeContract|FrontendFacadePublicHeaders)$'`; 2/2 passed.
+- arm64 macOS 14 facade configure/build and CTest: `cmake -S launcher/frontend -B /private/tmp/prism-m6-w5-arm64-backend -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON`; `cmake --build /private/tmp/prism-m6-w5-arm64-backend --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_instance_detail_contract_test Launcher_frontend_public_header_test --parallel 2`; `ctest --test-dir /private/tmp/prism-m6-w5-arm64-backend --output-on-failure -R '^(FrontendFacadeContract|FrontendFacadeInstanceDetailContract|FrontendFacadePublicHeaders)$'`; 3/3 passed.
+- Existing arm64 Qt composition: `cmake --build /private/tmp/prism-m5-w4-cmake --target Prism --parallel 2`; passed. The first build emitted existing third-party macOS 26-versus-14 deployment warnings; the immediate rerun reported `ninja: no work to do.` and exited 0. No Qt composition or third-party source was changed.
+- Native builds: Debug and Release `xcodebuild ... build` with `CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO`; both passed. Full Debug and Release `xcodebuild ... test` passed 123/123 each.
+- Identity and architecture: `plutil -extract CFBundleIdentifier raw -o -` returned `com.lloydME.Prism` for both Debug and Release products; `file` and `lipo -info` confirmed universal `x86_64 arm64` app binaries.
+- Boundary and structure: Objective-C public-header `clang -fsyntax-only` and Objective-C++ bridge `clang++ -fsyntax-only -std=c++20 -fobjc-arc -fblocks -target arm64-apple-macos14.0` passed. Public bridge, Swift, launcher UI-header/ownership, network/process/filesystem, secret, accessibility, keyboard shortcut, localization-shape, and no-drawing scans passed. `git diff --check` passed.
+- No application executable was launched; no screenshot, recording, visual snapshot test, upstream application/data, account, Keychain, credential, production service, signing, installation, publishing, or push was accessed.
+
+HIG decision: use `Form`, `Section`, `Picker`, `TextField`, `ProgressView`, `ContentUnavailableView`, and `Label` with system `.formStyle(.grouped)`, `.keyboardShortcut(.defaultAction)`, `.disabled`, and accessibility identifiers/values. The creation surface uses native controls and standard progress/recovery presentation; no custom control, custom drawing, or rendering exception was introduced.
+
+Risk and limits: the creation runner is fixture-controlled and is not wired to live `VanillaCreationTask`, filesystem staging, download, or production instance commit. Import/copy/export, provider browsing, provider installation, optional/blocked-file handling, and system open/save panels remain later Milestone 8 work; M8-W2 is next. The native creation model/surface is a tested standalone seam, while app-level composition and the backend adapter remain intentionally deferred. An initial focused link exposed a stale universal facade archive built with a blank deployment target and missing the new symbol; the evidence-led fix was to reconfigure and rebuild both facade variants with `CMAKE_OSX_DEPLOYMENT_TARGET=14.0`, after which the focused, CTest, and full native validations passed.
+
+Commit: `ee0fd45e7` (implementation); this entry is completed in the follow-up progress-ledger commit.
+
+Next after completion: M8-W2, import from a local file and URL using system file presentation and a fixture-controlled, non-production backend contract.
+
+### M8-W2: Fixture-controlled local file and URL import
+
 Status: active
 
-Outcome: in progress. Implement the first Milestone 8 native creation workflow for a fixture-controlled vanilla instance, preserving the existing backend as the source of truth and exposing only explicit non-UI values and task outcomes to Swift.
+Outcome: in progress. Define the next Milestone 8 native import seam for local files and URL inputs, preserving explicit Foundation values, cancellation, error recovery, and the existing backend as the source of truth.
 
-Working boundary: re-read the legacy NewInstanceDialog/vanilla creation path and its backend collaborators before editing. Add only the smallest QWidget-free facade, Foundation-only bridge, native state, and non-launch tests required for fixture-controlled creation. Do not add provider network requests, live downloads, account access, upstream data access, production mutation, signing, installation, publishing, or destructive cleanup. Use a temporary fixture root and retain the existing Qt composition.
+Working boundary: begin by re-reading the legacy import dialog, archive/URL import task, and their backend collaborators. Use system `fileImporter`/`NSOpenPanel` semantics and fixture-controlled inputs only. Do not access upstream application data, real URLs, provider services, accounts, Keychain, credentials, production files, or live downloads; do not add copy/export/provider installation behavior in this work unit.
 
 ## Completed commit index
 
@@ -1776,6 +1816,7 @@ Working boundary: re-read the legacy NewInstanceDialog/vanilla creation path and
 | `15d2863af` | Added the fixture-only authentication state machine, fake-provider progress/result contract, main-actor bridge delivery, cancellation suppression, and native Settings recovery UI | facade/public-header CMake targets; CTest 2/2; arm64 Qt Prism target; native XCTest 112/112 plus post-fix Debug/Release reruns; PLAN §9 Debug/Release builds; Bundle ID `com.lloydME.Prism`; universal `x86_64 arm64` artifacts; accessibility/localization and Qt/ownership/secret/network/process/no-drawing scans; `git diff --check` |
 | `4eac74821` | Added the fixture-only offline/demo launch identity facade, Foundation bridge, Swift Settings editor, validation/recovery state machine, and cancellation-safe tests | facade/public-header CMake targets; CTest 2/2; arm64 Qt Prism target; Debug/Release native builds; full Debug/Release XCTest 116/116; focused model/structure tests 2/2; Bundle ID `com.lloydME.Prism`; universal `x86_64 arm64` artifacts; accessibility/localization/boundary/secret/no-drawing scans; `git diff --check` |
 | 40c3ffd7f | Added the executable M7-W7 native secret-boundary audit for account DTO declarations, authentication fixtures, log redaction, and the progress ledger | Focused audit test; facade/public-header CMake targets; CTest 2/2; full Debug/Release XCTest 117/117; Debug/Release builds; Bundle ID com.lloydME.Prism; universal x86_64 arm64 artifacts; boundary/secret/endpoint/no-drawing scans; git diff --check |
+| `ee0fd45e7` | Added the fixture-controlled vanilla creation request/result contract, Foundation bridge, native SwiftUI creation state, progress/cancellation/retry handling, and non-launch tests | Focused creation/bridge XCTest 6/6; universal and arm64 macOS 14 facade CTest 2/2 and 3/3; arm64 Qt Prism target; full Debug/Release XCTest 123/123; Debug/Release builds; Bundle ID `com.lloydME.Prism`; universal `x86_64 arm64` artifacts; Objective-C/Objective-C++ syntax; accessibility/localization/boundary/no-drawing scans; `git diff --check` |
 
 ## Current architecture findings
 
@@ -1828,6 +1869,8 @@ Working boundary: re-read the legacy NewInstanceDialog/vanilla creation path and
 
 47. M7-W7 makes the account secret boundary executable: public facade and Foundation DTO value declarations are checked for forbidden secret-bearing fields, authentication fixtures are restricted to synthetic .invalid endpoints, log fixtures are required to assert removal of fake secret-shaped sentinels, and the progress ledger is scanned for concrete credential-shaped values. This is a regression guard, not live-provider validation; future adapters must preserve the same non-secret DTO and diagnostic contract.
 
+48. M8-W1 establishes the first creation boundary without importing legacy UI ownership: explicit vanilla request values, validated task/result snapshots, and cancellation flow stay in the QWidget-free facade contract; Objective-C++ alone converts Foundation values and owns callback lifetime; Swift owns only main-actor draft/progress/recovery state. The injected fixture runner receives the normalized temporary root, while real staging, downloads, and instance commit remain backend adapter responsibilities for later work units.
+
 ## Custom rendering exceptions
 
 No exception is approved.
@@ -1840,4 +1883,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read PLAN.md and PROGRESS.md, run git status --short --branch -uall, inspect the last five commits, then activate only ready M8-W1. M6-W1 is complete in d3f319c494a61d559643964a6253a3ec8c495df3; M6-W2 is complete in 467bb275e04a087e00a4dd85365273bdcf130185; M6-W3 is complete in 789502d804528d39098fd21fd227d4572ae18040; M6-W4 is complete in 891138f6ea639c3af718d74e8f63f65e74650cf6; M6-W5 is complete in ebcccb3761bbfdbf66d042e75dae85ace9450823; M6-W6 is complete in ed31c77fbedcacfcd5e691d0f67ab08c25dff9e4; M6-W7 is complete in a0c6456c1; M7-W1 is complete in 6149bb3a2; M7-W2 is complete in 12c6ba49a; M7-W3 is complete in 76cfc19dd; M7-W4 is complete in 5a4cef365; M7-W5 is complete in 15d2863af; M7-W6 is complete in 4eac74821; and M7-W7 is implemented in 40c3ffd7f with its progress-ledger update in the following commit. Preserve all existing fixture-root, Bundle ID, no-launch, no-secrets, and Objective-C++ boundary constraints; do not reopen completed M6 or M7 evidence.
+Read PLAN.md and PROGRESS.md, run git status --short --branch -uall, inspect the last five commits, then activate only ready M8-W2. M6-W1 is complete in d3f319c494a61d559643964a6253a3ec8c495df3; M6-W2 is complete in 467bb275e04a087e00a4dd85365273bdcf130185; M6-W3 is complete in 789502d804528d39098fd21fd227d4572ae18040; M6-W4 is complete in 891138f6ea639c3af718d74e8f63f65e74650cf6; M6-W5 is complete in ebcccb3761bbfdbf66d042e75dae85ace9450823; M6-W6 is complete in ed31c77fbedcacfcd5e691d0f67ab08c25dff9e4; M6-W7 is complete in a0c6456c1; M7-W1 is complete in 6149bb3a2; M7-W2 is complete in 12c6ba49a; M7-W3 is complete in 76cfc19dd; M7-W4 is complete in 5a4cef365; M7-W5 is complete in 15d2863af; M7-W6 is complete in 4eac74821; M7-W7 is complete in 40c3ffd7f with its progress-ledger update in the following commit; and M8-W1 is complete in ee0fd45e7 with this progress-ledger update in the following commit. Preserve all existing fixture-root, Bundle ID, no-launch, no-secrets, and Objective-C++ boundary constraints; begin M8-W2 by re-reading the legacy import path before editing and do not reopen completed M6, M7, or M8-W1 evidence.
