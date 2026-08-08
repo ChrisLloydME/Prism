@@ -404,6 +404,59 @@ struct FrontendJavaSelectionResult final {
     std::string diagnosticText;
 };
 
+enum class FrontendAccountType : std::uint8_t { Microsoft, Offline };
+enum class FrontendAccountState : std::uint8_t {
+    Unchecked,
+    Offline,
+    Working,
+    Online,
+    Disabled,
+    Errored,
+    Expired,
+    Gone,
+};
+
+/// Immutable, non-secret account metadata for native account selection.
+/// Provider-owned authentication state, credentials, profile payloads, and
+/// persistence remain outside this value contract.
+struct FrontendAccountSnapshot final {
+    std::string id;
+    std::string displayName;
+    FrontendAccountType type = FrontendAccountType::Microsoft;
+    FrontendAccountState state = FrontendAccountState::Unchecked;
+    bool ownsMinecraft = false;
+    bool isBusy = false;
+    bool canBeSelected = true;
+    std::string diagnosticText;
+
+    bool hasStableIdentifier() const noexcept { return !id.empty(); }
+};
+
+enum class FrontendAccountSnapshotOutcome : std::uint8_t { Succeeded, Failed, Cancelled, Rejected };
+
+/// Confirmed result of one account snapshot load. The optional active
+/// identifier maps the legacy default account; it does not describe a live
+/// authentication task.
+struct FrontendAccountSnapshotResult final {
+    FrontendAccountSnapshotOutcome outcome = FrontendAccountSnapshotOutcome::Rejected;
+    std::vector<FrontendAccountSnapshot> accounts;
+    std::optional<std::string> activeAccountIdentifier;
+    std::string localizationKey;
+    std::string diagnosticText;
+    bool retryable = false;
+};
+
+enum class FrontendAccountSelectionOutcome : std::uint8_t { Succeeded, UnknownAccount, Rejected };
+
+/// Confirmed result of selecting or clearing the legacy default account.
+/// A successful clear has no account value.
+struct FrontendAccountSelectionResult final {
+    FrontendAccountSelectionOutcome outcome = FrontendAccountSelectionOutcome::Rejected;
+    std::optional<FrontendAccountSnapshot> account;
+    std::string localizationKey;
+    std::string diagnosticText;
+};
+
 enum class FrontendTaskState : std::uint8_t { Queued, Running, Cancelling, Succeeded, Failed, Cancelled };
 
 enum class FrontendTaskProgressKind : std::uint8_t { None, Indeterminate, Determinate };
@@ -520,6 +573,9 @@ struct FrontendRuntimeDependencies final {
         const std::filesystem::path&, const FrontendGlobalSettingsSnapshot&)>;
     using JavaDiscoveryLoader = std::function<FrontendJavaDiscoveryResult(const std::filesystem::path&)>;
     using JavaSelectionUpdater = std::function<FrontendJavaSelectionResult(const std::filesystem::path&, const std::string&)>;
+    using AccountSnapshotLoader = std::function<FrontendAccountSnapshotResult(const std::filesystem::path&)>;
+    using AccountSelectionUpdater = std::function<FrontendAccountSelectionResult(
+        const std::filesystem::path&, const std::optional<std::string>&)>;
     using TaskSnapshotLoader = std::function<std::optional<FrontendTaskSnapshot>(const std::filesystem::path&, const std::string&)>;
     using TaskCancellation = std::function<FrontendTaskCancellationResult(const std::filesystem::path&, const std::string&)>;
     using LogEntryHandler = std::function<void(FrontendLogEntry)>;
@@ -550,6 +606,8 @@ struct FrontendRuntimeDependencies final {
     GlobalSettingsUpdater updateGlobalSettings;
     JavaDiscoveryLoader loadJavaInstallations;
     JavaSelectionUpdater selectJavaInstallation;
+    AccountSnapshotLoader loadAccountSnapshots;
+    AccountSelectionUpdater selectActiveAccount;
     TaskSnapshotLoader loadTaskSnapshot;
     TaskCancellation cancelTask;
     TaskLogStreamer streamTaskLogs;
@@ -611,6 +669,8 @@ class FrontendFacade final {
     FrontendGlobalSettingsUpdateResult updateGlobalSettings(const FrontendGlobalSettingsSnapshot& settings) const;
     FrontendJavaDiscoveryResult javaInstallations() const;
     FrontendJavaSelectionResult selectJavaInstallation(const std::string& installationIdentifier) const;
+    FrontendAccountSnapshotResult accountSnapshots() const;
+    FrontendAccountSelectionResult selectActiveAccount(const std::optional<std::string>& accountIdentifier) const;
     std::optional<FrontendTaskSnapshot> taskSnapshot(const std::string& taskIdentifier) const;
     FrontendTaskCancellationResult cancelTask(const std::string& taskIdentifier) const;
     std::optional<FrontendLogSnapshot> taskLogSnapshot(const std::string& taskIdentifier) const;

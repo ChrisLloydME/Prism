@@ -79,6 +79,10 @@ typedef void (^PRJavaDiscoveryCompletionHandler)(PRJavaDiscoveryResult * _Nullab
                                                   PRBridgeError * _Nullable error);
 typedef void (^PRJavaSelectionCompletionHandler)(PRJavaSelectionResult * _Nullable result,
                                                   PRBridgeError * _Nullable error);
+typedef void (^PRAccountSnapshotCompletionHandler)(PRAccountSnapshotResult * _Nullable result,
+                                                    PRBridgeError * _Nullable error);
+typedef void (^PRAccountSelectionCompletionHandler)(PRAccountSelectionResult * _Nullable result,
+                                                     PRBridgeError * _Nullable error);
 
 /// Owns one bridge observation registration and cancels it when released.
 @interface PRBridgeObservationToken : NSObject
@@ -237,6 +241,16 @@ typedef void (^PRJavaSelectionCompletionHandler)(PRJavaSelectionResult * _Nullab
 /// adapter. Executable paths and process ownership remain outside Swift.
 - (nullable PRBridgeObservationToken *)selectJavaInstallationWithIdentifier:(NSString *)identifier
                                                                     completion:(PRJavaSelectionCompletionHandler)completion;
+
+/// Loads fixture-controlled, non-secret account rows asynchronously. Auth
+/// flows, provider requests, credentials, and account persistence are not
+/// part of this bridge operation.
+- (nullable PRBridgeObservationToken *)loadAccountSnapshotsWithCompletion:(PRAccountSnapshotCompletionHandler)completion;
+
+/// Confirms one active account identifier, or clears the legacy default when
+/// `identifier` is nil. The adapter owns all account state changes.
+- (nullable PRBridgeObservationToken *)selectActiveAccountWithIdentifier:(nullable NSString *)identifier
+                                                                  completion:(PRAccountSelectionCompletionHandler)completion;
 
 @end
 

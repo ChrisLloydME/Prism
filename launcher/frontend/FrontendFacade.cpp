@@ -476,6 +476,117 @@ void validateJavaSelectionResult(
     }
 }
 
+bool isKnownAccountType(FrontendAccountType type) noexcept
+{
+    switch (type) {
+        case FrontendAccountType::Microsoft:
+        case FrontendAccountType::Offline:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownAccountState(FrontendAccountState state) noexcept
+{
+    switch (state) {
+        case FrontendAccountState::Unchecked:
+        case FrontendAccountState::Offline:
+        case FrontendAccountState::Working:
+        case FrontendAccountState::Online:
+        case FrontendAccountState::Disabled:
+        case FrontendAccountState::Errored:
+        case FrontendAccountState::Expired:
+        case FrontendAccountState::Gone:
+            return true;
+    }
+    return false;
+}
+
+void validateAccountSnapshot(const FrontendAccountSnapshot& account)
+{
+    if (!account.hasStableIdentifier() || account.displayName.empty() || !isKnownAccountType(account.type)
+        || !isKnownAccountState(account.state)) {
+        throw std::invalid_argument("Account snapshots require stable identifiers, names, and known states");
+    }
+}
+
+bool isKnownAccountSnapshotOutcome(FrontendAccountSnapshotOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendAccountSnapshotOutcome::Succeeded:
+        case FrontendAccountSnapshotOutcome::Failed:
+        case FrontendAccountSnapshotOutcome::Cancelled:
+        case FrontendAccountSnapshotOutcome::Rejected:
+            return true;
+    }
+    return false;
+}
+
+void validateAccountSnapshotResult(const FrontendAccountSnapshotResult& result)
+{
+    if (!isKnownAccountSnapshotOutcome(result.outcome)) {
+        throw std::invalid_argument("Account snapshots returned an unknown outcome");
+    }
+
+    std::set<std::string> identifiers;
+    for (const auto& account : result.accounts) {
+        validateAccountSnapshot(account);
+        if (!identifiers.insert(account.id).second) {
+            throw std::invalid_argument("Account snapshots require unique stable identifiers");
+        }
+    }
+
+    if (result.activeAccountIdentifier.has_value()) {
+        if (result.activeAccountIdentifier->empty()
+            || identifiers.find(*result.activeAccountIdentifier) == identifiers.end()) {
+            throw std::invalid_argument("Active account must identify one returned account");
+        }
+    }
+
+    if (result.outcome != FrontendAccountSnapshotOutcome::Succeeded && result.localizationKey.empty()) {
+        throw std::invalid_argument("Failed account snapshots require a localization key");
+    }
+}
+
+bool isKnownAccountSelectionOutcome(FrontendAccountSelectionOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendAccountSelectionOutcome::Succeeded:
+        case FrontendAccountSelectionOutcome::UnknownAccount:
+        case FrontendAccountSelectionOutcome::Rejected:
+            return true;
+    }
+    return false;
+}
+
+void validateAccountSelectionResult(
+    const FrontendAccountSelectionResult& result,
+    const std::optional<std::string>& requestedIdentifier)
+{
+    if (!isKnownAccountSelectionOutcome(result.outcome)) {
+        throw std::invalid_argument("Account selection returned an unknown outcome");
+    }
+
+    if (result.outcome == FrontendAccountSelectionOutcome::Succeeded) {
+        if (requestedIdentifier.has_value()) {
+            if (!result.account.has_value() || result.account->id != *requestedIdentifier
+                || !result.account->canBeSelected || result.account->isBusy) {
+                throw std::invalid_argument("Successful account selection requires the requested selectable account");
+            }
+            validateAccountSnapshot(*result.account);
+        } else if (result.account.has_value()) {
+            throw std::invalid_argument("Clearing the active account cannot return an account");
+        }
+    } else {
+        if (result.localizationKey.empty()) {
+            throw std::invalid_argument("Rejected account selection requires a localization key");
+        }
+        if (result.account.has_value()) {
+            validateAccountSnapshot(*result.account);
+        }
+    }
+}
+
 void validateInstanceChanges(const std::vector<FrontendInstanceChange>& changes)
 {
     for (const auto& change : changes) {
@@ -1180,6 +1291,48 @@ FrontendJavaSelectionResult executeJavaSelection(
     return result;
 }
 
+FrontendAccountSnapshotResult executeAccountSnapshots(
+    const FrontendRuntimeDependencies::AccountSnapshotLoader& loader,
+    const std::filesystem::path& dataRoot)
+{
+    if (!loader) {
+        return FrontendAccountSnapshotResult{
+            FrontendAccountSnapshotOutcome::Rejected,
+            {},
+            std::nullopt,
+            "accounts.discovery.unavailable",
+            "Account snapshots are unavailable.",
+            true,
+        };
+    }
+
+    auto result = loader(dataRoot);
+    validateAccountSnapshotResult(result);
+    return result;
+}
+
+FrontendAccountSelectionResult executeAccountSelection(
+    const FrontendRuntimeDependencies::AccountSelectionUpdater& updater,
+    const std::filesystem::path& dataRoot,
+    const std::optional<std::string>& requestedIdentifier)
+{
+    if (requestedIdentifier.has_value() && requestedIdentifier->empty()) {
+        throw std::invalid_argument("Account selection requires a non-empty stable identifier or no identifier");
+    }
+    if (!updater) {
+        return FrontendAccountSelectionResult{
+            FrontendAccountSelectionOutcome::Rejected,
+            std::nullopt,
+            "accounts.selection.unavailable",
+            "Account selection is unavailable.",
+        };
+    }
+
+    auto result = updater(dataRoot, requestedIdentifier);
+    validateAccountSelectionResult(result, requestedIdentifier);
+    return result;
+}
+
 std::optional<FrontendTaskSnapshot> executeTaskSnapshot(
     const FrontendRuntimeDependencies::TaskSnapshotLoader& loader,
     const std::filesystem::path& dataRoot,
@@ -1414,6 +1567,19 @@ FrontendJavaSelectionResult FrontendFacade::selectJavaInstallation(const std::st
 {
     ensureRunning(m_lifecycleState);
     return executeJavaSelection(m_runtimeDependencies.selectJavaInstallation, m_dataRoot, installationIdentifier);
+}
+
+FrontendAccountSnapshotResult FrontendFacade::accountSnapshots() const
+{
+    ensureRunning(m_lifecycleState);
+    return executeAccountSnapshots(m_runtimeDependencies.loadAccountSnapshots, m_dataRoot);
+}
+
+FrontendAccountSelectionResult FrontendFacade::selectActiveAccount(
+    const std::optional<std::string>& accountIdentifier) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeAccountSelection(m_runtimeDependencies.selectActiveAccount, m_dataRoot, accountIdentifier);
 }
 
 std::optional<FrontendTaskSnapshot> FrontendFacade::taskSnapshot(const std::string& taskIdentifier) const

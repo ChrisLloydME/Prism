@@ -141,6 +141,27 @@ FrontendJavaInstallationSnapshot fixtureJavaInstallation(
     return installation;
 }
 
+FrontendAccountSnapshot fixtureAccount(
+    const std::string& identifier,
+    const std::string& displayName,
+    FrontendAccountType type = FrontendAccountType::Microsoft,
+    FrontendAccountState state = FrontendAccountState::Online,
+    bool ownsMinecraft = true,
+    bool isBusy = false,
+    bool canBeSelected = true)
+{
+    FrontendAccountSnapshot account;
+    account.id = identifier;
+    account.displayName = displayName;
+    account.type = type;
+    account.state = state;
+    account.ownsMinecraft = ownsMinecraft;
+    account.isBusy = isBusy;
+    account.canBeSelected = canBeSelected;
+    account.diagnosticText = state == FrontendAccountState::Online ? "" : "Fixture account is not ready.";
+    return account;
+}
+
 template <typename Function>
 bool throwsInvalidArgument(Function&& function)
 {
@@ -687,6 +708,113 @@ int main()
     const bool missingJavaPortsAreSafe = emptyFacade.javaInstallations().outcome == FrontendJavaDiscoveryOutcome::Rejected
         && emptyFacade.selectJavaInstallation("fixture-managed").outcome == FrontendJavaSelectionOutcome::Rejected;
 
+    std::size_t accountSnapshotCalls = 0;
+    std::size_t accountSelectionCalls = 0;
+    bool accountRootMatches = true;
+    auto accountDependencies = makeFixtureDependencies();
+    accountDependencies.loadAccountSnapshots = [&](const std::filesystem::path& root) {
+        accountRootMatches = accountRootMatches && root == fixtureRoot.lexically_normal();
+        ++accountSnapshotCalls;
+        return FrontendAccountSnapshotResult{
+            FrontendAccountSnapshotOutcome::Succeeded,
+            { fixtureAccount("account.fixture.microsoft", "Fixture Microsoft Account"),
+              fixtureAccount("account.fixture.offline", "Fixture Offline Profile", FrontendAccountType::Offline,
+                             FrontendAccountState::Offline, false),
+              fixtureAccount("account.fixture.busy", "Fixture Busy Account", FrontendAccountType::Microsoft,
+                             FrontendAccountState::Working, true, true, false) },
+            std::string("account.fixture.microsoft"),
+            "",
+            "",
+            false,
+        };
+    };
+    accountDependencies.selectActiveAccount = [&](const std::filesystem::path& root,
+                                                   const std::optional<std::string>& identifier) {
+        accountRootMatches = accountRootMatches && root == fixtureRoot.lexically_normal();
+        ++accountSelectionCalls;
+        if (!identifier.has_value()) {
+            return FrontendAccountSelectionResult{
+                FrontendAccountSelectionOutcome::Succeeded,
+                std::nullopt,
+                "",
+                "",
+            };
+        }
+        if (*identifier == "account.fixture.microsoft") {
+            return FrontendAccountSelectionResult{
+                FrontendAccountSelectionOutcome::Succeeded,
+                fixtureAccount(*identifier, "Fixture Microsoft Account"),
+                "",
+                "",
+            };
+        }
+        if (*identifier == "account.fixture.offline") {
+            return FrontendAccountSelectionResult{
+                FrontendAccountSelectionOutcome::Succeeded,
+                fixtureAccount(*identifier, "Fixture Offline Profile", FrontendAccountType::Offline,
+                               FrontendAccountState::Offline, false),
+                "",
+                "",
+            };
+        }
+        return FrontendAccountSelectionResult{
+            FrontendAccountSelectionOutcome::UnknownAccount,
+            std::nullopt,
+            "accounts.selection.unknownAccount",
+            "Fixture account is no longer available.",
+        };
+    };
+    FrontendFacade accountFacade(fixtureRoot / "nested" / "..", std::move(accountDependencies));
+    const auto accountSnapshots = accountFacade.accountSnapshots();
+    const auto selectedAccount = accountFacade.selectActiveAccount(std::string("account.fixture.offline"));
+    const auto clearedAccount = accountFacade.selectActiveAccount(std::nullopt);
+    const auto unknownAccount = accountFacade.selectActiveAccount(std::string("account.fixture.unknown"));
+    const bool accountContract = accountSnapshots.outcome == FrontendAccountSnapshotOutcome::Succeeded
+        && accountSnapshots.accounts.size() == 3
+        && accountSnapshots.accounts[1].type == FrontendAccountType::Offline
+        && !accountSnapshots.accounts[1].ownsMinecraft && accountSnapshots.activeAccountIdentifier.has_value()
+        && *accountSnapshots.activeAccountIdentifier == "account.fixture.microsoft"
+        && selectedAccount.outcome == FrontendAccountSelectionOutcome::Succeeded
+        && selectedAccount.account.has_value() && selectedAccount.account->id == "account.fixture.offline"
+        && !clearedAccount.account.has_value() && clearedAccount.outcome == FrontendAccountSelectionOutcome::Succeeded
+        && unknownAccount.outcome == FrontendAccountSelectionOutcome::UnknownAccount
+        && accountSnapshotCalls == 1 && accountSelectionCalls == 3 && accountRootMatches;
+    auto invalidAccountSnapshotDependencies = makeFixtureDependencies();
+    invalidAccountSnapshotDependencies.loadAccountSnapshots = [](const std::filesystem::path&) {
+        const auto duplicate = fixtureAccount("duplicate-account", "Duplicate Fixture Account");
+        return FrontendAccountSnapshotResult{
+            FrontendAccountSnapshotOutcome::Succeeded,
+            { duplicate, duplicate },
+            std::nullopt,
+            "",
+            "",
+            false,
+        };
+    };
+    FrontendFacade invalidAccountSnapshotFacade(fixtureRoot, std::move(invalidAccountSnapshotDependencies));
+    const bool invalidAccountSnapshotsRejected = throwsInvalidArgument([&invalidAccountSnapshotFacade] {
+        (void) invalidAccountSnapshotFacade.accountSnapshots();
+    });
+    auto invalidAccountSelectionDependencies = makeFixtureDependencies();
+    invalidAccountSelectionDependencies.selectActiveAccount = [](const std::filesystem::path&,
+                                                                  const std::optional<std::string>& identifier) {
+        return FrontendAccountSelectionResult{
+            FrontendAccountSelectionOutcome::Succeeded,
+            identifier.has_value() ? std::optional<FrontendAccountSnapshot>(
+                                         fixtureAccount("different-account", "Different Fixture Account"))
+                                   : std::nullopt,
+            "",
+            "",
+        };
+    };
+    FrontendFacade invalidAccountSelectionFacade(fixtureRoot, std::move(invalidAccountSelectionDependencies));
+    const bool invalidAccountSelectionRejected = throwsInvalidArgument([&invalidAccountSelectionFacade] {
+        (void) invalidAccountSelectionFacade.selectActiveAccount(std::string("requested-account"));
+    });
+    const bool missingAccountPortsAreSafe = emptyFacade.accountSnapshots().outcome == FrontendAccountSnapshotOutcome::Rejected
+        && emptyFacade.selectActiveAccount(std::string("fixture-account")).outcome
+            == FrontendAccountSelectionOutcome::Rejected;
+
     std::vector<std::string> launchCalls;
     std::vector<std::string> stopCalls;
     bool commandRootMatches = true;
@@ -1087,6 +1215,13 @@ int main()
         && throwsLogicError([&javaFacade] {
                (void) javaFacade.selectJavaInstallation("fixture-managed");
            });
+    const bool rejectedPostShutdownAccountWork = accountFacade.shutdown()
+        && throwsLogicError([&accountFacade] {
+               (void) accountFacade.accountSnapshots();
+           })
+        && throwsLogicError([&accountFacade] {
+               (void) accountFacade.selectActiveAccount(std::string("fixture-account"));
+           });
     const bool rejectedPostShutdownComponentsWork = componentFacade.shutdown()
         && throwsLogicError([&componentFacade] {
                (void) componentFacade.instanceComponents("fixture-one");
@@ -1118,7 +1253,8 @@ int main()
                && globalSettingsContract && invalidGlobalSettingsRejected && invalidGlobalSettingsUpdateRejected
                && missingGlobalSettingsPortsAreSafe && rejectedPostShutdownGlobalSettingsWork && javaContract
                && invalidJavaDiscoveryRejected && invalidJavaSelectionRejected && missingJavaPortsAreSafe
-               && rejectedPostShutdownJavaWork
+               && rejectedPostShutdownJavaWork && accountContract && invalidAccountSnapshotsRejected
+               && invalidAccountSelectionRejected && missingAccountPortsAreSafe && rejectedPostShutdownAccountWork
                && rejectedEmptyRoot && rejectedRelativeRoot && rejectedIncompleteDependencies
                && lifecycleContract && callbacksRanExactlyOnce && destructorShutdownContract && !error
         ? 0

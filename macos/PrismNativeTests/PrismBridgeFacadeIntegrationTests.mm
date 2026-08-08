@@ -126,6 +126,27 @@ FrontendJavaInstallationSnapshot fixtureJavaInstallation(
     return installation;
 }
 
+FrontendAccountSnapshot fixtureAccount(
+    const std::string& identifier,
+    const std::string& displayName,
+    FrontendAccountType type = FrontendAccountType::Microsoft,
+    FrontendAccountState state = FrontendAccountState::Online,
+    bool ownsMinecraft = true,
+    bool isBusy = false,
+    bool canBeSelected = true)
+{
+    FrontendAccountSnapshot account;
+    account.id = identifier;
+    account.displayName = displayName;
+    account.type = type;
+    account.state = state;
+    account.ownsMinecraft = ownsMinecraft;
+    account.isBusy = isBusy;
+    account.canBeSelected = canBeSelected;
+    account.diagnosticText = state == FrontendAccountState::Online ? "" : "Fixture account is not ready.";
+    return account;
+}
+
 FrontendRuntimeDependencies baseFixtureDependencies()
 {
     FrontendRuntimeDependencies dependencies;
@@ -1211,6 +1232,160 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     XCTestExpectation *completion = [self expectationWithDescription:@"Cancelled Java discovery completion"];
     completion.inverted = YES;
     PRBridgeObservationToken *token = [bridge loadJavaInstallationsWithCompletion:^(__unused PRJavaDiscoveryResult *result,
+                                                                                       __unused PRBridgeError *error) {
+        [completion fulfill];
+    }];
+    XCTAssertNotNil(token);
+    XCTAssertEqual(dispatch_semaphore_wait(loaderEntered, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)), 0);
+    XCTAssertTrue([token cancel]);
+    dispatch_semaphore_signal(releaseLoader);
+    [self waitForExpectations:@[ completion ] timeout:0.2];
+}
+
+- (void)testFacadeAccountSnapshotsAndActiveSelectionConvertFixtureContractsOnMainActor
+{
+    auto discoveryRootMatches = std::make_shared<std::atomic<bool>>(true);
+    auto selectionRootMatches = std::make_shared<std::atomic<bool>>(true);
+    auto selectionCalls = std::make_shared<std::vector<std::string>>();
+    const std::filesystem::path fixtureRoot = std::filesystem::path(self.fixtureRootURL.path.UTF8String).lexically_normal();
+
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.loadAccountSnapshots = [discoveryRootMatches, fixtureRoot](const std::filesystem::path& root) {
+        *discoveryRootMatches = root == fixtureRoot;
+        return FrontendAccountSnapshotResult{
+            FrontendAccountSnapshotOutcome::Succeeded,
+            { fixtureAccount("account.fixture.microsoft", "Fixture Microsoft Account"),
+              fixtureAccount("account.fixture.offline", "Fixture Offline Profile", FrontendAccountType::Offline,
+                             FrontendAccountState::Offline, false),
+              fixtureAccount("account.fixture.busy", "Fixture Busy Account", FrontendAccountType::Microsoft,
+                             FrontendAccountState::Working, true, true, false) },
+            std::string("account.fixture.microsoft"),
+            "",
+            "",
+            false,
+        };
+    };
+    dependencies.selectActiveAccount = [selectionRootMatches, selectionCalls, fixtureRoot](
+                                           const std::filesystem::path& root,
+                                           const std::optional<std::string>& identifier) {
+        *selectionRootMatches = root == fixtureRoot;
+        selectionCalls->push_back(identifier.value_or("<none>"));
+        if (!identifier.has_value()) {
+            return FrontendAccountSelectionResult{
+                FrontendAccountSelectionOutcome::Succeeded,
+                std::nullopt,
+                "",
+                "",
+            };
+        }
+        if (*identifier == "account.fixture.offline") {
+            return FrontendAccountSelectionResult{
+                FrontendAccountSelectionOutcome::Succeeded,
+                fixtureAccount(*identifier, "Fixture Offline Profile", FrontendAccountType::Offline,
+                               FrontendAccountState::Offline, false),
+                "",
+                "",
+            };
+        }
+        return FrontendAccountSelectionResult{
+            FrontendAccountSelectionOutcome::UnknownAccount,
+            std::nullopt,
+            "accounts.selection.unknownAccount",
+            "Fixture account is no longer available.",
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    XCTestExpectation *snapshotCompletion = [self expectationWithDescription:@"Account snapshots completed"];
+    __block PRAccountSnapshotResult *receivedSnapshots = nil;
+    __block PRBridgeError *receivedSnapshotError = nil;
+    __block BOOL snapshotRanOnMainThread = NO;
+    PRBridgeObservationToken *snapshotToken = [bridge loadAccountSnapshotsWithCompletion:^(PRAccountSnapshotResult *result,
+                                                                                              PRBridgeError *error) {
+        snapshotRanOnMainThread = [NSThread isMainThread];
+        receivedSnapshots = result;
+        receivedSnapshotError = error;
+        [snapshotCompletion fulfill];
+    }];
+    XCTAssertNotNil(snapshotToken);
+    [self waitForExpectations:@[ snapshotCompletion ] timeout:2.0];
+    XCTAssertTrue(snapshotRanOnMainThread);
+    XCTAssertNil(receivedSnapshotError);
+    XCTAssertTrue(snapshotToken.isCancelled);
+    XCTAssertEqual(receivedSnapshots.outcome, PRAccountSnapshotOutcomeSucceeded);
+    XCTAssertEqual(receivedSnapshots.accounts.count, (NSUInteger)3);
+    XCTAssertEqualObjects(receivedSnapshots.activeAccountIdentifier, @"account.fixture.microsoft");
+    XCTAssertEqual(receivedSnapshots.accounts[1].type, PRAccountTypeOffline);
+    XCTAssertFalse(receivedSnapshots.accounts[1].ownsMinecraft);
+    XCTAssertTrue(receivedSnapshots.accounts[2].isBusy);
+    XCTAssertFalse(receivedSnapshots.accounts[2].canBeSelected);
+
+    XCTestExpectation *selectionCompletion = [self expectationWithDescription:@"Account selection completed"];
+    __block PRAccountSelectionResult *receivedSelection = nil;
+    __block PRBridgeError *receivedSelectionError = nil;
+    __block BOOL selectionRanOnMainThread = NO;
+    PRBridgeObservationToken *selectionToken = [bridge selectActiveAccountWithIdentifier:@" account.fixture.offline "
+                                                                                     completion:^(PRAccountSelectionResult *result,
+                                                                                                  PRBridgeError *error) {
+        selectionRanOnMainThread = [NSThread isMainThread];
+        receivedSelection = result;
+        receivedSelectionError = error;
+        [selectionCompletion fulfill];
+    }];
+    XCTAssertNotNil(selectionToken);
+    [self waitForExpectations:@[ selectionCompletion ] timeout:2.0];
+    XCTAssertTrue(selectionRanOnMainThread);
+    XCTAssertNil(receivedSelectionError);
+    XCTAssertTrue(selectionToken.isCancelled);
+    XCTAssertEqual(receivedSelection.outcome, PRAccountSelectionOutcomeSucceeded);
+    XCTAssertEqualObjects(receivedSelection.account.identifier, @"account.fixture.offline");
+
+    XCTestExpectation *clearCompletion = [self expectationWithDescription:@"Account clear completed"];
+    __block PRAccountSelectionResult *receivedClear = nil;
+    PRBridgeObservationToken *clearToken = [bridge selectActiveAccountWithIdentifier:nil
+                                                                                 completion:^(PRAccountSelectionResult *result,
+                                                                                              __unused PRBridgeError *error) {
+        receivedClear = result;
+        [clearCompletion fulfill];
+    }];
+    XCTAssertNotNil(clearToken);
+    [self waitForExpectations:@[ clearCompletion ] timeout:2.0];
+    XCTAssertTrue(clearToken.isCancelled);
+    XCTAssertEqual(receivedClear.outcome, PRAccountSelectionOutcomeSucceeded);
+    XCTAssertNil(receivedClear.account);
+    XCTAssertEqual(*selectionCalls, (std::vector<std::string>{ "account.fixture.offline", "<none>" }));
+    XCTAssertTrue(discoveryRootMatches->load());
+    XCTAssertTrue(selectionRootMatches->load());
+}
+
+- (void)testFacadeAccountSnapshotCancellationSuppressesQueuedCompletion
+{
+    dispatch_semaphore_t loaderEntered = dispatch_semaphore_create(0);
+    dispatch_semaphore_t releaseLoader = dispatch_semaphore_create(0);
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.loadAccountSnapshots = [loaderEntered, releaseLoader](const std::filesystem::path&) {
+        dispatch_semaphore_signal(loaderEntered);
+        dispatch_semaphore_wait(releaseLoader, DISPATCH_TIME_FOREVER);
+        return FrontendAccountSnapshotResult{
+            FrontendAccountSnapshotOutcome::Succeeded,
+            { fixtureAccount("account.fixture.microsoft", "Fixture Microsoft Account") },
+            std::string("account.fixture.microsoft"),
+            "",
+            "",
+            false,
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTestExpectation *completion = [self expectationWithDescription:@"Cancelled account snapshot completion"];
+    completion.inverted = YES;
+    PRBridgeObservationToken *token = [bridge loadAccountSnapshotsWithCompletion:^(__unused PRAccountSnapshotResult *result,
                                                                                        __unused PRBridgeError *error) {
         [completion fulfill];
     }];

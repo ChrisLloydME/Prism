@@ -745,6 +745,98 @@ typedef NS_ENUM(NSInteger, PRJavaSelectionOutcome) {
 
 @end
 
+typedef NS_ENUM(NSInteger, PRAccountType) {
+    PRAccountTypeMicrosoft = 0,
+    PRAccountTypeOffline,
+};
+
+typedef NS_ENUM(NSInteger, PRAccountState) {
+    PRAccountStateUnchecked = 0,
+    PRAccountStateOffline,
+    PRAccountStateWorking,
+    PRAccountStateOnline,
+    PRAccountStateDisabled,
+    PRAccountStateErrored,
+    PRAccountStateExpired,
+    PRAccountStateGone,
+};
+
+/// Immutable, non-secret account metadata. Provider-owned authentication
+/// state, credentials, profile payloads, and persistence stay outside Swift.
+@interface PRAccountSnapshot : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithIdentifier:(NSString *)identifier
+                                 displayName:(NSString *)displayName
+                                        type:(PRAccountType)type
+                                       state:(PRAccountState)state
+                               ownsMinecraft:(BOOL)ownsMinecraft
+                                      isBusy:(BOOL)isBusy
+                              canBeSelected:(BOOL)canBeSelected
+                              diagnosticText:(nullable NSString *)diagnosticText NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, copy, readonly) NSString *displayName;
+@property(nonatomic, assign, readonly) PRAccountType type;
+@property(nonatomic, assign, readonly) PRAccountState state;
+@property(nonatomic, assign, readonly) BOOL ownsMinecraft;
+@property(nonatomic, assign, readonly) BOOL isBusy;
+@property(nonatomic, assign, readonly) BOOL canBeSelected;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+
+@end
+
+typedef NS_ENUM(NSInteger, PRAccountSnapshotOutcome) {
+    PRAccountSnapshotOutcomeSucceeded = 0,
+    PRAccountSnapshotOutcomeFailed,
+    PRAccountSnapshotOutcomeCancelled,
+    PRAccountSnapshotOutcomeRejected,
+};
+
+/// Immutable result for one account snapshot load. The active identifier is
+/// the legacy default account, not an authentication-task state.
+@interface PRAccountSnapshotResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithAccounts:(NSArray<PRAccountSnapshot *> *)accounts
+                    activeAccountIdentifier:(nullable NSString *)activeAccountIdentifier
+                                   outcome:(PRAccountSnapshotOutcome)outcome
+                           localizationKey:(NSString *)localizationKey
+                             diagnosticText:(nullable NSString *)diagnosticText
+                                 retryable:(BOOL)retryable NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSArray<PRAccountSnapshot *> *accounts;
+@property(nonatomic, copy, readonly, nullable) NSString *activeAccountIdentifier;
+@property(nonatomic, assign, readonly) PRAccountSnapshotOutcome outcome;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL retryable;
+
+@end
+
+typedef NS_ENUM(NSInteger, PRAccountSelectionOutcome) {
+    PRAccountSelectionOutcomeSucceeded = 0,
+    PRAccountSelectionOutcomeUnknownAccount,
+    PRAccountSelectionOutcomeRejected,
+};
+
+/// Immutable confirmed active-account selection. A successful nil account
+/// clears the legacy default account.
+@interface PRAccountSelectionResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithAccount:(nullable PRAccountSnapshot *)account
+                                 outcome:(PRAccountSelectionOutcome)outcome
+                          localizationKey:(NSString *)localizationKey
+                            diagnosticText:(nullable NSString *)diagnosticText NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRAccountSnapshot *account;
+@property(nonatomic, assign, readonly) PRAccountSelectionOutcome outcome;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+
+@end
+
 /// Immutable progress state for one task subtask.
 @interface PRTaskSubtaskStatus : NSObject
 

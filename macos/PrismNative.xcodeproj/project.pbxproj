@@ -28,6 +28,8 @@
 		A10000000000000000000013 /* PrismSettings.swift in Tests */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* PrismSettings.swift */; };
 		A10000000000000000000014 /* PrismJavaSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* PrismJavaSettings.swift */; };
 		A10000000000000000000015 /* PrismJavaSettings.swift in Tests */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* PrismJavaSettings.swift */; };
+		A10000000000000000000016 /* PrismAccountSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* PrismAccountSettings.swift */; };
+		A10000000000000000000017 /* PrismAccountSettings.swift in Tests */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* PrismAccountSettings.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -53,6 +55,7 @@
 		A20000000000000000000014 /* PrismShellTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrismShellTests.swift; sourceTree = "<group>"; };
 		A20000000000000000000015 /* PrismSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrismSettings.swift; sourceTree = "<group>"; };
 		A20000000000000000000016 /* PrismJavaSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrismJavaSettings.swift; sourceTree = "<group>"; };
+		A20000000000000000000017 /* PrismAccountSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrismAccountSettings.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -102,6 +105,7 @@
 				A20000000000000000000013 /* PrismShellModel.swift */,
 				A20000000000000000000015 /* PrismSettings.swift */,
 				A20000000000000000000016 /* PrismJavaSettings.swift */,
+				A20000000000000000000017 /* PrismAccountSettings.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -242,6 +246,7 @@
 				A10000000000000000000011 /* PrismShellModel.swift in Tests */,
 				A10000000000000000000013 /* PrismSettings.swift in Tests */,
 				A10000000000000000000015 /* PrismJavaSettings.swift in Tests */,
+				A10000000000000000000017 /* PrismAccountSettings.swift in Tests */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -267,6 +272,7 @@
 				A1000000000000000000000F /* PrismShellModel.swift in Sources */,
 				A10000000000000000000012 /* PrismSettings.swift in Sources */,
 				A10000000000000000000014 /* PrismJavaSettings.swift in Sources */,
+				A10000000000000000000016 /* PrismAccountSettings.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -2295,7 +2295,8 @@ final class PrismShellTests: XCTestCase {
             XCTAssertTrue(settingsSource.contains(requiredToken), "Missing Settings contract: \(requiredToken)")
         }
         XCTAssertTrue(appSource.contains("Settings {"))
-        XCTAssertTrue(appSource.contains("PrismSettingsView(model: globalSettingsModel, javaModel: javaDiscoveryModel)"))
+        XCTAssertTrue(appSource.contains("PrismSettingsView("))
+        XCTAssertTrue(appSource.contains("accountModel: accountModel"))
         for forbiddenToken in [
             "QWidget", "QDialog", "Qt", "Unmanaged", "UnsafeMutable", "UnsafeRaw", "Canvas(",
             "draw(", "Path(", "CGContext", "NSBezierPath", "[String: Any]", "Keychain", "Process("
@@ -2320,6 +2321,28 @@ final class PrismShellTests: XCTestCase {
             "draw(", "Path(", "CGContext", "NSBezierPath", "FileManager", "URLSession", "Process("
         ] {
             XCTAssertFalse(javaSource.contains(forbiddenToken), "Forbidden Java Settings boundary: \(forbiddenToken)")
+        }
+
+        let accountSource = try accountSource()
+        for requiredToken in [
+            "PrismAccountModel",
+            "PrismAccountSnapshotState",
+            "PrismAccountSelectionState",
+            "List(selection:",
+            "Loading account snapshots…",
+            "No Active Account",
+            "ContentUnavailableView",
+            "accessibilityIdentifier(\"prism.settings.accounts",
+            "PrismAccount.fixture()"
+        ] {
+            XCTAssertTrue(accountSource.contains(requiredToken), "Missing Account Settings contract: \(requiredToken)")
+        }
+        for forbiddenToken in [
+            "QWidget", "QDialog", "Qt", "Unmanaged", "UnsafeMutable", "UnsafeRaw", "Canvas(",
+            "draw(", "Path(", "CGContext", "NSBezierPath", "FileManager", "URLSession", "Process(",
+            "Keychain", "refresh_token"
+        ] {
+            XCTAssertFalse(accountSource.contains(forbiddenToken), "Forbidden Account Settings boundary: \(forbiddenToken)")
         }
     }
 
@@ -2429,6 +2452,118 @@ final class PrismShellTests: XCTestCase {
         XCTAssertFalse(fixtureModel.installations.contains(where: { $0.validity != .valid && $0.isSelectable }))
     }
 
+    func testAccountModelConfirmsSnapshotsSelectionAndClearWithGenerationGuards() throws {
+        var discoveryGenerations: [Int] = []
+        var selectionRequests: [(String?, Int)] = []
+        var cancellationCount = 0
+        let model = PrismAccountModel(
+            initialAccounts: [],
+            activeAccountID: nil,
+            onDiscover: { discoveryGenerations.append($0) },
+            onSelect: { identifier, generation in selectionRequests.append((identifier, generation)) },
+            onCancel: { cancellationCount += 1 }
+        )
+
+        XCTAssertTrue(model.refresh())
+        let discoveryGeneration = try XCTUnwrap(discoveryGenerations.first)
+        let microsoftBridge = try XCTUnwrap(
+            PRAccountSnapshot(
+                identifier: "account.fixture.microsoft",
+                displayName: "Fixture Microsoft Account",
+                type: .microsoft,
+                state: .online,
+                ownsMinecraft: true,
+                isBusy: false,
+                canBeSelected: true,
+                diagnosticText: nil
+            )
+        )
+        let offlineBridge = try XCTUnwrap(
+            PRAccountSnapshot(
+                identifier: "account.fixture.offline",
+                displayName: "Fixture Offline Profile",
+                type: .offline,
+                state: .offline,
+                ownsMinecraft: false,
+                isBusy: false,
+                canBeSelected: true,
+                diagnosticText: nil
+            )
+        )
+        let snapshotResult = try XCTUnwrap(
+            PRAccountSnapshotResult(
+                accounts: [microsoftBridge, offlineBridge],
+                activeAccountIdentifier: "account.fixture.microsoft",
+                outcome: .succeeded,
+                localizationKey: "",
+                diagnosticText: nil,
+                retryable: false
+            )
+        )
+        XCTAssertTrue(model.apply(snapshotResult: snapshotResult, generation: discoveryGeneration))
+        XCTAssertEqual(model.accounts.count, 2)
+        XCTAssertEqual(model.confirmedActiveAccountID, "account.fixture.microsoft")
+        XCTAssertEqual(model.draftActiveAccountID, "account.fixture.microsoft")
+        XCTAssertFalse(model.select(id: "unknown.account"))
+
+        XCTAssertTrue(model.select(id: "account.fixture.offline"))
+        let firstSelectionGeneration = try XCTUnwrap(selectionRequests.first?.1)
+        let rejectedSelection = try XCTUnwrap(
+            PRAccountSelectionResult(
+                account: nil,
+                outcome: .rejected,
+                localizationKey: "accounts.selection.rejected",
+                diagnosticText: "Fixture selection was rejected."
+            )
+        )
+        XCTAssertTrue(model.apply(selectionResult: rejectedSelection, generation: firstSelectionGeneration))
+        XCTAssertEqual(model.confirmedActiveAccountID, "account.fixture.microsoft")
+        XCTAssertEqual(model.draftActiveAccountID, "account.fixture.offline")
+        XCTAssertEqual(model.selectionFailure?.localizationKey, "accounts.selection.rejected")
+
+        XCTAssertTrue(model.retrySelection())
+        let retryGeneration = try XCTUnwrap(selectionRequests.last?.1)
+        let staleSuccess = try XCTUnwrap(
+            PRAccountSelectionResult(
+                account: microsoftBridge,
+                outcome: .succeeded,
+                localizationKey: "",
+                diagnosticText: nil
+            )
+        )
+        XCTAssertFalse(model.apply(selectionResult: staleSuccess, generation: firstSelectionGeneration))
+        let confirmedOffline = try XCTUnwrap(
+            PRAccountSelectionResult(
+                account: offlineBridge,
+                outcome: .succeeded,
+                localizationKey: "",
+                diagnosticText: nil
+            )
+        )
+        XCTAssertTrue(model.apply(selectionResult: confirmedOffline, generation: retryGeneration))
+        XCTAssertEqual(model.confirmedActiveAccountID, "account.fixture.offline")
+        XCTAssertFalse(model.isSavingSelection)
+
+        XCTAssertTrue(model.select(id: nil))
+        let clearGeneration = try XCTUnwrap(selectionRequests.last?.1)
+        let cleared = try XCTUnwrap(
+            PRAccountSelectionResult(
+                account: nil,
+                outcome: .succeeded,
+                localizationKey: "",
+                diagnosticText: nil
+            )
+        )
+        XCTAssertTrue(model.apply(selectionResult: cleared, generation: clearGeneration))
+        XCTAssertNil(model.confirmedActiveAccountID)
+        XCTAssertNil(model.draftActiveAccountID)
+
+        XCTAssertTrue(model.refresh())
+        XCTAssertTrue(model.cancelDiscovery())
+        XCTAssertEqual(cancellationCount, 1)
+        XCTAssertEqual(model.state, .cancelled)
+    }
+
     private func makeGlobalSettings(instanceDirectoryURL: URL, catOpacity: Int) throws -> PRGlobalSettings {
         try XCTUnwrap(
             PRGlobalSettings(
@@ -2507,6 +2642,15 @@ final class PrismShellTests: XCTestCase {
             .deletingLastPathComponent()
         let sourceURL = sourceRoot
             .appendingPathComponent("PrismNative/App/PrismJavaSettings.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private func accountSource() throws -> String {
+        let sourceRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = sourceRoot
+            .appendingPathComponent("PrismNative/App/PrismAccountSettings.swift")
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 

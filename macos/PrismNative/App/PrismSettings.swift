@@ -494,6 +494,7 @@ final class PrismGlobalSettingsModel: ObservableObject {
 struct PrismSettingsView: View {
     @ObservedObject var model: PrismGlobalSettingsModel
     @ObservedObject var javaModel: PrismJavaDiscoveryModel
+    @ObservedObject var accountModel: PrismAccountModel
     @State private var isDirectoryImporterPresented = false
     @State private var selectedTab: SettingsTab = .appearance
 
@@ -501,6 +502,7 @@ struct PrismSettingsView: View {
         case appearance
         case general
         case java
+        case accounts
     }
 
     var body: some View {
@@ -543,9 +545,12 @@ struct PrismSettingsView: View {
                 PrismJavaSettingsView(model: javaModel)
                     .tabItem { Label("Java", systemImage: "cup.and.saucer") }
                     .tag(SettingsTab.java)
+                PrismAccountSettingsView(model: accountModel)
+                    .tabItem { Label("Accounts", systemImage: "person.crop.circle") }
+                    .tag(SettingsTab.accounts)
             }
 
-            if selectedTab != .java {
+            if selectedTab != .java && selectedTab != .accounts {
                 Divider()
                 HStack {
                     if let message = model.validationMessage ?? model.directorySelectionError {

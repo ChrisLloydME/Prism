@@ -188,6 +188,55 @@ bool isKnownJavaSelectionOutcome(PRJavaSelectionOutcome outcome)
     return false;
 }
 
+bool isKnownAccountType(PRAccountType type)
+{
+    switch (type) {
+        case PRAccountTypeMicrosoft:
+        case PRAccountTypeOffline:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownAccountState(PRAccountState state)
+{
+    switch (state) {
+        case PRAccountStateUnchecked:
+        case PRAccountStateOffline:
+        case PRAccountStateWorking:
+        case PRAccountStateOnline:
+        case PRAccountStateDisabled:
+        case PRAccountStateErrored:
+        case PRAccountStateExpired:
+        case PRAccountStateGone:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownAccountSnapshotOutcome(PRAccountSnapshotOutcome outcome)
+{
+    switch (outcome) {
+        case PRAccountSnapshotOutcomeSucceeded:
+        case PRAccountSnapshotOutcomeFailed:
+        case PRAccountSnapshotOutcomeCancelled:
+        case PRAccountSnapshotOutcomeRejected:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownAccountSelectionOutcome(PRAccountSelectionOutcome outcome)
+{
+    switch (outcome) {
+        case PRAccountSelectionOutcomeSucceeded:
+        case PRAccountSelectionOutcomeUnknownAccount:
+        case PRAccountSelectionOutcomeRejected:
+            return true;
+    }
+    return false;
+}
+
 std::string stableIdentifierFromFoundation(NSString *identifier)
 {
     if (![identifier isKindOfClass:NSString.class]) {
@@ -1322,6 +1371,128 @@ PRJavaSelectionResult *javaSelectionResultFromFacadeResult(const FrontendJavaSel
     return converted;
 }
 
+PRAccountType accountTypeFromFacadeResult(FrontendAccountType type)
+{
+    switch (type) {
+        case FrontendAccountType::Microsoft:
+            return PRAccountTypeMicrosoft;
+        case FrontendAccountType::Offline:
+            return PRAccountTypeOffline;
+    }
+    throw std::invalid_argument("Facade returned an unknown account type");
+}
+
+PRAccountState accountStateFromFacadeResult(FrontendAccountState state)
+{
+    switch (state) {
+        case FrontendAccountState::Unchecked:
+            return PRAccountStateUnchecked;
+        case FrontendAccountState::Offline:
+            return PRAccountStateOffline;
+        case FrontendAccountState::Working:
+            return PRAccountStateWorking;
+        case FrontendAccountState::Online:
+            return PRAccountStateOnline;
+        case FrontendAccountState::Disabled:
+            return PRAccountStateDisabled;
+        case FrontendAccountState::Errored:
+            return PRAccountStateErrored;
+        case FrontendAccountState::Expired:
+            return PRAccountStateExpired;
+        case FrontendAccountState::Gone:
+            return PRAccountStateGone;
+    }
+    throw std::invalid_argument("Facade returned an unknown account state");
+}
+
+PRAccountSnapshotOutcome accountSnapshotOutcomeFromFacadeResult(FrontendAccountSnapshotOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendAccountSnapshotOutcome::Succeeded:
+            return PRAccountSnapshotOutcomeSucceeded;
+        case FrontendAccountSnapshotOutcome::Failed:
+            return PRAccountSnapshotOutcomeFailed;
+        case FrontendAccountSnapshotOutcome::Cancelled:
+            return PRAccountSnapshotOutcomeCancelled;
+        case FrontendAccountSnapshotOutcome::Rejected:
+            return PRAccountSnapshotOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown account snapshot outcome");
+}
+
+PRAccountSelectionOutcome accountSelectionOutcomeFromFacadeResult(FrontendAccountSelectionOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendAccountSelectionOutcome::Succeeded:
+            return PRAccountSelectionOutcomeSucceeded;
+        case FrontendAccountSelectionOutcome::UnknownAccount:
+            return PRAccountSelectionOutcomeUnknownAccount;
+        case FrontendAccountSelectionOutcome::Rejected:
+            return PRAccountSelectionOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown account selection outcome");
+}
+
+PRAccountSnapshot *accountSnapshotFromFacadeSnapshot(const FrontendAccountSnapshot& snapshot)
+{
+    PRAccountSnapshot *account = [[PRAccountSnapshot alloc]
+        initWithIdentifier:foundationStringFromUTF8(snapshot.id)
+               displayName:foundationStringFromUTF8(snapshot.displayName)
+                      type:accountTypeFromFacadeResult(snapshot.type)
+                     state:accountStateFromFacadeResult(snapshot.state)
+             ownsMinecraft:snapshot.ownsMinecraft
+                    isBusy:snapshot.isBusy
+            canBeSelected:snapshot.canBeSelected
+            diagnosticText:foundationStringFromUTF8(snapshot.diagnosticText)];
+    if (!account) {
+        throw std::invalid_argument("Facade returned an invalid account snapshot");
+    }
+    return account;
+}
+
+NSArray<PRAccountSnapshot *> *accountSnapshotsFromFacadeSnapshots(
+    const std::vector<FrontendAccountSnapshot>& snapshots)
+{
+    NSMutableArray<PRAccountSnapshot *> *converted = [NSMutableArray arrayWithCapacity:snapshots.size()];
+    for (const FrontendAccountSnapshot& snapshot : snapshots) {
+        [converted addObject:accountSnapshotFromFacadeSnapshot(snapshot)];
+    }
+    return [converted copy];
+}
+
+PRAccountSnapshotResult *accountSnapshotResultFromFacadeResult(const FrontendAccountSnapshotResult& result)
+{
+    PRAccountSnapshotResult *converted = [[PRAccountSnapshotResult alloc]
+        initWithAccounts:accountSnapshotsFromFacadeSnapshots(result.accounts)
+               activeAccountIdentifier:result.activeAccountIdentifier.has_value()
+                   ? foundationStringFromUTF8(*result.activeAccountIdentifier)
+                   : nil
+                              outcome:accountSnapshotOutcomeFromFacadeResult(result.outcome)
+                      localizationKey:foundationStringFromUTF8AllowEmpty(result.localizationKey)
+                        diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+                            retryable:result.retryable];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid account snapshot result");
+    }
+    return converted;
+}
+
+PRAccountSelectionResult *accountSelectionResultFromFacadeResult(const FrontendAccountSelectionResult& result)
+{
+    PRAccountSnapshot *account = result.account.has_value()
+        ? accountSnapshotFromFacadeSnapshot(*result.account)
+        : nil;
+    PRAccountSelectionResult *converted = [[PRAccountSelectionResult alloc]
+        initWithAccount:account
+                 outcome:accountSelectionOutcomeFromFacadeResult(result.outcome)
+          localizationKey:foundationStringFromUTF8AllowEmpty(result.localizationKey)
+            diagnosticText:foundationStringFromUTF8(result.diagnosticText)];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid account selection result");
+    }
+    return converted;
+}
+
 PRInstanceNotesUpdateOutcome notesUpdateOutcomeFromFacadeResult(FrontendInstanceNotesUpdateOutcome outcome)
 {
     switch (outcome) {
@@ -2305,6 +2476,56 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@interface PRBridgeAccountSnapshotResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithResult:(nullable PRAccountSnapshotResult *)result
+                          error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRAccountSnapshotResult *result;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeAccountSnapshotResult
+
+- (instancetype)initWithResult:(PRAccountSnapshotResult *)result error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _result = result;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
+@interface PRBridgeAccountSelectionResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithResult:(nullable PRAccountSelectionResult *)result
+                          error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRAccountSelectionResult *result;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeAccountSelectionResult
+
+- (instancetype)initWithResult:(PRAccountSelectionResult *)result error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _result = result;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
 @interface PRBridgeTaskStatusResult : NSObject
 
 - (instancetype)init NS_UNAVAILABLE;
@@ -2457,6 +2678,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *settingsUpdateRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *javaDiscoveryRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *javaSelectionRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *accountSnapshotRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *accountSelectionRequestStates;
 @property(nonatomic, strong) NSLock *observationLock;
 
 - (nullable instancetype)initWithDataRootURL:(NSURL *)dataRootURL
@@ -2488,6 +2711,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 - (void)removeSettingsUpdateRequest:(PRBridgeObservationState *)request;
 - (void)removeJavaDiscoveryRequest:(PRBridgeObservationState *)request;
 - (void)removeJavaSelectionRequest:(PRBridgeObservationState *)request;
+- (void)removeAccountSnapshotRequest:(PRBridgeObservationState *)request;
+- (void)removeAccountSelectionRequest:(PRBridgeObservationState *)request;
 - (nullable PRBridgeObservationToken *)loadTaskStatusWithIdentifier:(NSString *)identifier
                                                             completion:(PRTaskStatusCompletionHandler)completion;
 - (nullable PRBridgeObservationToken *)performTaskCancellationWithIdentifier:(NSString *)identifier
@@ -2806,6 +3031,39 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @property(nonatomic, strong, readwrite, nullable) PRJavaInstallation *installation;
 @property(nonatomic, assign, readwrite) PRJavaSelectionOutcome outcome;
+@property(nonatomic, copy, readwrite) NSString *localizationKey;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+
+@end
+
+@interface PRAccountSnapshot ()
+
+@property(nonatomic, copy, readwrite) NSString *identifier;
+@property(nonatomic, copy, readwrite) NSString *displayName;
+@property(nonatomic, assign, readwrite) PRAccountType type;
+@property(nonatomic, assign, readwrite) PRAccountState state;
+@property(nonatomic, assign, readwrite) BOOL ownsMinecraft;
+@property(nonatomic, assign, readwrite) BOOL isBusy;
+@property(nonatomic, assign, readwrite) BOOL canBeSelected;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+
+@end
+
+@interface PRAccountSnapshotResult ()
+
+@property(nonatomic, copy, readwrite) NSArray<PRAccountSnapshot *> *accounts;
+@property(nonatomic, copy, readwrite, nullable) NSString *activeAccountIdentifier;
+@property(nonatomic, assign, readwrite) PRAccountSnapshotOutcome outcome;
+@property(nonatomic, copy, readwrite) NSString *localizationKey;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readwrite) BOOL retryable;
+
+@end
+
+@interface PRAccountSelectionResult ()
+
+@property(nonatomic, strong, readwrite, nullable) PRAccountSnapshot *account;
+@property(nonatomic, assign, readwrite) PRAccountSelectionOutcome outcome;
 @property(nonatomic, copy, readwrite) NSString *localizationKey;
 @property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
 
@@ -3762,6 +4020,116 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@implementation PRAccountSnapshot
+
+- (instancetype)initWithIdentifier:(NSString *)identifier
+                        displayName:(NSString *)displayName
+                               type:(PRAccountType)type
+                              state:(PRAccountState)state
+                      ownsMinecraft:(BOOL)ownsMinecraft
+                             isBusy:(BOOL)isBusy
+                     canBeSelected:(BOOL)canBeSelected
+                     diagnosticText:(NSString *)diagnosticText
+{
+    if (!isNonEmptyString(identifier) || !isNonEmptyString(displayName) || !isKnownAccountType(type)
+        || !isKnownAccountState(state)) {
+        return nil;
+    }
+    if (diagnosticText && ![diagnosticText isKindOfClass:NSString.class]) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.identifier = [identifier copy];
+        self.displayName = [displayName copy];
+        self.type = type;
+        self.state = state;
+        self.ownsMinecraft = ownsMinecraft;
+        self.isBusy = isBusy;
+        self.canBeSelected = canBeSelected;
+        self.diagnosticText = [diagnosticText copy];
+    }
+    return self;
+}
+
+@end
+
+@implementation PRAccountSnapshotResult
+
+- (instancetype)initWithAccounts:(NSArray<PRAccountSnapshot *> *)accounts
+             activeAccountIdentifier:(NSString *)activeAccountIdentifier
+                            outcome:(PRAccountSnapshotOutcome)outcome
+                    localizationKey:(NSString *)localizationKey
+                      diagnosticText:(NSString *)diagnosticText
+                          retryable:(BOOL)retryable
+{
+    if (![accounts isKindOfClass:NSArray.class] || !isKnownAccountSnapshotOutcome(outcome)
+        || ![localizationKey isKindOfClass:NSString.class]
+        || (outcome != PRAccountSnapshotOutcomeSucceeded && !isNonEmptyString(localizationKey))) {
+        return nil;
+    }
+
+    NSMutableSet<NSString *> *identifiers = [NSMutableSet setWithCapacity:accounts.count];
+    for (id account in accounts) {
+        if (![account isKindOfClass:PRAccountSnapshot.class]
+            || [identifiers containsObject:((PRAccountSnapshot *)account).identifier]) {
+            return nil;
+        }
+        [identifiers addObject:((PRAccountSnapshot *)account).identifier];
+    }
+    if (activeAccountIdentifier
+        && (![activeAccountIdentifier isKindOfClass:NSString.class]
+            || ![identifiers containsObject:activeAccountIdentifier])) {
+        return nil;
+    }
+    if (diagnosticText && ![diagnosticText isKindOfClass:NSString.class]) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.accounts = [accounts copy];
+        self.activeAccountIdentifier = [activeAccountIdentifier copy];
+        self.outcome = outcome;
+        self.localizationKey = [localizationKey copy];
+        self.diagnosticText = [diagnosticText copy];
+        self.retryable = retryable;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRAccountSelectionResult
+
+- (instancetype)initWithAccount:(PRAccountSnapshot *)account
+                          outcome:(PRAccountSelectionOutcome)outcome
+                   localizationKey:(NSString *)localizationKey
+                     diagnosticText:(NSString *)diagnosticText
+{
+    if (!isKnownAccountSelectionOutcome(outcome) || ![localizationKey isKindOfClass:NSString.class]
+        || (outcome == PRAccountSelectionOutcomeSucceeded && account
+            && (!account.canBeSelected || account.isBusy))
+        || (outcome != PRAccountSelectionOutcomeSucceeded && !isNonEmptyString(localizationKey))) {
+        return nil;
+    }
+    if (diagnosticText && ![diagnosticText isKindOfClass:NSString.class]) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.account = account;
+        self.outcome = outcome;
+        self.localizationKey = [localizationKey copy];
+        self.diagnosticText = [diagnosticText copy];
+    }
+    return self;
+}
+
+@end
+
 @implementation PRTaskSubtaskStatus
 
 - (instancetype)initWithIdentifier:(NSString *)identifier
@@ -4110,6 +4478,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.settingsUpdateRequestStates = [NSMutableArray array];
         self.javaDiscoveryRequestStates = [NSMutableArray array];
         self.javaSelectionRequestStates = [NSMutableArray array];
+        self.accountSnapshotRequestStates = [NSMutableArray array];
+        self.accountSelectionRequestStates = [NSMutableArray array];
         self.observationLock = [[NSLock alloc] init];
         _lifecycle = std::make_unique<NativeFacadeLifecycle>();
         _facade = std::move(facade);
@@ -6241,6 +6611,165 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     return [[PRBridgeObservationToken alloc] initWithState:request];
 }
 
+- (PRBridgeObservationToken *)loadAccountSnapshotsWithCompletion:(PRAccountSnapshotCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeAccountSnapshotResult *accountResult = (PRBridgeAccountSnapshotResult *)value;
+        [weakRequest cancel];
+        completion(accountResult.result, accountResult.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeAccountSnapshotRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.accountSnapshotRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRAccountSnapshotResult *result = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    result = accountSnapshotResultFromFacadeResult(bridge->_facade->accountSnapshots());
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid account snapshot result"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Account snapshot load cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Account snapshots unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown account snapshot failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeAccountSnapshotResult alloc] initWithResult:result error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
+- (PRBridgeObservationToken *)selectActiveAccountWithIdentifier:(NSString *)identifier
+                                                         completion:(PRAccountSelectionCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    NSString *identifierCopy = [identifier copy];
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeAccountSelectionResult *accountResult = (PRBridgeAccountSelectionResult *)value;
+        [weakRequest cancel];
+        completion(accountResult.result, accountResult.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeAccountSelectionRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.accountSelectionRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRAccountSelectionResult *result = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    std::optional<std::string> accountIdentifier;
+                    if (identifierCopy) {
+                        accountIdentifier = stableIdentifierFromFoundation(identifierCopy);
+                    }
+                    result = accountSelectionResultFromFacadeResult(
+                        bridge->_facade->selectActiveAccount(accountIdentifier));
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid account selection"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Account selection cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Account selection unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown account selection failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeAccountSelectionResult alloc] initWithResult:result error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
 - (void)removeInstanceObservation:(PRBridgeObservationState *)observation
 {
     [self.observationLock lock];
@@ -6481,6 +7010,26 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.observationLock unlock];
 }
 
+- (void)removeAccountSnapshotRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.accountSnapshotRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.accountSnapshotRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
+- (void)removeAccountSelectionRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.accountSelectionRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.accountSelectionRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
 - (void)cancelAllObservations
 {
     [self.observationLock lock];
@@ -6509,6 +7058,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [observations addObjectsFromArray:self.settingsUpdateRequestStates];
     [observations addObjectsFromArray:self.javaDiscoveryRequestStates];
     [observations addObjectsFromArray:self.javaSelectionRequestStates];
+    [observations addObjectsFromArray:self.accountSnapshotRequestStates];
+    [observations addObjectsFromArray:self.accountSelectionRequestStates];
     [self.instanceObservationStates removeAllObjects];
     [self.instanceChangeObservationStates removeAllObjects];
     [self.taskObservationStates removeAllObjects];
@@ -6533,6 +7084,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.settingsUpdateRequestStates removeAllObjects];
     [self.javaDiscoveryRequestStates removeAllObjects];
     [self.javaSelectionRequestStates removeAllObjects];
+    [self.accountSnapshotRequestStates removeAllObjects];
+    [self.accountSelectionRequestStates removeAllObjects];
     [self.observationLock unlock];
 
     for (PRBridgeObservationState *observation in observations) {
