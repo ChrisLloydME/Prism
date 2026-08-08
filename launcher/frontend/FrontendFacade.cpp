@@ -64,6 +64,91 @@ void validateInstanceComponents(const std::vector<FrontendInstanceComponentSnaps
     }
 }
 
+bool isKnownInstanceResourceKind(FrontendInstanceResourceKind kind) noexcept
+{
+    switch (kind) {
+        case FrontendInstanceResourceKind::Mods:
+        case FrontendInstanceResourceKind::ResourcePacks:
+        case FrontendInstanceResourceKind::ShaderPacks:
+        case FrontendInstanceResourceKind::TexturePacks:
+        case FrontendInstanceResourceKind::DataPacks:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownInstanceResourceAction(FrontendInstanceResourceAction action) noexcept
+{
+    switch (action) {
+        case FrontendInstanceResourceAction::Enable:
+        case FrontendInstanceResourceAction::Disable:
+        case FrontendInstanceResourceAction::Delete:
+        case FrontendInstanceResourceAction::Import:
+        case FrontendInstanceResourceAction::Reveal:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownInstanceResourceMutationOutcome(FrontendInstanceResourceMutationOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendInstanceResourceMutationOutcome::Succeeded:
+        case FrontendInstanceResourceMutationOutcome::UnknownInstance:
+        case FrontendInstanceResourceMutationOutcome::UnknownResource:
+        case FrontendInstanceResourceMutationOutcome::Rejected:
+        case FrontendInstanceResourceMutationOutcome::Failed:
+            return true;
+    }
+    return false;
+}
+
+void validateInstanceResources(const std::vector<FrontendInstanceResourceSnapshot>& resources)
+{
+    std::set<std::string> identifiers;
+    for (const auto& resource : resources) {
+        if (!resource.hasStableIdentifier() || resource.name.empty() || resource.fileName.empty()
+            || !isKnownInstanceResourceKind(resource.kind) || (resource.isDirectory && resource.canBeToggled)
+            || !identifiers.insert(resource.id).second) {
+            throw std::invalid_argument("Instance resources require unique identifiers and valid state");
+        }
+    }
+}
+
+void validateInstanceResourceRequest(
+    FrontendInstanceResourceKind kind,
+    const FrontendInstanceResourceMutationRequest& request)
+{
+    if (!isKnownInstanceResourceKind(kind) || !isKnownInstanceResourceAction(request.action)
+        || request.resourceIdentifier.empty()) {
+        throw std::invalid_argument("Instance resource requests require a known kind, action, and identifier");
+    }
+    if (request.action == FrontendInstanceResourceAction::Delete && !request.confirmed) {
+        throw std::invalid_argument("Deleting an instance resource requires explicit confirmation");
+    }
+    if (request.action == FrontendInstanceResourceAction::Import
+        && (request.sourcePath.empty() || !request.sourcePath.is_absolute())) {
+        throw std::invalid_argument("Importing an instance resource requires an absolute source path");
+    }
+    if (request.action != FrontendInstanceResourceAction::Import && !request.sourcePath.empty()) {
+        throw std::invalid_argument("Only import requests may carry a source path");
+    }
+}
+
+void validateInstanceResourceMutationResult(
+    FrontendInstanceResourceKind kind,
+    const FrontendInstanceResourceMutationRequest& request,
+    const FrontendInstanceResourceMutationResult& result,
+    const std::string& instanceIdentifier)
+{
+    if (!isKnownInstanceResourceKind(result.kind) || !isKnownInstanceResourceAction(result.action)
+        || !isKnownInstanceResourceMutationOutcome(result.outcome) || result.kind != kind
+        || result.action != request.action || result.instanceIdentifier != instanceIdentifier
+        || result.resourceIdentifier != request.resourceIdentifier) {
+        throw std::invalid_argument("Instance resource mutation returned an invalid confirmed result");
+    }
+}
+
 bool isKnownInstanceJoinTarget(FrontendInstanceJoinTarget target) noexcept
 {
     switch (target) {
@@ -446,6 +531,53 @@ std::optional<std::vector<FrontendInstanceComponentSnapshot>> executeInstanceCom
     return components;
 }
 
+std::optional<std::vector<FrontendInstanceResourceSnapshot>> executeInstanceResources(
+    const FrontendRuntimeDependencies::InstanceResourcesLoader& loader,
+    const std::filesystem::path& dataRoot,
+    const std::string& instanceIdentifier,
+    FrontendInstanceResourceKind kind)
+{
+    if (instanceIdentifier.empty() || !isKnownInstanceResourceKind(kind)) {
+        throw std::invalid_argument("Instance resources require a stable identifier and known kind");
+    }
+    if (!loader) {
+        return std::nullopt;
+    }
+
+    auto resources = loader(dataRoot, instanceIdentifier, kind);
+    if (resources.has_value()) {
+        validateInstanceResources(*resources);
+    }
+    return resources;
+}
+
+FrontendInstanceResourceMutationResult executeInstanceResourceMutation(
+    const FrontendRuntimeDependencies::InstanceResourceMutator& mutator,
+    const std::filesystem::path& dataRoot,
+    const std::string& instanceIdentifier,
+    FrontendInstanceResourceKind kind,
+    const FrontendInstanceResourceMutationRequest& request)
+{
+    if (instanceIdentifier.empty()) {
+        throw std::invalid_argument("Instance resource mutations require a stable instance identifier");
+    }
+    validateInstanceResourceRequest(kind, request);
+    if (!mutator) {
+        FrontendInstanceResourceMutationResult rejected;
+        rejected.kind = kind;
+        rejected.action = request.action;
+        rejected.instanceIdentifier = instanceIdentifier;
+        rejected.resourceIdentifier = request.resourceIdentifier;
+        rejected.localizationKey = "instance.resource.unavailable";
+        rejected.diagnosticText = "Instance resource mutation adapter is unavailable";
+        return rejected;
+    }
+
+    auto result = mutator(dataRoot, instanceIdentifier, kind, request);
+    validateInstanceResourceMutationResult(kind, request, result, instanceIdentifier);
+    return result;
+}
+
 FrontendInstanceNotesUpdateResult executeInstanceNotesUpdate(
     const FrontendRuntimeDependencies::InstanceNotesUpdater& updater,
     const std::filesystem::path& dataRoot,
@@ -630,6 +762,23 @@ std::optional<std::vector<FrontendInstanceComponentSnapshot>> FrontendFacade::in
 {
     ensureRunning(m_lifecycleState);
     return executeInstanceComponents(m_runtimeDependencies.loadInstanceComponents, m_dataRoot, instanceIdentifier);
+}
+
+std::optional<std::vector<FrontendInstanceResourceSnapshot>> FrontendFacade::instanceResources(
+    const std::string& instanceIdentifier, FrontendInstanceResourceKind kind) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeInstanceResources(m_runtimeDependencies.loadInstanceResources, m_dataRoot, instanceIdentifier, kind);
+}
+
+FrontendInstanceResourceMutationResult FrontendFacade::mutateInstanceResource(
+    const std::string& instanceIdentifier,
+    FrontendInstanceResourceKind kind,
+    const FrontendInstanceResourceMutationRequest& request) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeInstanceResourceMutation(
+        m_runtimeDependencies.mutateInstanceResource, m_dataRoot, instanceIdentifier, kind, request);
 }
 
 std::vector<FrontendInstanceChange> FrontendFacade::instanceChanges() const

@@ -47,6 +47,10 @@ typedef void (^PRInstanceDetailsCompletionHandler)(PRInstanceDetails * _Nullable
                                                     PRBridgeError * _Nullable error);
 typedef void (^PRInstanceComponentsCompletionHandler)(NSArray<PRInstanceComponent *> * _Nullable components,
                                                        PRBridgeError * _Nullable error);
+typedef void (^PRInstanceResourcesCompletionHandler)(NSArray<PRInstanceResource *> * _Nullable resources,
+                                                      PRBridgeError * _Nullable error);
+typedef void (^PRInstanceResourceMutationCompletionHandler)(PRInstanceResourceMutationResult * _Nullable result,
+                                                             PRBridgeError * _Nullable error);
 typedef void (^PRInstanceCommandCompletionHandler)(PRInstanceCommandResult * _Nullable result,
                                                     PRBridgeError * _Nullable error);
 typedef void (^PRInstanceNotesUpdateCompletionHandler)(PRInstanceNotesUpdateResult * _Nullable result,
@@ -108,6 +112,23 @@ typedef void (^PRInstanceSettingsUpdateCompletionHandler)(PRInstanceSettingsUpda
 /// or file ownership crosses the bridge.
 - (nullable PRBridgeObservationToken *)loadInstanceComponentsWithIdentifier:(NSString *)identifier
                                                                    completion:(PRInstanceComponentsCompletionHandler)completion;
+
+/// Loads one ordered external-resource list for the requested kind. Resource
+/// paths and Qt models remain inside the injected facade port.
+- (nullable PRBridgeObservationToken *)loadInstanceResourcesWithIdentifier:(NSString *)identifier
+                                                                       kind:(PRInstanceResourceKind)kind
+                                                                 completion:(PRInstanceResourcesCompletionHandler)completion;
+
+/// Applies one explicit resource action. Delete requires `confirmed`; import
+/// accepts only a system-selected local file URL. Successful mutations are
+/// followed by a caller-requested reload rather than an optimistic Swift edit.
+- (nullable PRBridgeObservationToken *)applyInstanceResourceActionWithIdentifier:(NSString *)identifier
+                                                                              kind:(PRInstanceResourceKind)kind
+                                                                            action:(PRInstanceResourceAction)action
+                                                                  resourceIdentifier:(NSString *)resourceIdentifier
+                                                                         sourceURL:(NSURL * _Nullable)sourceURL
+                                                                         confirmed:(BOOL)confirmed
+                                                                         completion:(PRInstanceResourceMutationCompletionHandler)completion;
 
 /// Loads one immutable task snapshot by stable identifier. Unknown tasks and
 /// lifecycle failures are returned as stable bridge errors; the completion

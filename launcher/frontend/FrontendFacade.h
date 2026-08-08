@@ -55,6 +55,65 @@ struct FrontendInstanceComponentSnapshot final {
     bool hasStableIdentifier() const noexcept { return !id.empty(); }
 };
 
+enum class FrontendInstanceResourceKind : std::uint8_t {
+    Mods,
+    ResourcePacks,
+    ShaderPacks,
+    TexturePacks,
+    DataPacks,
+};
+
+enum class FrontendInstanceResourceAction : std::uint8_t { Enable, Disable, Delete, Import, Reveal };
+
+enum class FrontendInstanceResourceMutationOutcome : std::uint8_t {
+    Succeeded,
+    UnknownInstance,
+    UnknownResource,
+    Rejected,
+    Failed,
+};
+
+/// Ordered, immutable external-resource data for the native mods and packs list.
+/// Resource paths and model ownership remain in the injected runtime ports.
+struct FrontendInstanceResourceSnapshot final {
+    std::string id;
+    std::string name;
+    std::string version;
+    std::string fileName;
+    std::string provider;
+    FrontendInstanceResourceKind kind = FrontendInstanceResourceKind::Mods;
+    bool enabled = true;
+    bool canBeToggled = true;
+    bool canBeDeleted = true;
+    bool isDirectory = false;
+    bool hasMetadata = false;
+    std::vector<std::string> problemDescriptions;
+
+    bool hasStableIdentifier() const noexcept { return !id.empty(); }
+};
+
+/// Explicit native resource intent. Delete requires `confirmed`; import requires
+/// an absolute source path selected by a system file panel or drop operation.
+struct FrontendInstanceResourceMutationRequest final {
+    FrontendInstanceResourceAction action = FrontendInstanceResourceAction::Reveal;
+    std::string resourceIdentifier;
+    std::filesystem::path sourcePath;
+    bool confirmed = false;
+};
+
+/// Confirmed result for one resource intent. A successful mutation is not an
+/// optimistic Swift edit; the native state reloads a confirmed list afterward.
+struct FrontendInstanceResourceMutationResult final {
+    FrontendInstanceResourceKind kind = FrontendInstanceResourceKind::Mods;
+    FrontendInstanceResourceAction action = FrontendInstanceResourceAction::Reveal;
+    FrontendInstanceResourceMutationOutcome outcome = FrontendInstanceResourceMutationOutcome::Rejected;
+    std::string instanceIdentifier;
+    std::string resourceIdentifier;
+    std::string localizationKey;
+    std::string diagnosticText;
+    bool partialChangesRolledBack = false;
+};
+
 enum class FrontendInstanceChangeKind : std::uint8_t { Added, Updated, Removed };
 
 enum class FrontendLifecycleState : std::uint8_t { Running, ShuttingDown, Stopped };
@@ -218,6 +277,11 @@ struct FrontendRuntimeDependencies final {
         std::function<std::optional<FrontendInstanceDetailsSnapshot>(const std::filesystem::path&, const std::string&)>;
     using InstanceComponentsLoader = std::function<std::optional<std::vector<FrontendInstanceComponentSnapshot>>(
         const std::filesystem::path&, const std::string&)>;
+    using InstanceResourcesLoader = std::function<std::optional<std::vector<FrontendInstanceResourceSnapshot>>(
+        const std::filesystem::path&, const std::string&, FrontendInstanceResourceKind)>;
+    using InstanceResourceMutator = std::function<FrontendInstanceResourceMutationResult(
+        const std::filesystem::path&, const std::string&, FrontendInstanceResourceKind,
+        const FrontendInstanceResourceMutationRequest&)>;
     using InstanceChangeLoader = std::function<std::vector<FrontendInstanceChange>(const std::filesystem::path&)>;
     using InstanceCommand = std::function<FrontendInstanceCommandResult(const std::filesystem::path&, const std::string&)>;
     using InstanceNotesUpdater = std::function<FrontendInstanceNotesUpdateResult(
@@ -238,6 +302,8 @@ struct FrontendRuntimeDependencies final {
     InstanceSnapshotLoader loadInstanceSnapshots;
     InstanceDetailsLoader loadInstanceDetails;
     InstanceComponentsLoader loadInstanceComponents;
+    InstanceResourcesLoader loadInstanceResources;
+    InstanceResourceMutator mutateInstanceResource;
     InstanceChangeLoader loadInstanceChanges;
     InstanceCommand launchInstance;
     InstanceCommand stopInstance;
@@ -278,6 +344,12 @@ class FrontendFacade final {
     std::optional<FrontendInstanceDetailsSnapshot> instanceDetails(const std::string& instanceIdentifier) const;
     std::optional<std::vector<FrontendInstanceComponentSnapshot>> instanceComponents(
         const std::string& instanceIdentifier) const;
+    std::optional<std::vector<FrontendInstanceResourceSnapshot>> instanceResources(
+        const std::string& instanceIdentifier, FrontendInstanceResourceKind kind) const;
+    FrontendInstanceResourceMutationResult mutateInstanceResource(
+        const std::string& instanceIdentifier,
+        FrontendInstanceResourceKind kind,
+        const FrontendInstanceResourceMutationRequest& request) const;
     std::vector<FrontendInstanceChange> instanceChanges() const;
     FrontendInstanceCommandResult launchInstance(const std::string& instanceIdentifier) const;
     FrontendInstanceCommandResult stopInstance(const std::string& instanceIdentifier) const;

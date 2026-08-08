@@ -24,6 +24,13 @@ static_assert(static_cast<std::uint8_t>(FrontendInstanceJoinTarget::World) == 2)
 static_assert(static_cast<std::uint8_t>(FrontendInstanceComponentProblemSeverity::None) == 0);
 static_assert(static_cast<std::uint8_t>(FrontendInstanceComponentProblemSeverity::Warning) == 1);
 static_assert(static_cast<std::uint8_t>(FrontendInstanceComponentProblemSeverity::Error) == 2);
+static_assert(static_cast<std::uint8_t>(FrontendInstanceResourceKind::Mods) == 0);
+static_assert(static_cast<std::uint8_t>(FrontendInstanceResourceKind::ResourcePacks) == 1);
+static_assert(static_cast<std::uint8_t>(FrontendInstanceResourceKind::DataPacks) == 4);
+static_assert(static_cast<std::uint8_t>(FrontendInstanceResourceAction::Enable) == 0);
+static_assert(static_cast<std::uint8_t>(FrontendInstanceResourceAction::Reveal) == 4);
+static_assert(static_cast<std::uint8_t>(FrontendInstanceResourceMutationOutcome::Succeeded) == 0);
+static_assert(static_cast<std::uint8_t>(FrontendInstanceResourceMutationOutcome::Failed) == 4);
 static_assert(static_cast<std::uint8_t>(FrontendInstanceSettingsUpdateOutcome::Succeeded) == 0);
 static_assert(static_cast<std::uint8_t>(FrontendInstanceSettingsUpdateOutcome::UnknownInstance) == 1);
 static_assert(static_cast<std::uint8_t>(FrontendInstanceSettingsUpdateOutcome::Rejected) == 2);
@@ -51,12 +58,29 @@ int main()
     const FrontendInstanceComponentSnapshot component{ "component-contract", "Component Contract", "1.0", true,
                                                        false, false, true, false,
                                                        FrontendInstanceComponentProblemSeverity::None, {} };
+    const FrontendInstanceResourceSnapshot resource{ "resource-contract", "Resource Contract", "1.0", "resource.zip", "Fixture",
+                                                     FrontendInstanceResourceKind::Mods, true, true, true, false, true, {} };
+    FrontendInstanceResourceMutationRequest mutationRequest;
+    mutationRequest.resourceIdentifier = resource.id;
+    mutationRequest.action = FrontendInstanceResourceAction::Reveal;
+    const FrontendInstanceResourceMutationResult mutationResult{
+        FrontendInstanceResourceKind::Mods,
+        FrontendInstanceResourceAction::Reveal,
+        FrontendInstanceResourceMutationOutcome::Rejected,
+        "header-contract",
+        resource.id,
+        "resource.rejected",
+        "fixture rejection",
+        false,
+    };
     FrontendInstanceSettingsSnapshot settings;
     settings.id = "header-contract";
     const FrontendInstanceChange change{ FrontendInstanceChangeKind::Added, snapshot };
     const FrontendLogSnapshot logSnapshot{ "header-contract", {}, 0, 0, false };
     const FrontendRuntimeDependencies dependencies;
     return snapshot.hasStableIdentifier() && details.hasStableIdentifier() && component.hasStableIdentifier()
+            && resource.hasStableIdentifier() && mutationRequest.resourceIdentifier == resource.id
+            && mutationResult.instanceIdentifier == "header-contract"
             && details.notesEditable
             && settings.hasStableIdentifier()
             && change.instance.id == snapshot.id && logSnapshot.hasStableIdentifier()

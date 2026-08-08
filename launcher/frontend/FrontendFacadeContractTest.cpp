@@ -282,6 +282,129 @@ int main()
         (void) invalidComponentFacade.instanceComponents("fixture-one");
     });
 
+    std::vector<std::string> resourceCalls;
+    std::vector<std::string> resourceMutationCalls;
+    bool resourceRootMatches = true;
+    auto resourceDependencies = makeFixtureDependencies();
+    resourceDependencies.loadInstanceResources = [&](const std::filesystem::path& root,
+                                                      const std::string& identifier,
+                                                      FrontendInstanceResourceKind kind)
+        -> std::optional<std::vector<FrontendInstanceResourceSnapshot>> {
+        resourceRootMatches = resourceRootMatches && root == fixtureRoot.lexically_normal();
+        resourceCalls.push_back(identifier + ":" + std::to_string(static_cast<int>(kind)));
+        if (identifier == "empty-instance") {
+            return std::vector<FrontendInstanceResourceSnapshot>{};
+        }
+        if (identifier != "fixture-one" || kind != FrontendInstanceResourceKind::Mods) {
+            return std::nullopt;
+        }
+        return std::vector<FrontendInstanceResourceSnapshot>{
+            { "mod-one", "Fixture Mod", "1.0", "fixture-mod.jar", "Fixture", FrontendInstanceResourceKind::Mods,
+              true, true, true, false, true, {} },
+            { "folder-one", "Fixture Folder", "", "fixture-folder", "", FrontendInstanceResourceKind::Mods,
+              true, false, true, true, false, { "Folder resources cannot be toggled." } },
+        };
+    };
+    resourceDependencies.mutateInstanceResource = [&](const std::filesystem::path& root,
+                                                       const std::string& identifier,
+                                                       FrontendInstanceResourceKind kind,
+                                                       const FrontendInstanceResourceMutationRequest& request) {
+        resourceRootMatches = resourceRootMatches && root == fixtureRoot.lexically_normal();
+        resourceMutationCalls.push_back(identifier + ":" + std::to_string(static_cast<int>(kind)) + ":"
+                                      + std::to_string(static_cast<int>(request.action)) + ":"
+                                      + request.resourceIdentifier + ":" + (request.confirmed ? "confirmed" : "unconfirmed")
+                                      + ":" + request.sourcePath.generic_string());
+        return FrontendInstanceResourceMutationResult{
+            kind,
+            request.action,
+            FrontendInstanceResourceMutationOutcome::Succeeded,
+            identifier,
+            request.resourceIdentifier,
+            "resource.mutation.succeeded",
+            "fixture mutation succeeded",
+            false,
+        };
+    };
+    FrontendFacade resourceFacade(fixtureRoot, std::move(resourceDependencies));
+    const auto loadedResources = resourceFacade.instanceResources("fixture-one", FrontendInstanceResourceKind::Mods);
+    const auto emptyResources = resourceFacade.instanceResources("empty-instance", FrontendInstanceResourceKind::DataPacks);
+    const auto missingResources = resourceFacade.instanceResources("unknown-instance", FrontendInstanceResourceKind::Mods);
+    const bool resourceContract = loadedResources.has_value() && loadedResources->size() == 2
+        && (*loadedResources)[0].id == "mod-one" && (*loadedResources)[0].hasMetadata
+        && (*loadedResources)[1].isDirectory && !(*loadedResources)[1].canBeToggled
+        && (*loadedResources)[1].problemDescriptions.size() == 1 && emptyResources.has_value()
+        && emptyResources->empty() && !missingResources.has_value() && resourceRootMatches
+        && resourceCalls == std::vector<std::string>{ "fixture-one:0", "empty-instance:4", "unknown-instance:0" };
+    const bool rejectedInvalidResourceKind = throwsInvalidArgument([&resourceFacade] {
+        (void) resourceFacade.instanceResources("fixture-one", static_cast<FrontendInstanceResourceKind>(99));
+    });
+    FrontendInstanceResourceMutationRequest deleteRequest;
+    deleteRequest.action = FrontendInstanceResourceAction::Delete;
+    deleteRequest.resourceIdentifier = "mod-one";
+    const bool rejectedUnconfirmedDelete = throwsInvalidArgument([&resourceFacade, &deleteRequest] {
+        (void) resourceFacade.mutateInstanceResource("fixture-one", FrontendInstanceResourceKind::Mods, deleteRequest);
+    });
+    deleteRequest.confirmed = true;
+    const auto deletedResource = resourceFacade.mutateInstanceResource(
+        "fixture-one", FrontendInstanceResourceKind::Mods, deleteRequest);
+    FrontendInstanceResourceMutationRequest importRequest;
+    importRequest.action = FrontendInstanceResourceAction::Import;
+    importRequest.resourceIdentifier = "imported-resource";
+    importRequest.sourcePath = fixtureRoot / "imported.zip";
+    const auto importedResource = resourceFacade.mutateInstanceResource(
+        "fixture-one", FrontendInstanceResourceKind::Mods, importRequest);
+    FrontendInstanceResourceMutationRequest relativeImportRequest = importRequest;
+    relativeImportRequest.sourcePath = "relative.zip";
+    const bool rejectedRelativeResourceImport = throwsInvalidArgument([&resourceFacade, &relativeImportRequest] {
+        (void) resourceFacade.mutateInstanceResource("fixture-one", FrontendInstanceResourceKind::Mods, relativeImportRequest);
+    });
+    const bool resourceMutationContract = deletedResource.outcome == FrontendInstanceResourceMutationOutcome::Succeeded
+        && deletedResource.action == FrontendInstanceResourceAction::Delete
+        && importedResource.outcome == FrontendInstanceResourceMutationOutcome::Succeeded
+        && importedResource.resourceIdentifier == "imported-resource"
+        && resourceMutationCalls.size() == 2 && resourceMutationCalls[0].ends_with(":mod-one:confirmed:")
+        && resourceMutationCalls[1].ends_with(":imported-resource:unconfirmed:" + (fixtureRoot / "imported.zip").generic_string());
+    const bool missingResourceMutatorIsSafe = emptyFacade
+        .mutateInstanceResource("fixture-one", FrontendInstanceResourceKind::Mods, deleteRequest)
+        .outcome == FrontendInstanceResourceMutationOutcome::Rejected;
+
+    auto invalidResourceDependencies = makeFixtureDependencies();
+    invalidResourceDependencies.loadInstanceResources = [](const std::filesystem::path&,
+                                                           const std::string&,
+                                                           FrontendInstanceResourceKind)
+        -> std::optional<std::vector<FrontendInstanceResourceSnapshot>> {
+        return std::vector<FrontendInstanceResourceSnapshot>{
+            { "duplicate", "First", "1", "first.zip", "", FrontendInstanceResourceKind::Mods,
+              true, true, true, false, false, {} },
+            { "duplicate", "Second", "2", "second.zip", "", FrontendInstanceResourceKind::Mods,
+              true, true, true, false, false, {} },
+        };
+    };
+    FrontendFacade invalidResourceFacade(fixtureRoot, std::move(invalidResourceDependencies));
+    const bool rejectedInvalidResources = throwsInvalidArgument([&invalidResourceFacade] {
+        (void) invalidResourceFacade.instanceResources("fixture-one", FrontendInstanceResourceKind::Mods);
+    });
+    auto invalidMutationDependencies = makeFixtureDependencies();
+    invalidMutationDependencies.mutateInstanceResource = [](const std::filesystem::path&,
+                                                             const std::string& identifier,
+                                                             FrontendInstanceResourceKind kind,
+                                                             const FrontendInstanceResourceMutationRequest& request) {
+        return FrontendInstanceResourceMutationResult{
+            kind,
+            request.action,
+            FrontendInstanceResourceMutationOutcome::Succeeded,
+            identifier,
+            "wrong-resource",
+            "resource.invalid",
+            "fixture result mismatch",
+            false,
+        };
+    };
+    FrontendFacade invalidMutationFacade(fixtureRoot, std::move(invalidMutationDependencies));
+    const bool rejectedInvalidMutationResult = throwsInvalidArgument([&invalidMutationFacade, &deleteRequest] {
+        (void) invalidMutationFacade.mutateInstanceResource("fixture-one", FrontendInstanceResourceKind::Mods, deleteRequest);
+    });
+
     std::vector<std::string> settingsLoadCalls;
     std::vector<std::string> settingsUpdateCalls;
     bool settingsRootMatches = true;
@@ -756,6 +879,10 @@ int main()
         && throwsLogicError([&componentFacade] {
                (void) componentFacade.instanceComponents("fixture-one");
            });
+    const bool rejectedPostShutdownResourceWork = resourceFacade.shutdown()
+        && throwsLogicError([&resourceFacade, &deleteRequest] {
+               (void) resourceFacade.mutateInstanceResource("fixture-one", FrontendInstanceResourceKind::Mods, deleteRequest);
+           });
 
     std::filesystem::remove(fixtureMarker, error);
     std::filesystem::remove(fixtureRoot, error);
@@ -771,6 +898,10 @@ int main()
                && rejectedInvalidDetails
                && rejectedInvalidChange && componentContract && rejectedInvalidComponentIdentifier
                && missingComponentPortIsSafe && rejectedInvalidComponents && rejectedPostShutdownComponentsWork
+               && resourceContract && rejectedInvalidResourceKind && rejectedUnconfirmedDelete
+               && resourceMutationContract && rejectedRelativeResourceImport && missingResourceMutatorIsSafe
+               && rejectedInvalidResources && rejectedInvalidMutationResult
+               && rejectedPostShutdownResourceWork
                && logPrivacyAndBounds && longLogIsTruncated && missingLogPortIsSafe
                && rejectedEmptyRoot && rejectedRelativeRoot && rejectedIncompleteDependencies
                && lifecycleContract && callbacksRanExactlyOnce && destructorShutdownContract && !error

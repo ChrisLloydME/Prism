@@ -506,6 +506,289 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     [self waitForExpectations:@[ completion ] timeout:0.2];
 }
 
+- (void)testFacadeResourcesPreserveKindOrderAndRequireConfirmedMutations
+{
+    auto loadedRootMatches = std::make_shared<std::atomic<bool>>(true);
+    auto resourceCalls = std::make_shared<std::vector<std::string>>();
+    auto mutationCalls = std::make_shared<std::vector<std::string>>();
+    auto mutationRootMatches = std::make_shared<std::atomic<bool>>(true);
+    auto mutationFilesOk = std::make_shared<std::atomic<bool>>(true);
+    const std::string fixtureRoot = self.fixtureRootURL.path.UTF8String;
+    NSURL *sourceURL = [self.fixtureRootURL URLByAppendingPathComponent:@"import.zip"];
+    NSURL *resourceDirectoryURL = [self.fixtureRootURL URLByAppendingPathComponent:@"resources" isDirectory:YES];
+    XCTAssertTrue([[NSFileManager defaultManager] createDirectoryAtURL:resourceDirectoryURL
+                                             withIntermediateDirectories:NO
+                                                              attributes:nil
+                                                                   error:nil]);
+    XCTAssertTrue([[@"fixture mod" dataUsingEncoding:NSUTF8StringEncoding]
+        writeToURL:[resourceDirectoryURL URLByAppendingPathComponent:@"mod.one"]
+        atomically:YES]);
+    XCTAssertTrue([[@"fixture import" dataUsingEncoding:NSUTF8StringEncoding]
+        writeToURL:sourceURL
+        atomically:YES]);
+
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.loadInstanceResources = [loadedRootMatches, resourceCalls, fixtureRoot](
+                                             const std::filesystem::path& root,
+                                             const std::string& identifier,
+                                             FrontendInstanceResourceKind kind)
+        -> std::optional<std::vector<FrontendInstanceResourceSnapshot>> {
+        *loadedRootMatches = *loadedRootMatches && root == std::filesystem::path(fixtureRoot).lexically_normal();
+        resourceCalls->push_back(identifier + ":" + std::to_string(static_cast<int>(kind)));
+        if (identifier == "empty-instance") {
+            return std::vector<FrontendInstanceResourceSnapshot>{};
+        }
+        if (identifier != "fixture.one" || kind != FrontendInstanceResourceKind::Mods) {
+            return std::nullopt;
+        }
+        return std::vector<FrontendInstanceResourceSnapshot>{
+            { "mod.one", "Fixture Mod", "1.0", "fixture-mod.jar", "Fixture", FrontendInstanceResourceKind::Mods,
+              true, true, true, false, true, {} },
+            { "mod.folder", "Fixture Folder", "", "fixture-folder", "", FrontendInstanceResourceKind::Mods,
+              true, false, true, true, false, { "Folder resources cannot be toggled." } },
+        };
+    };
+    dependencies.mutateInstanceResource = [mutationCalls, mutationRootMatches, mutationFilesOk, fixtureRoot](
+                                             const std::filesystem::path& root,
+                                             const std::string& identifier,
+                                             FrontendInstanceResourceKind kind,
+                                             const FrontendInstanceResourceMutationRequest& request) {
+        *mutationRootMatches = *mutationRootMatches && root == std::filesystem::path(fixtureRoot).lexically_normal();
+        mutationCalls->push_back(identifier + ":" + std::to_string(static_cast<int>(kind)) + ":"
+                                  + std::to_string(static_cast<int>(request.action)) + ":"
+                                  + request.resourceIdentifier + ":" + (request.confirmed ? "confirmed" : "unconfirmed")
+                                  + ":" + request.sourcePath.generic_string());
+        std::error_code fileError;
+        if (request.action == FrontendInstanceResourceAction::Delete) {
+            const bool removed = std::filesystem::remove(root / "resources" / request.resourceIdentifier, fileError);
+            *mutationFilesOk = *mutationFilesOk && removed && !fileError;
+        } else if (request.action == FrontendInstanceResourceAction::Import) {
+            const bool copied = std::filesystem::copy_file(
+                request.sourcePath,
+                root / "resources" / request.resourceIdentifier,
+                std::filesystem::copy_options::overwrite_existing,
+                fileError);
+            *mutationFilesOk = *mutationFilesOk && copied && !fileError;
+        }
+        if (request.resourceIdentifier == "missing-resource") {
+            return FrontendInstanceResourceMutationResult{
+                kind,
+                request.action,
+                FrontendInstanceResourceMutationOutcome::UnknownResource,
+                identifier,
+                request.resourceIdentifier,
+                "instance.resource.missing",
+                "fixture resource is missing",
+                true,
+            };
+        }
+        return FrontendInstanceResourceMutationResult{
+            kind,
+            request.action,
+            FrontendInstanceResourceMutationOutcome::Succeeded,
+            identifier,
+            request.resourceIdentifier,
+            "instance.resource.updated",
+            "fixture resource mutation succeeded",
+            false,
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    XCTestExpectation *loadCompletion = [self expectationWithDescription:@"Facade resources completed"];
+    __block NSArray<PRInstanceResource *> *receivedResources = nil;
+    __block PRBridgeError *receivedError = nil;
+    __block BOOL callbackRanOnMainThread = NO;
+    PRBridgeObservationToken *loadToken = [bridge loadInstanceResourcesWithIdentifier:@" fixture.one "
+                                                                                   kind:PRInstanceResourceKindMods
+                                                                             completion:^(NSArray<PRInstanceResource *> *resources,
+                                                                                          PRBridgeError *error) {
+        callbackRanOnMainThread = [NSThread isMainThread];
+        receivedResources = resources;
+        receivedError = error;
+        [loadCompletion fulfill];
+    }];
+    XCTAssertNotNil(loadToken);
+    [self waitForExpectations:@[ loadCompletion ] timeout:2.0];
+    XCTAssertTrue(callbackRanOnMainThread);
+    XCTAssertNil(receivedError);
+    XCTAssertEqual(receivedResources.count, (NSUInteger)2);
+    XCTAssertEqualObjects(receivedResources[0].identifier, @"mod.one");
+    XCTAssertEqualObjects(receivedResources[0].fileName, @"fixture-mod.jar");
+    XCTAssertTrue(receivedResources[0].hasMetadata);
+    XCTAssertEqualObjects(receivedResources[1].name, @"Fixture Folder");
+    XCTAssertTrue(receivedResources[1].directory);
+    XCTAssertFalse(receivedResources[1].canBeToggled);
+    XCTAssertEqualObjects(receivedResources[1].problemDescriptions.firstObject, @"Folder resources cannot be toggled.");
+
+    XCTestExpectation *emptyCompletion = [self expectationWithDescription:@"Empty resources completed"];
+    receivedResources = nil;
+    receivedError = nil;
+    PRBridgeObservationToken *emptyToken = [bridge loadInstanceResourcesWithIdentifier:@"empty-instance"
+                                                                                  kind:PRInstanceResourceKindDataPacks
+                                                                            completion:^(NSArray<PRInstanceResource *> *resources,
+                                                                                         PRBridgeError *error) {
+        receivedResources = resources;
+        receivedError = error;
+        [emptyCompletion fulfill];
+    }];
+    XCTAssertNotNil(emptyToken);
+    [self waitForExpectations:@[ emptyCompletion ] timeout:2.0];
+    XCTAssertNil(receivedError);
+    XCTAssertNotNil(receivedResources);
+    XCTAssertEqual(receivedResources.count, (NSUInteger)0);
+
+    XCTestExpectation *unconfirmedDeleteCompletion = [self expectationWithDescription:@"Unconfirmed delete rejected"];
+    __block PRInstanceResourceMutationResult *unconfirmedResult = nil;
+    receivedError = nil;
+    PRBridgeObservationToken *unconfirmedDeleteToken = [bridge
+        applyInstanceResourceActionWithIdentifier:@"fixture.one"
+                                              kind:PRInstanceResourceKindMods
+                                            action:PRInstanceResourceActionDelete
+                                  resourceIdentifier:@"mod.one"
+                                         sourceURL:nil
+                                         confirmed:NO
+                                         completion:^(PRInstanceResourceMutationResult *result, PRBridgeError *error) {
+        unconfirmedResult = result;
+        receivedError = error;
+        [unconfirmedDeleteCompletion fulfill];
+    }];
+    XCTAssertNotNil(unconfirmedDeleteToken);
+    [self waitForExpectations:@[ unconfirmedDeleteCompletion ] timeout:2.0];
+    XCTAssertNil(unconfirmedResult);
+    XCTAssertEqual(receivedError.code, PRBridgeErrorCodeInvalidInput);
+
+    XCTestExpectation *deleteCompletion = [self expectationWithDescription:@"Confirmed delete completed"];
+    __block PRInstanceResourceMutationResult *mutationResult = nil;
+    receivedError = nil;
+    PRBridgeObservationToken *deleteToken = [bridge
+        applyInstanceResourceActionWithIdentifier:@"fixture.one"
+                                              kind:PRInstanceResourceKindMods
+                                            action:PRInstanceResourceActionDelete
+                                  resourceIdentifier:@"mod.one"
+                                         sourceURL:nil
+                                         confirmed:YES
+                                         completion:^(PRInstanceResourceMutationResult *result, PRBridgeError *error) {
+        mutationResult = result;
+        receivedError = error;
+        [deleteCompletion fulfill];
+    }];
+    XCTAssertNotNil(deleteToken);
+    [self waitForExpectations:@[ deleteCompletion ] timeout:2.0];
+    XCTAssertNil(receivedError);
+    XCTAssertEqual(mutationResult.outcome, PRInstanceResourceMutationOutcomeSucceeded);
+    XCTAssertEqual(mutationResult.action, PRInstanceResourceActionDelete);
+    XCTAssertTrue(mutationResult.partialChangesRolledBack == NO);
+
+    XCTestExpectation *importCompletion = [self expectationWithDescription:@"Import completed"];
+    mutationResult = nil;
+    receivedError = nil;
+    PRBridgeObservationToken *importToken = [bridge
+        applyInstanceResourceActionWithIdentifier:@"fixture.one"
+                                              kind:PRInstanceResourceKindMods
+                                            action:PRInstanceResourceActionImport
+                                  resourceIdentifier:@"import.zip"
+                                         sourceURL:sourceURL
+                                         confirmed:NO
+                                         completion:^(PRInstanceResourceMutationResult *result, PRBridgeError *error) {
+        mutationResult = result;
+        receivedError = error;
+        [importCompletion fulfill];
+    }];
+    XCTAssertNotNil(importToken);
+    [self waitForExpectations:@[ importCompletion ] timeout:2.0];
+    XCTAssertNil(receivedError);
+    XCTAssertEqual(mutationResult.action, PRInstanceResourceActionImport);
+    XCTAssertEqualObjects(mutationResult.resourceIdentifier, @"import.zip");
+
+    XCTestExpectation *missingCompletion = [self expectationWithDescription:@"Missing resource mutation completed"];
+    mutationResult = nil;
+    receivedError = nil;
+    PRBridgeObservationToken *missingToken = [bridge
+        applyInstanceResourceActionWithIdentifier:@"fixture.one"
+                                              kind:PRInstanceResourceKindMods
+                                            action:PRInstanceResourceActionReveal
+                                  resourceIdentifier:@"missing-resource"
+                                         sourceURL:nil
+                                         confirmed:NO
+                                         completion:^(PRInstanceResourceMutationResult *result, PRBridgeError *error) {
+        mutationResult = result;
+        receivedError = error;
+        [missingCompletion fulfill];
+    }];
+    XCTAssertNotNil(missingToken);
+    [self waitForExpectations:@[ missingCompletion ] timeout:2.0];
+    XCTAssertNil(receivedError);
+    XCTAssertEqual(mutationResult.outcome, PRInstanceResourceMutationOutcomeUnknownResource);
+    XCTAssertTrue(mutationResult.partialChangesRolledBack);
+
+    XCTAssertTrue(*loadedRootMatches);
+    XCTAssertTrue(*mutationRootMatches);
+    XCTAssertTrue(*mutationFilesOk);
+    XCTAssertFalse([[NSFileManager defaultManager] fileExistsAtPath:[resourceDirectoryURL URLByAppendingPathComponent:@"mod.one"].path]);
+    XCTAssertTrue([[NSFileManager defaultManager] fileExistsAtPath:[resourceDirectoryURL URLByAppendingPathComponent:@"import.zip"].path]);
+    XCTAssertEqual(*resourceCalls,
+                   (std::vector<std::string>{ "fixture.one:0", "empty-instance:4" }));
+    XCTAssertEqual(mutationCalls->size(), (NSUInteger)3);
+    XCTAssertTrue(mutationCalls->at(0).ends_with(":mod.one:confirmed:"));
+    const std::string importMutationSuffix = std::string(":import.zip:unconfirmed:") + sourceURL.path.UTF8String;
+    XCTAssertTrue(mutationCalls->at(1).ends_with(importMutationSuffix));
+    XCTAssertTrue(mutationCalls->at(2).ends_with(":missing-resource:unconfirmed:"));
+}
+
+- (void)testFacadeResourceMutationCancellationSuppressesQueuedCompletion
+{
+    dispatch_semaphore_t mutatorEntered = dispatch_semaphore_create(0);
+    dispatch_semaphore_t releaseMutator = dispatch_semaphore_create(0);
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.mutateInstanceResource = [mutatorEntered, releaseMutator](
+                                             const std::filesystem::path&,
+                                             const std::string& identifier,
+                                             FrontendInstanceResourceKind kind,
+                                             const FrontendInstanceResourceMutationRequest& request) {
+        dispatch_semaphore_signal(mutatorEntered);
+        dispatch_semaphore_wait(releaseMutator, DISPATCH_TIME_FOREVER);
+        return FrontendInstanceResourceMutationResult{
+            kind,
+            request.action,
+            FrontendInstanceResourceMutationOutcome::Succeeded,
+            identifier,
+            request.resourceIdentifier,
+            "instance.resource.updated",
+            "fixture resource mutation succeeded",
+            false,
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    XCTestExpectation *completion = [self expectationWithDescription:@"Cancelled resource completion"];
+    completion.inverted = YES;
+    PRBridgeObservationToken *token = [bridge
+        applyInstanceResourceActionWithIdentifier:@"fixture.one"
+                                              kind:PRInstanceResourceKindMods
+                                            action:PRInstanceResourceActionReveal
+                                  resourceIdentifier:@"mod.one"
+                                         sourceURL:nil
+                                         confirmed:NO
+                                         completion:^(__unused PRInstanceResourceMutationResult *result,
+                                                      __unused PRBridgeError *error) {
+        [completion fulfill];
+    }];
+    XCTAssertNotNil(token);
+    XCTAssertEqual(dispatch_semaphore_wait(mutatorEntered, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)), 0);
+    XCTAssertTrue([token cancel]);
+    dispatch_semaphore_signal(releaseMutator);
+    [self waitForExpectations:@[ completion ] timeout:0.2];
+}
+
 - (void)testFacadeSettingsAreConvertedAndConfirmedOnMainActor
 {
     auto loadedRootMatches = std::make_shared<std::atomic<bool>>(true);

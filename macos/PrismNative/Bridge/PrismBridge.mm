@@ -337,6 +337,188 @@ NSArray<PRInstanceComponent *> *componentsFromFacadeSnapshots(
     return [converted copy];
 }
 
+PRInstanceResourceKind resourceKindFromFacadeKind(FrontendInstanceResourceKind kind)
+{
+    switch (kind) {
+        case FrontendInstanceResourceKind::Mods:
+            return PRInstanceResourceKindMods;
+        case FrontendInstanceResourceKind::ResourcePacks:
+            return PRInstanceResourceKindResourcePacks;
+        case FrontendInstanceResourceKind::ShaderPacks:
+            return PRInstanceResourceKindShaderPacks;
+        case FrontendInstanceResourceKind::TexturePacks:
+            return PRInstanceResourceKindTexturePacks;
+        case FrontendInstanceResourceKind::DataPacks:
+            return PRInstanceResourceKindDataPacks;
+    }
+    throw std::invalid_argument("Facade returned an unknown resource kind");
+}
+
+FrontendInstanceResourceKind resourceKindFromFoundationKind(PRInstanceResourceKind kind)
+{
+    switch (kind) {
+        case PRInstanceResourceKindMods:
+            return FrontendInstanceResourceKind::Mods;
+        case PRInstanceResourceKindResourcePacks:
+            return FrontendInstanceResourceKind::ResourcePacks;
+        case PRInstanceResourceKindShaderPacks:
+            return FrontendInstanceResourceKind::ShaderPacks;
+        case PRInstanceResourceKindTexturePacks:
+            return FrontendInstanceResourceKind::TexturePacks;
+        case PRInstanceResourceKindDataPacks:
+            return FrontendInstanceResourceKind::DataPacks;
+    }
+    throw std::invalid_argument("Resource operations require a known resource kind");
+}
+
+PRInstanceResourceAction resourceActionFromFacadeAction(FrontendInstanceResourceAction action)
+{
+    switch (action) {
+        case FrontendInstanceResourceAction::Enable:
+            return PRInstanceResourceActionEnable;
+        case FrontendInstanceResourceAction::Disable:
+            return PRInstanceResourceActionDisable;
+        case FrontendInstanceResourceAction::Delete:
+            return PRInstanceResourceActionDelete;
+        case FrontendInstanceResourceAction::Import:
+            return PRInstanceResourceActionImport;
+        case FrontendInstanceResourceAction::Reveal:
+            return PRInstanceResourceActionReveal;
+    }
+    throw std::invalid_argument("Facade returned an unknown resource action");
+}
+
+FrontendInstanceResourceAction resourceActionFromFoundationAction(PRInstanceResourceAction action)
+{
+    switch (action) {
+        case PRInstanceResourceActionEnable:
+            return FrontendInstanceResourceAction::Enable;
+        case PRInstanceResourceActionDisable:
+            return FrontendInstanceResourceAction::Disable;
+        case PRInstanceResourceActionDelete:
+            return FrontendInstanceResourceAction::Delete;
+        case PRInstanceResourceActionImport:
+            return FrontendInstanceResourceAction::Import;
+        case PRInstanceResourceActionReveal:
+            return FrontendInstanceResourceAction::Reveal;
+    }
+    throw std::invalid_argument("Resource operations require a known action");
+}
+
+PRInstanceResourceMutationOutcome resourceMutationOutcomeFromFacadeOutcome(
+    FrontendInstanceResourceMutationOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendInstanceResourceMutationOutcome::Succeeded:
+            return PRInstanceResourceMutationOutcomeSucceeded;
+        case FrontendInstanceResourceMutationOutcome::UnknownInstance:
+            return PRInstanceResourceMutationOutcomeUnknownInstance;
+        case FrontendInstanceResourceMutationOutcome::UnknownResource:
+            return PRInstanceResourceMutationOutcomeUnknownResource;
+        case FrontendInstanceResourceMutationOutcome::Rejected:
+            return PRInstanceResourceMutationOutcomeRejected;
+        case FrontendInstanceResourceMutationOutcome::Failed:
+            return PRInstanceResourceMutationOutcomeFailed;
+    }
+    throw std::invalid_argument("Facade returned an unknown resource mutation outcome");
+}
+
+bool isKnownResourceKind(PRInstanceResourceKind kind)
+{
+    switch (kind) {
+        case PRInstanceResourceKindMods:
+        case PRInstanceResourceKindResourcePacks:
+        case PRInstanceResourceKindShaderPacks:
+        case PRInstanceResourceKindTexturePacks:
+        case PRInstanceResourceKindDataPacks:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownResourceAction(PRInstanceResourceAction action)
+{
+    switch (action) {
+        case PRInstanceResourceActionEnable:
+        case PRInstanceResourceActionDisable:
+        case PRInstanceResourceActionDelete:
+        case PRInstanceResourceActionImport:
+        case PRInstanceResourceActionReveal:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownResourceMutationOutcome(PRInstanceResourceMutationOutcome outcome)
+{
+    switch (outcome) {
+        case PRInstanceResourceMutationOutcomeSucceeded:
+        case PRInstanceResourceMutationOutcomeUnknownInstance:
+        case PRInstanceResourceMutationOutcomeUnknownResource:
+        case PRInstanceResourceMutationOutcomeRejected:
+        case PRInstanceResourceMutationOutcomeFailed:
+            return true;
+    }
+    return false;
+}
+
+NSArray<PRInstanceResource *> *resourcesFromFacadeSnapshots(
+    const std::vector<FrontendInstanceResourceSnapshot>& snapshots)
+{
+    NSMutableArray<PRInstanceResource *> *converted = [NSMutableArray arrayWithCapacity:snapshots.size()];
+    for (const FrontendInstanceResourceSnapshot& snapshot : snapshots) {
+        NSArray<NSString *> *problemDescriptions = componentProblemDescriptionsFromFacade(snapshot.problemDescriptions);
+        PRInstanceResource *resource = [[PRInstanceResource alloc]
+            initWithIdentifier:foundationStringFromUTF8(snapshot.id)
+                           name:foundationStringFromUTF8(snapshot.name)
+                        version:foundationStringFromUTF8AllowEmpty(snapshot.version)
+                       fileName:foundationStringFromUTF8(snapshot.fileName)
+                       provider:foundationStringFromUTF8AllowEmpty(snapshot.provider)
+                           kind:resourceKindFromFacadeKind(snapshot.kind)
+                        enabled:snapshot.enabled
+                 canBeToggled:snapshot.canBeToggled
+                 canBeDeleted:snapshot.canBeDeleted
+                   isDirectory:snapshot.isDirectory
+                   hasMetadata:snapshot.hasMetadata
+            problemDescriptions:problemDescriptions];
+        if (!resource) {
+            throw std::invalid_argument("Facade returned an invalid instance resource");
+        }
+        [converted addObject:resource];
+    }
+    return [converted copy];
+}
+
+PRInstanceResourceMutationResult *resourceMutationResultFromFacadeResult(
+    const FrontendInstanceResourceMutationResult& result)
+{
+    PRInstanceResourceMutationResult *converted = [[PRInstanceResourceMutationResult alloc]
+        initWithInstanceIdentifier:foundationStringFromUTF8(result.instanceIdentifier)
+                  resourceIdentifier:foundationStringFromUTF8(result.resourceIdentifier)
+                                kind:resourceKindFromFacadeKind(result.kind)
+                              action:resourceActionFromFacadeAction(result.action)
+                            outcome:resourceMutationOutcomeFromFacadeOutcome(result.outcome)
+                     localizationKey:foundationStringFromUTF8(result.localizationKey)
+                      diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+           partialChangesRolledBack:result.partialChangesRolledBack];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid resource mutation result");
+    }
+    return converted;
+}
+
+std::filesystem::path resourceSourcePathFromFoundation(NSURL *sourceURL)
+{
+    if (!sourceURL || !sourceURL.isFileURL || sourceURL.path.length == 0 || !sourceURL.path.isAbsolutePath) {
+        throw std::invalid_argument("Resource import requires an absolute local file URL");
+    }
+    const char *fileSystemRepresentation = sourceURL.fileSystemRepresentation;
+    if (!fileSystemRepresentation || fileSystemRepresentation[0] == '\0') {
+        throw std::invalid_argument("Resource import requires a filesystem representation");
+    }
+    return std::filesystem::path(fileSystemRepresentation);
+}
+
 PRInstanceJoinTarget joinTargetFromFacadeTarget(FrontendInstanceJoinTarget target)
 {
     switch (target) {
@@ -1077,6 +1259,56 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@interface PRBridgeResourcesResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithResources:(nullable NSArray<PRInstanceResource *> *)resources
+                             error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly, nullable) NSArray<PRInstanceResource *> *resources;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeResourcesResult
+
+- (instancetype)initWithResources:(NSArray<PRInstanceResource *> *)resources error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _resources = [resources copy];
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
+@interface PRBridgeResourceMutationResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithResult:(nullable PRInstanceResourceMutationResult *)result
+                           error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRInstanceResourceMutationResult *result;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeResourceMutationResult
+
+- (instancetype)initWithResult:(PRInstanceResourceMutationResult *)result error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _result = result;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
 @interface PRBridgeCommandResult : NSObject
 
 - (instancetype)init NS_UNAVAILABLE;
@@ -1312,6 +1544,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *changeRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *detailsRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *componentsRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *resourcesRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *resourceMutationRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *taskRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *taskLogRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *taskCancellationRequestStates;
@@ -1333,6 +1567,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 - (void)removeChangeRequest:(PRBridgeObservationState *)request;
 - (void)removeDetailsRequest:(PRBridgeObservationState *)request;
 - (void)removeComponentsRequest:(PRBridgeObservationState *)request;
+- (void)removeResourcesRequest:(PRBridgeObservationState *)request;
+- (void)removeResourceMutationRequest:(PRBridgeObservationState *)request;
 - (void)removeTaskRequest:(PRBridgeObservationState *)request;
 - (void)removeTaskLogRequest:(PRBridgeObservationState *)request;
 - (void)removeTaskCancellationRequest:(PRBridgeObservationState *)request;
@@ -1390,6 +1626,36 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, assign, readwrite) BOOL custom;
 @property(nonatomic, assign, readwrite) PRInstanceComponentProblemSeverity problemSeverity;
 @property(nonatomic, copy, readwrite) NSArray<NSString *> *problemDescriptions;
+
+@end
+
+@interface PRInstanceResource ()
+
+@property(nonatomic, copy, readwrite) NSString *identifier;
+@property(nonatomic, copy, readwrite) NSString *name;
+@property(nonatomic, copy, readwrite) NSString *version;
+@property(nonatomic, copy, readwrite) NSString *fileName;
+@property(nonatomic, copy, readwrite) NSString *provider;
+@property(nonatomic, assign, readwrite) PRInstanceResourceKind kind;
+@property(nonatomic, assign, readwrite) BOOL enabled;
+@property(nonatomic, assign, readwrite) BOOL canBeToggled;
+@property(nonatomic, assign, readwrite) BOOL canBeDeleted;
+@property(nonatomic, assign, readwrite) BOOL directory;
+@property(nonatomic, assign, readwrite) BOOL hasMetadata;
+@property(nonatomic, copy, readwrite) NSArray<NSString *> *problemDescriptions;
+
+@end
+
+@interface PRInstanceResourceMutationResult ()
+
+@property(nonatomic, copy, readwrite) NSString *instanceIdentifier;
+@property(nonatomic, copy, readwrite) NSString *resourceIdentifier;
+@property(nonatomic, assign, readwrite) PRInstanceResourceKind kind;
+@property(nonatomic, assign, readwrite) PRInstanceResourceAction action;
+@property(nonatomic, assign, readwrite) PRInstanceResourceMutationOutcome outcome;
+@property(nonatomic, copy, readwrite, nullable) NSString *localizationKey;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readwrite) BOOL partialChangesRolledBack;
 
 @end
 
@@ -1680,6 +1946,90 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.custom = custom;
         self.problemSeverity = problemSeverity;
         self.problemDescriptions = copiedDescriptions;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRInstanceResource
+
+- (instancetype)initWithIdentifier:(NSString *)identifier
+                               name:(NSString *)name
+                            version:(NSString *)version
+                           fileName:(NSString *)fileName
+                           provider:(NSString *)provider
+                               kind:(PRInstanceResourceKind)kind
+                            enabled:(BOOL)enabled
+                     canBeToggled:(BOOL)canBeToggled
+                     canBeDeleted:(BOOL)canBeDeleted
+                       isDirectory:(BOOL)isDirectory
+                       hasMetadata:(BOOL)hasMetadata
+                problemDescriptions:(NSArray<NSString *> *)problemDescriptions
+{
+    NSArray<NSString *> *copiedDescriptions = [problemDescriptions isKindOfClass:NSArray.class]
+        ? [problemDescriptions copy]
+        : nil;
+    if (!isNonEmptyString(identifier) || !isNonEmptyString(name) || !isNonEmptyString(fileName)
+        || ![version isKindOfClass:NSString.class] || ![provider isKindOfClass:NSString.class]
+        || !isKnownResourceKind(kind) || (isDirectory && canBeToggled) || !copiedDescriptions) {
+        return nil;
+    }
+    for (id description in copiedDescriptions) {
+        if (![description isKindOfClass:NSString.class]) {
+            return nil;
+        }
+    }
+
+    self = [super init];
+    if (self) {
+        self.identifier = [identifier copy];
+        self.name = [name copy];
+        self.version = [version copy];
+        self.fileName = [fileName copy];
+        self.provider = [provider copy];
+        self.kind = kind;
+        self.enabled = enabled;
+        self.canBeToggled = canBeToggled;
+        self.canBeDeleted = canBeDeleted;
+        self.directory = isDirectory;
+        self.hasMetadata = hasMetadata;
+        self.problemDescriptions = copiedDescriptions;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRInstanceResourceMutationResult
+
+- (instancetype)initWithInstanceIdentifier:(NSString *)instanceIdentifier
+                          resourceIdentifier:(NSString *)resourceIdentifier
+                                        kind:(PRInstanceResourceKind)kind
+                                      action:(PRInstanceResourceAction)action
+                                     outcome:(PRInstanceResourceMutationOutcome)outcome
+                              localizationKey:(NSString *)localizationKey
+                               diagnosticText:(NSString *)diagnosticText
+                    partialChangesRolledBack:(BOOL)partialChangesRolledBack
+{
+    if (!isNonEmptyString(instanceIdentifier) || !isNonEmptyString(resourceIdentifier)
+        || !isKnownResourceKind(kind) || !isKnownResourceAction(action)
+        || !isKnownResourceMutationOutcome(outcome)
+        || (localizationKey && ![localizationKey isKindOfClass:NSString.class])
+        || (diagnosticText && ![diagnosticText isKindOfClass:NSString.class])) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.instanceIdentifier = [instanceIdentifier copy];
+        self.resourceIdentifier = [resourceIdentifier copy];
+        self.kind = kind;
+        self.action = action;
+        self.outcome = outcome;
+        self.localizationKey = [localizationKey copy];
+        self.diagnosticText = [diagnosticText copy];
+        self.partialChangesRolledBack = partialChangesRolledBack;
     }
     return self;
 }
@@ -2200,6 +2550,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.changeRequestStates = [NSMutableArray array];
         self.detailsRequestStates = [NSMutableArray array];
         self.componentsRequestStates = [NSMutableArray array];
+        self.resourcesRequestStates = [NSMutableArray array];
+        self.resourceMutationRequestStates = [NSMutableArray array];
         self.taskRequestStates = [NSMutableArray array];
         self.taskLogRequestStates = [NSMutableArray array];
         self.taskCancellationRequestStates = [NSMutableArray array];
@@ -2630,6 +2982,192 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
         if (!state.isCancelled) {
             [state deliverOnMainActor:[[PRBridgeComponentsResult alloc] initWithComponents:components error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
+- (PRBridgeObservationToken *)loadInstanceResourcesWithIdentifier:(NSString *)identifier
+                                                               kind:(PRInstanceResourceKind)kind
+                                                         completion:(PRInstanceResourcesCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    NSString *identifierCopy = [identifier copy];
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeResourcesResult *resourcesResult = (PRBridgeResourcesResult *)value;
+        [weakRequest cancel];
+        completion(resourcesResult.resources, resourcesResult.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeResourcesRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.resourcesRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        NSArray<PRInstanceResource *> *resources = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    const std::string instanceIdentifier = stableIdentifierFromFoundation(identifierCopy);
+                    const FrontendInstanceResourceKind resourceKind = resourceKindFromFoundationKind(kind);
+                    const std::optional<std::vector<FrontendInstanceResourceSnapshot>> snapshots =
+                        bridge->_facade->instanceResources(instanceIdentifier, resourceKind);
+                    if (!snapshots.has_value()) {
+                        error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                                   diagnosticText:@"Instance resources are not available"
+                                               substitutionValues:@{ @"instanceIdentifier": identifierCopy ?: @"" }];
+                    } else {
+                        resources = resourcesFromFacadeSnapshots(*snapshots);
+                    }
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid instance resources request"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Instance resources operation cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Instance resources unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown instance resources failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeResourcesResult alloc] initWithResources:resources error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
+- (PRBridgeObservationToken *)applyInstanceResourceActionWithIdentifier:(NSString *)identifier
+                                                                    kind:(PRInstanceResourceKind)kind
+                                                                  action:(PRInstanceResourceAction)action
+                                                        resourceIdentifier:(NSString *)resourceIdentifier
+                                                               sourceURL:(NSURL *)sourceURL
+                                                               confirmed:(BOOL)confirmed
+                                                               completion:(PRInstanceResourceMutationCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    NSString *identifierCopy = [identifier copy];
+    NSString *resourceIdentifierCopy = [resourceIdentifier copy];
+    NSURL *sourceURLCopy = [sourceURL copy];
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeResourceMutationResult *mutationResult = (PRBridgeResourceMutationResult *)value;
+        [weakRequest cancel];
+        completion(mutationResult.result, mutationResult.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeResourceMutationRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.resourceMutationRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRInstanceResourceMutationResult *result = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    const std::string instanceIdentifier = stableIdentifierFromFoundation(identifierCopy);
+                    const std::string resourceIdentifier = stableIdentifierFromFoundation(resourceIdentifierCopy);
+                    const FrontendInstanceResourceKind resourceKind = resourceKindFromFoundationKind(kind);
+                    const FrontendInstanceResourceAction resourceAction = resourceActionFromFoundationAction(action);
+                    FrontendInstanceResourceMutationRequest requestValue;
+                    requestValue.action = resourceAction;
+                    requestValue.resourceIdentifier = resourceIdentifier;
+                    requestValue.confirmed = confirmed;
+                    if (sourceURLCopy) {
+                        requestValue.sourcePath = resourceSourcePathFromFoundation(sourceURLCopy);
+                    }
+                    result = resourceMutationResultFromFacadeResult(
+                        bridge->_facade->mutateInstanceResource(instanceIdentifier, resourceKind, requestValue));
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid instance resource action"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Instance resource action cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Instance resource action unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown instance resource action failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeResourceMutationResult alloc] initWithResult:result error:error]];
         }
     });
 
@@ -3343,6 +3881,26 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.observationLock unlock];
 }
 
+- (void)removeResourcesRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.resourcesRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.resourcesRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
+- (void)removeResourceMutationRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.resourceMutationRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.resourceMutationRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
 - (void)removeTaskRequest:(PRBridgeObservationState *)request
 {
     [self.observationLock lock];
@@ -3424,6 +3982,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [observations addObjectsFromArray:self.changeRequestStates];
     [observations addObjectsFromArray:self.detailsRequestStates];
     [observations addObjectsFromArray:self.componentsRequestStates];
+    [observations addObjectsFromArray:self.resourcesRequestStates];
+    [observations addObjectsFromArray:self.resourceMutationRequestStates];
     [observations addObjectsFromArray:self.taskRequestStates];
     [observations addObjectsFromArray:self.taskLogRequestStates];
     [observations addObjectsFromArray:self.taskCancellationRequestStates];
@@ -3438,6 +3998,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.changeRequestStates removeAllObjects];
     [self.detailsRequestStates removeAllObjects];
     [self.componentsRequestStates removeAllObjects];
+    [self.resourcesRequestStates removeAllObjects];
+    [self.resourceMutationRequestStates removeAllObjects];
     [self.taskRequestStates removeAllObjects];
     [self.taskLogRequestStates removeAllObjects];
     [self.taskCancellationRequestStates removeAllObjects];

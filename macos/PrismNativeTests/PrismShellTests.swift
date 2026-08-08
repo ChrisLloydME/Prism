@@ -85,6 +85,38 @@ final class PrismShellTests: XCTestCase {
         )
     }
 
+    private func makeInstanceResource(
+        identifier: String,
+        name: String,
+        version: String,
+        fileName: String,
+        provider: String = "Fixture",
+        kind: PRInstanceResourceKind = .mods,
+        enabled: Bool = true,
+        canBeToggled: Bool = true,
+        canBeDeleted: Bool = true,
+        isDirectory: Bool = false,
+        hasMetadata: Bool = true,
+        problemDescriptions: [String] = []
+    ) throws -> PRInstanceResource {
+        try XCTUnwrap(
+            PRInstanceResource(
+                identifier: identifier,
+                name: name,
+                version: version,
+                fileName: fileName,
+                provider: provider,
+                kind: kind,
+                enabled: enabled,
+                canBeToggled: canBeToggled,
+                canBeDeleted: canBeDeleted,
+                isDirectory: isDirectory,
+                hasMetadata: hasMetadata,
+                problemDescriptions: problemDescriptions
+            )
+        )
+    }
+
     func testSidebarManifestHasStableSelectionAndAccessibilityMetadata() {
         let items = PrismShellSidebarItem.allCases
 
@@ -452,6 +484,225 @@ final class PrismShellTests: XCTestCase {
         XCTAssertFalse(contentSource.contains("Canvas("))
         XCTAssertFalse(contentSource.contains("draw("))
         XCTAssertFalse(contentSource.contains("Path("))
+        XCTAssertFalse(shellModelSource.contains("QWidget"))
+        XCTAssertFalse(shellModelSource.contains("QDialog"))
+        XCTAssertFalse(shellModelSource.contains("Unmanaged"))
+        XCTAssertFalse(shellModelSource.contains("UnsafeMutable"))
+    }
+
+    func testInstanceResourcesModelPreservesOrderAndRequiresConfirmedActions() throws {
+        var loadRequests: [(String, PrismInstanceResourceKind)] = []
+        var mutationRequests: [(String, PrismInstanceResourceKind, PrismInstanceResourceMutationIntent)] = []
+        let model = PrismInstanceResourcesModel(
+            onLoad: { loadRequests.append(($0, $1)) },
+            onMutate: { mutationRequests.append(($0, $1, $2)) }
+        )
+
+        XCTAssertTrue(model.beginLoading(identifier: " fixture.one ", kind: .mods))
+        XCTAssertEqual(model.state, .loading(identifier: "fixture.one", kind: .mods))
+        let mod = try makeInstanceResource(
+            identifier: "mod.one",
+            name: "Fixture Mod",
+            version: "1.0",
+            fileName: "fixture-mod.jar"
+        )
+        let folder = try makeInstanceResource(
+            identifier: "mod.folder",
+            name: "Fixture Folder",
+            version: "",
+            fileName: "fixture-folder",
+            provider: "",
+            canBeToggled: false,
+            isDirectory: true,
+            hasMetadata: false,
+            problemDescriptions: ["Folder resources cannot be toggled."]
+        )
+
+        XCTAssertTrue(model.apply(resources: [mod, folder]))
+        XCTAssertEqual(model.resources.map(\.id), ["mod.one", "mod.folder"])
+        XCTAssertEqual(model.resources[1].displayVersion, "Not Available")
+        XCTAssertEqual(model.resources[1].stateKey, "Folder")
+        model.setSearchText("fixture-mod.jar")
+        XCTAssertEqual(model.visibleResources.map(\.id), ["mod.one"])
+        model.setSearchText("cannot be toggled")
+        XCTAssertEqual(model.visibleResources.map(\.id), ["mod.folder"])
+        model.selectResource("mod.folder")
+        XCTAssertEqual(model.selectedResourceID, "mod.folder")
+        model.setSearchText("mod.one")
+        XCTAssertNil(model.selectedResourceID)
+
+        model.setSearchText("")
+        XCTAssertTrue(model.setEnabled(false, for: "mod.one"))
+        XCTAssertEqual(mutationRequests.last?.2.action, .disable)
+        XCTAssertFalse(mutationRequests.last?.2.confirmed == true)
+        XCTAssertEqual(model.resources[0].enabled, true)
+
+        let disableResult = try XCTUnwrap(
+            PRInstanceResourceMutationResult(
+                instanceIdentifier: "fixture.one",
+                resourceIdentifier: "mod.one",
+                kind: .mods,
+                action: .disable,
+                outcome: .succeeded,
+                localizationKey: "instance.resource.updated",
+                diagnosticText: "confirmed disable",
+                partialChangesRolledBack: false
+            )
+        )
+        XCTAssertTrue(model.apply(mutationResult: disableResult, instanceIdentifier: "fixture.one"))
+        XCTAssertEqual(model.state, .loading(identifier: "fixture.one", kind: .mods))
+        XCTAssertEqual(loadRequests.count, 2)
+        XCTAssertEqual(loadRequests.first?.0, "fixture.one")
+        XCTAssertEqual(loadRequests.first?.1, .mods)
+
+        XCTAssertTrue(model.apply(resources: [mod, folder]))
+        XCTAssertTrue(model.requestDelete("mod.one"))
+        XCTAssertEqual(model.pendingDeleteResourceID, "mod.one")
+        XCTAssertTrue(model.confirmDelete())
+        XCTAssertEqual(mutationRequests.last?.2.action, .delete)
+        XCTAssertTrue(mutationRequests.last?.2.confirmed == true)
+
+        let deleteFailure = try XCTUnwrap(
+            PRInstanceResourceMutationResult(
+                instanceIdentifier: "fixture.one",
+                resourceIdentifier: "mod.one",
+                kind: .mods,
+                action: .delete,
+                outcome: .unknownResource,
+                localizationKey: "instance.resource.missing",
+                diagnosticText: "fixture resource is missing",
+                partialChangesRolledBack: true
+            )
+        )
+        XCTAssertTrue(model.apply(mutationResult: deleteFailure, instanceIdentifier: "fixture.one"))
+        XCTAssertEqual(model.resources.map(\.id), ["mod.one", "mod.folder"])
+        XCTAssertEqual(model.mutationFailure?.localizationKey, "instance.resource.missing")
+        XCTAssertTrue(model.retry())
+        XCTAssertEqual(mutationRequests.last?.2.action, .delete)
+        model.dismissMutationFailure()
+        XCTAssertNil(model.mutationFailure)
+
+        let importURL = URL(fileURLWithPath: "/tmp/fixture-import.zip")
+        XCTAssertTrue(model.importResources(from: [importURL]))
+        XCTAssertEqual(mutationRequests.last?.2.action, .import)
+        XCTAssertEqual(mutationRequests.last?.2.sourceURL, importURL)
+        XCTAssertTrue(model.reveal("mod.folder"))
+        XCTAssertEqual(mutationRequests.last?.2.action, .reveal)
+    }
+
+    func testInstanceResourcesModelRejectsInvalidOrStaleResults() throws {
+        var mutationRequests: [PrismInstanceResourceMutationIntent] = []
+        let model = PrismInstanceResourcesModel(onMutate: { mutationRequests.append($2) })
+        XCTAssertTrue(model.beginLoading(identifier: "fixture.one", kind: .resourcePacks))
+        let resource = try makeInstanceResource(
+            identifier: "pack.one",
+            name: "Fixture Pack",
+            version: "1",
+            fileName: "fixture-pack.zip",
+            kind: .resourcePacks
+        )
+        XCTAssertTrue(model.apply(resources: [resource]))
+
+        let invalidIdentifier = try XCTUnwrap(
+            PRInstanceResource(
+                identifier: " ",
+                name: "Invalid",
+                version: "1",
+                fileName: "invalid.zip",
+                provider: "Fixture",
+                kind: .resourcePacks,
+                enabled: true,
+                canBeToggled: true,
+                canBeDeleted: true,
+                isDirectory: false,
+                hasMetadata: false,
+                problemDescriptions: []
+            )
+        )
+        XCTAssertFalse(model.apply(resources: [invalidIdentifier]))
+        XCTAssertEqual(model.resources.map(\.id), ["pack.one"])
+        XCTAssertFalse(model.requestDelete("missing"))
+        XCTAssertFalse(model.setEnabled(false, for: "missing"))
+        let staleError = try XCTUnwrap(
+            PRBridgeError(
+                code: .dataUnavailable,
+                localizationKey: "instance.resource.unavailable",
+                substitutionValues: ["instanceIdentifier": "other.instance"],
+                diagnosticText: "fixture resource unavailable",
+                recoveryKind: .retry,
+                partialChangesRolledBack: false
+            )
+        )
+        XCTAssertFalse(model.apply(error: staleError, instanceIdentifier: "other.instance", kind: .resourcePacks))
+
+        let wrongKind = try XCTUnwrap(
+            PRInstanceResource(
+                identifier: "mod.one",
+                name: "Wrong Kind",
+                version: "1",
+                fileName: "wrong.zip",
+                provider: "Fixture",
+                kind: .mods,
+                enabled: true,
+                canBeToggled: true,
+                canBeDeleted: true,
+                isDirectory: false,
+                hasMetadata: false,
+                problemDescriptions: []
+            )
+        )
+        XCTAssertFalse(model.apply(resources: [wrongKind]))
+        XCTAssertFalse(model.importResources(from: [URL(string: "https://example.com/resource.zip")!]))
+        XCTAssertTrue(mutationRequests.isEmpty)
+    }
+
+    func testInstanceResourcesSourceUsesNativeMutationRecoveryAPIs() throws {
+        let contentSource = try contentSource()
+        let shellModelSource = try shellModelSource()
+        let bridgeModelsSource = try bridgeModelsSource()
+
+        for requiredToken in [
+            "PrismInstanceResourcesView",
+            "Table(model.visibleResources, selection:",
+            "TableColumn(\"Name\")",
+            "Toggle(",
+            ".searchable(",
+            ".fileImporter(",
+            ".dropDestination(for: URL.self)",
+            ".confirmationDialog(",
+            ".alert(",
+            "role: .destructive",
+            "prism.instance-resources.import",
+            "prism.instance-resources.reveal",
+            "prism.instance-resources.delete",
+            ".accessibilityLabel(",
+            ".accessibilityValue(",
+            ".help("
+        ] {
+            XCTAssertTrue(contentSource.contains(requiredToken), "Missing native resource API: \(requiredToken)")
+        }
+
+        for requiredToken in [
+            "PrismInstanceResource",
+            "PrismInstanceResourcesModel",
+            "PrismInstanceResourcesState",
+            "PrismInstanceResourceMutationIntent",
+            "beginLoading(identifier: String, kind:",
+            "apply(resources bridgeResources:",
+            "setEnabled(_ enabled: Bool, for identifier:",
+            "requestDelete(",
+            "confirmDelete()",
+            "importResources(from urls:",
+            "reveal(",
+            "retry()",
+            "partialChangesRolledBack"
+        ] {
+            XCTAssertTrue(shellModelSource.contains(requiredToken), "Missing resource state contract: \(requiredToken)")
+        }
+        XCTAssertTrue(bridgeModelsSource.contains("PRInstanceResourceMutationResult"), "Missing bridge mutation result contract")
+
+        XCTAssertFalse(contentSource.contains("Canvas("))
+        XCTAssertFalse(contentSource.contains("draw("))
         XCTAssertFalse(shellModelSource.contains("QWidget"))
         XCTAssertFalse(shellModelSource.contains("QDialog"))
         XCTAssertFalse(shellModelSource.contains("Unmanaged"))
@@ -1343,6 +1594,15 @@ final class PrismShellTests: XCTestCase {
             .deletingLastPathComponent()
         let sourceURL = sourceRoot
             .appendingPathComponent("PrismNative/App/PrismShellModel.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private func bridgeModelsSource() throws -> String {
+        let sourceRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = sourceRoot
+            .appendingPathComponent("PrismNative/Bridge/PrismBridgeModels.h")
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }

@@ -127,6 +127,86 @@ typedef NS_ENUM(NSInteger, PRInstanceComponentProblemSeverity) {
 
 @end
 
+typedef NS_ENUM(NSInteger, PRInstanceResourceKind) {
+    PRInstanceResourceKindMods = 0,
+    PRInstanceResourceKindResourcePacks,
+    PRInstanceResourceKindShaderPacks,
+    PRInstanceResourceKindTexturePacks,
+    PRInstanceResourceKindDataPacks,
+};
+
+typedef NS_ENUM(NSInteger, PRInstanceResourceAction) {
+    PRInstanceResourceActionEnable = 0,
+    PRInstanceResourceActionDisable,
+    PRInstanceResourceActionDelete,
+    PRInstanceResourceActionImport,
+    PRInstanceResourceActionReveal,
+};
+
+typedef NS_ENUM(NSInteger, PRInstanceResourceMutationOutcome) {
+    PRInstanceResourceMutationOutcomeSucceeded = 0,
+    PRInstanceResourceMutationOutcomeUnknownInstance,
+    PRInstanceResourceMutationOutcomeUnknownResource,
+    PRInstanceResourceMutationOutcomeRejected,
+    PRInstanceResourceMutationOutcomeFailed,
+};
+
+/// Immutable external-resource data for native mods and pack tables.
+@interface PRInstanceResource : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithIdentifier:(NSString *)identifier
+                                        name:(NSString *)name
+                                     version:(NSString *)version
+                                    fileName:(NSString *)fileName
+                                    provider:(NSString *)provider
+                                        kind:(PRInstanceResourceKind)kind
+                                     enabled:(BOOL)enabled
+                              canBeToggled:(BOOL)canBeToggled
+                              canBeDeleted:(BOOL)canBeDeleted
+                                isDirectory:(BOOL)isDirectory
+                                hasMetadata:(BOOL)hasMetadata
+                         problemDescriptions:(NSArray<NSString *> *)problemDescriptions NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, copy, readonly) NSString *name;
+@property(nonatomic, copy, readonly) NSString *version;
+@property(nonatomic, copy, readonly) NSString *fileName;
+@property(nonatomic, copy, readonly) NSString *provider;
+@property(nonatomic, assign, readonly) PRInstanceResourceKind kind;
+@property(nonatomic, assign, readonly) BOOL enabled;
+@property(nonatomic, assign, readonly) BOOL canBeToggled;
+@property(nonatomic, assign, readonly) BOOL canBeDeleted;
+@property(nonatomic, assign, readonly) BOOL directory;
+@property(nonatomic, assign, readonly) BOOL hasMetadata;
+@property(nonatomic, copy, readonly) NSArray<NSString *> *problemDescriptions;
+
+@end
+
+/// Immutable confirmed result for one explicit resource action.
+@interface PRInstanceResourceMutationResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithInstanceIdentifier:(NSString *)instanceIdentifier
+                                      resourceIdentifier:(NSString *)resourceIdentifier
+                                                    kind:(PRInstanceResourceKind)kind
+                                                  action:(PRInstanceResourceAction)action
+                                                outcome:(PRInstanceResourceMutationOutcome)outcome
+                                         localizationKey:(nullable NSString *)localizationKey
+                                          diagnosticText:(nullable NSString *)diagnosticText
+                               partialChangesRolledBack:(BOOL)partialChangesRolledBack NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *instanceIdentifier;
+@property(nonatomic, copy, readonly) NSString *resourceIdentifier;
+@property(nonatomic, assign, readonly) PRInstanceResourceKind kind;
+@property(nonatomic, assign, readonly) PRInstanceResourceAction action;
+@property(nonatomic, assign, readonly) PRInstanceResourceMutationOutcome outcome;
+@property(nonatomic, copy, readonly, nullable) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL partialChangesRolledBack;
+
+@end
+
 /// Immutable result for a fixture-safe launch or stop intent.
 @interface PRInstanceCommandResult : NSObject
 

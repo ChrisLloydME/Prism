@@ -1,11 +1,13 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @StateObject private var shellModel = PrismShellModel()
     @StateObject private var instanceDetailsModel = PrismInstanceDetailsModel()
     @StateObject private var instanceSettingsModel = PrismInstanceSettingsModel()
     @StateObject private var instanceComponentsModel = PrismInstanceComponentsModel()
+    @StateObject private var instanceResourcesModel = PrismInstanceResourcesModel()
     @StateObject private var logModel = PrismTaskLogPresentationModel()
     @ObservedObject private var commandModel: PrismCommandModel
     @ObservedObject private var taskModel: PrismTaskPresentationModel
@@ -63,7 +65,8 @@ struct ContentView: View {
                     PrismInstanceDetailsView(
                         model: instanceDetailsModel,
                         settingsModel: instanceSettingsModel,
-                        componentsModel: instanceComponentsModel
+                        componentsModel: instanceComponentsModel,
+                        resourcesModel: instanceResourcesModel
                     )
                 } else {
                     PrismShellDetailView(
@@ -373,6 +376,7 @@ private struct PrismInstanceDetailsView: View {
     @ObservedObject var model: PrismInstanceDetailsModel
     @ObservedObject var settingsModel: PrismInstanceSettingsModel
     @ObservedObject var componentsModel: PrismInstanceComponentsModel
+    @ObservedObject var resourcesModel: PrismInstanceResourcesModel
 
     var body: some View {
         switch model.state {
@@ -445,6 +449,14 @@ private struct PrismInstanceDetailsView: View {
                     .accessibilityLabel(Text("Open Versions and Components"))
                     .help(Text("Review the ordered versions and components for this instance."))
                     .accessibilityIdentifier("prism.instance-details.components-link")
+                    NavigationLink {
+                        PrismInstanceResourcesView(model: resourcesModel)
+                    } label: {
+                        Label("Mods and Pack Resources", systemImage: "archivebox")
+                    }
+                    .accessibilityLabel(Text("Open Mods and Pack Resources"))
+                    .help(Text("Manage mods and pack resources with confirmed actions."))
+                    .accessibilityIdentifier("prism.instance-details.resources-link")
                 }
 
                 Section("Notes") {
@@ -576,6 +588,223 @@ struct PrismInstanceComponentsView: View {
             )
             .navigationTitle("Versions and Components")
             .accessibilityIdentifier("prism.instance-components.table")
+        }
+    }
+}
+
+@MainActor
+struct PrismInstanceResourcesView: View {
+    @ObservedObject var model: PrismInstanceResourcesModel
+    @State private var isImporterPresented = false
+
+    private var tableSelection: Binding<Set<String>> {
+        Binding(
+            get: {
+                guard let selectedResourceID = model.selectedResourceID else {
+                    return Set<String>()
+                }
+                return [selectedResourceID]
+            },
+            set: { model.selectResource($0.first) }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Picker(
+                "Resource Type",
+                selection: Binding(
+                    get: { model.kind },
+                    set: { model.selectKind($0) }
+                )
+            ) {
+                ForEach(PrismInstanceResourceKind.allCases, id: \.self) { kind in
+                    Text(LocalizedStringKey(kind.titleKey)).tag(kind)
+                }
+            }
+            .pickerStyle(.menu)
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            .accessibilityLabel(Text("Resource Type"))
+            .accessibilityIdentifier("prism.instance-resources.kind-picker")
+
+            switch model.state {
+            case .loading:
+                ProgressView("Loading Resources")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityLabel(Text("Loading Resources"))
+                    .accessibilityIdentifier("prism.instance-resources.loading-state")
+            case .empty:
+                ContentUnavailableView(
+                    "No Resources",
+                    systemImage: "archivebox",
+                    description: Text("This resource category has no installed entries.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("prism.instance-resources.empty-state")
+            case .failed(let failure):
+                ContentUnavailableView {
+                    Label(LocalizedStringKey(failure.localizationKey), systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(LocalizedStringKey(failure.localizationKey))
+                } actions: {
+                    if failure.recoveryAction == .retry {
+                        Button {
+                            _ = model.retry()
+                        } label: {
+                            Text(LocalizedStringKey(failure.recoveryAction.titleKey))
+                        }
+                        .accessibilityLabel(Text(LocalizedStringKey(failure.recoveryAction.accessibilityLabelKey)))
+                        .help(Text(LocalizedStringKey(failure.recoveryAction.helpKey)))
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("prism.instance-resources.failed-state")
+            case .content:
+                Table(model.visibleResources, selection: tableSelection) {
+                    TableColumn("Name") { resource in
+                        HStack(spacing: 6) {
+                            if !resource.problemDescriptions.isEmpty {
+                                Image(systemName: "exclamationmark.triangle")
+                                    .accessibilityLabel(Text("Resource Problem"))
+                            }
+                            Text(resource.name)
+                        }
+                        .accessibilityLabel(Text(resource.name))
+                        .accessibilityValue(Text(LocalizedStringKey(resource.accessibilityValueKey)))
+                        .accessibilityIdentifier("prism.instance-resource.\(resource.id).name")
+                    }
+                    TableColumn("Version") { resource in
+                        Text(resource.displayVersion)
+                            .textSelection(.enabled)
+                            .accessibilityLabel(Text("Version"))
+                            .accessibilityValue(Text(resource.displayVersion))
+                            .accessibilityIdentifier("prism.instance-resource.\(resource.id).version")
+                    }
+                    TableColumn("Provider") { resource in
+                        Text(resource.provider.isEmpty ? "Not Available" : resource.provider)
+                            .accessibilityLabel(Text("Provider"))
+                            .accessibilityIdentifier("prism.instance-resource.\(resource.id).provider")
+                    }
+                    TableColumn("State") { resource in
+                        Toggle(
+                            "Enabled",
+                            isOn: Binding(
+                                get: { resource.enabled },
+                                set: { _ = model.setEnabled($0, for: resource.id) }
+                            )
+                        )
+                        .labelsHidden()
+                        .disabled(!resource.canBeToggled)
+                        .accessibilityLabel(Text("Resource Enabled State"))
+                        .accessibilityValue(Text(LocalizedStringKey(resource.stateKey)))
+                        .help(Text("Enable or disable this resource after backend confirmation."))
+                        .accessibilityIdentifier("prism.instance-resource.\(resource.id).enabled")
+                    }
+                    TableColumn("File Name") { resource in
+                        Text(resource.fileName)
+                            .textSelection(.enabled)
+                            .accessibilityLabel(Text("File Name"))
+                            .accessibilityValue(Text(resource.fileName))
+                            .accessibilityIdentifier("prism.instance-resource.\(resource.id).file-name")
+                    }
+                }
+                .searchable(
+                    text: Binding(
+                        get: { model.searchText },
+                        set: { model.setSearchText($0) }
+                    ),
+                    prompt: Text("Search Resources")
+                )
+                .accessibilityIdentifier("prism.instance-resources.table")
+            }
+        }
+        .navigationTitle(LocalizedStringKey(model.kind.titleKey))
+        .toolbar {
+            ToolbarItemGroup {
+                Button {
+                    isImporterPresented = true
+                } label: {
+                    Label("Import Resource", systemImage: "plus")
+                }
+                .help(Text("Import one resource through the system file panel."))
+                .accessibilityIdentifier("prism.instance-resources.import")
+
+                if let selectedResourceID = model.selectedResourceID {
+                    Button {
+                        _ = model.reveal(selectedResourceID)
+                    } label: {
+                        Label("Reveal in Finder", systemImage: "folder")
+                    }
+                    .help(Text("Reveal the selected resource after backend confirmation."))
+                    .accessibilityIdentifier("prism.instance-resources.reveal")
+
+                    Button(role: .destructive) {
+                        _ = model.requestDelete(selectedResourceID)
+                    } label: {
+                        Label("Delete Resource", systemImage: "trash")
+                    }
+                    .help(Text("Request deletion after explicit confirmation."))
+                    .accessibilityIdentifier("prism.instance-resources.delete")
+                }
+            }
+        }
+        .fileImporter(
+            isPresented: $isImporterPresented,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: false
+        ) { result in
+            if case .success(let urls) = result {
+                _ = model.importResources(from: urls)
+            }
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            model.importResources(from: urls)
+        }
+        .confirmationDialog(
+            "Confirm Resource Removal",
+            isPresented: Binding(
+                get: { model.pendingDeleteResourceID != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        model.cancelDelete()
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                _ = model.confirmDelete()
+            }
+            Button("Cancel", role: .cancel) {
+                model.cancelDelete()
+            }
+        } message: {
+            Text("This may permanently remove the selected resource from the instance folder.")
+        }
+        .alert(
+            "Resource Action Failed",
+            isPresented: Binding(
+                get: { model.mutationFailure != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        model.dismissMutationFailure()
+                    }
+                }
+            )
+        ) {
+            if model.mutationFailure?.isRetryAvailable == true {
+                Button("Retry") {
+                    _ = model.retry()
+                }
+            }
+            Button("Dismiss", role: .cancel) {
+                model.dismissMutationFailure()
+            }
+        } message: {
+            if let failure = model.mutationFailure {
+                Text(LocalizedStringKey(failure.localizationKey))
+            }
         }
     }
 }
