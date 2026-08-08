@@ -428,4 +428,173 @@ final class PrismNativeInfrastructureTests: XCTestCase {
             )
         )
     }
+
+    func testM7AccountBoundaryContainsOnlyNonSecretValueDeclarationsAndFixtures() throws {
+        let repositoryRoot = URL(fileURLWithPath: "\(#filePath)")
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let facadeHeader = try readSource(
+            at: repositoryRoot.appendingPathComponent("launcher/frontend/FrontendFacade.h")
+        )
+        let bridgeModelsHeader = try readSource(
+            at: repositoryRoot.appendingPathComponent("macos/PrismNative/Bridge/PrismBridgeModels.h")
+        )
+        let accountSettingsSource = try readSource(
+            at: repositoryRoot.appendingPathComponent("macos/PrismNative/App/PrismAccountSettings.swift")
+        )
+        let authenticationSource = try readSource(
+            at: repositoryRoot.appendingPathComponent("macos/PrismNative/App/PrismAccountAuthentication.swift")
+        )
+        let identitySource = try readSource(
+            at: repositoryRoot.appendingPathComponent("macos/PrismNative/App/PrismOfflineLaunchIdentity.swift")
+        )
+
+        let facadeAccountContracts = try sourceSection(
+            facadeHeader,
+            from: "struct FrontendAccountSnapshot",
+            through: "enum class FrontendTaskState"
+        )
+        let bridgeAccountContracts = try sourceSection(
+            bridgeModelsHeader,
+            from: "@interface PRAccountSnapshot",
+            through: "@interface PRTaskStatus"
+        )
+        let forbiddenValueTokens = [
+            "accessToken", "access_token", "refreshToken", "refresh_token",
+            "authorizationCode", "authorization_code", "clientSecret", "client_secret",
+            "bearerToken", "bearer_token", "userCode", "user_code", "deviceCode", "device_code",
+            "sessionToken", "session_token", "profilePayload", "keychainItem", "password", "secret"
+        ]
+        let declarationSources = [
+            valueDeclarationLines(in: facadeAccountContracts).joined(separator: "\n"),
+            valueDeclarationLines(in: bridgeAccountContracts).joined(separator: "\n"),
+            declarationLines(in: accountSettingsSource).joined(separator: "\n"),
+            declarationLines(in: authenticationSource).joined(separator: "\n"),
+            declarationLines(in: identitySource).joined(separator: "\n"),
+        ]
+        for source in declarationSources {
+            for forbiddenValueToken in forbiddenValueTokens {
+                XCTAssertFalse(
+                    source.contains(forbiddenValueToken),
+                    "Secret-bearing value declaration crossed the M7 account boundary: \(forbiddenValueToken)"
+                )
+            }
+        }
+
+        let facadeSource = try readSource(
+            at: repositoryRoot.appendingPathComponent("launcher/frontend/FrontendFacade.cpp")
+        )
+        XCTAssertTrue(facadeSource.contains("privacyFilteredLogText"))
+        XCTAssertTrue(facadeSource.contains("credentialPattern"))
+        XCTAssertTrue(facadeSource.contains("<redacted>"))
+        XCTAssertTrue(facadeSource.contains("<data-root>"))
+
+        let cppContractTests = try readSource(
+            at: repositoryRoot.appendingPathComponent("launcher/frontend/FrontendFacadeContractTest.cpp")
+        )
+        let cppAuthenticationFixture = try sourceSection(
+            cppContractTests,
+            from: "std::size_t authenticationCalls",
+            through: "std::size_t offlineIdentityLoadCalls"
+        )
+        for forbiddenFixtureToken in [
+            "Bearer ", "access_token", "refresh_token", "authorizationCode", "device_code",
+            "login.microsoftonline.com", "login.live.com"
+        ] {
+            XCTAssertFalse(
+                cppAuthenticationFixture.contains(forbiddenFixtureToken),
+                "Authentication fixture contains forbidden secret/provider material: \(forbiddenFixtureToken)"
+            )
+        }
+        XCTAssertTrue(cppAuthenticationFixture.contains("https://login.example.invalid/device"))
+
+        let objcContractTests = try readSource(
+            at: repositoryRoot.appendingPathComponent("macos/PrismNativeTests/PrismBridgeFacadeIntegrationTests.mm")
+        )
+        let objcAuthenticationFixture = try sourceSection(
+            objcContractTests,
+            from: "- (void)testFacadeAuthenticationProgressAndResultConvertSyntheticProviderOnMainActor",
+            through: "- (void)testFacadeAuthenticationCancellationSuppressesQueuedProgressAndCompletion"
+        )
+        for forbiddenFixtureToken in [
+            "Bearer ", "access_token", "refresh_token", "authorizationCode", "device_code",
+            "login.microsoftonline.com", "login.live.com"
+        ] {
+            XCTAssertFalse(
+                objcAuthenticationFixture.contains(forbiddenFixtureToken),
+                "Objective-C++ authentication fixture contains forbidden secret/provider material: \(forbiddenFixtureToken)"
+            )
+        }
+        XCTAssertTrue(objcAuthenticationFixture.contains("https://login.example.invalid/device"))
+
+        let cppLogFixture = try sourceSection(
+            cppContractTests,
+            from: "text = \"Authorization: Bearer fixture-secret",
+            through: "const bool longLogIsTruncated"
+        )
+        XCTAssertTrue(cppLogFixture.contains("fixture-secret"))
+        XCTAssertTrue(cppLogFixture.contains("fixture-token"))
+        XCTAssertTrue(cppLogFixture.contains("<redacted>"))
+        XCTAssertTrue(
+            cppLogFixture.contains("find(\"fixture-token\") == std::string::npos")
+        )
+
+        let progressLedger = try readSource(
+            at: repositoryRoot.appendingPathComponent("docs/macos-native-migration/PROGRESS.md")
+        )
+        let concreteCredentialPatterns = [
+            "(?i)\\bBearer\\s+[A-Za-z0-9._~+/=-]{12,}\\b",
+            "(?i)\\b(?:access|refresh)[_-]?token\\s*[:=]\\s*(?!<redacted>|fixture[-_])[A-Za-z0-9._~+/=-]{8,}",
+            "(?i)\\b(?:client[_-]?secret|password)\\s*[:=]\\s*(?!<redacted>|fixture[-_])[A-Za-z0-9._~+/=-]{8,}",
+            "\\beyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\b",
+        ]
+        for pattern in concreteCredentialPatterns {
+            let regex = try NSRegularExpression(pattern: pattern)
+            let range = NSRange(progressLedger.startIndex..<progressLedger.endIndex, in: progressLedger)
+            XCTAssertNil(
+                regex.firstMatch(in: progressLedger, range: range),
+                "Progress ledger contains a concrete credential-shaped value for pattern \(pattern)"
+            )
+        }
+    }
+
+    private func readSource(at url: URL) throws -> String {
+        try String(contentsOf: url, encoding: .utf8)
+    }
+
+    private func sourceSection(_ source: String, from startMarker: String, through endMarker: String) throws -> String {
+        guard let startRange = source.range(of: startMarker),
+              let endRange = source.range(of: endMarker, range: startRange.upperBound..<source.endIndex) else {
+            throw NSError(
+                domain: "PrismNativeInfrastructureTests",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Missing source audit marker \(startMarker) -> \(endMarker)"]
+            )
+        }
+        return String(source[startRange.lowerBound..<endRange.lowerBound])
+    }
+
+    private func declarationLines(in source: String) -> [String] {
+        source.split(whereSeparator: \.isNewline).map(String.init).filter { line in
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.hasPrefix("@Published")
+                || trimmed.hasPrefix("private let ")
+                || trimmed.hasPrefix("private var ")
+                || trimmed.hasPrefix("let ")
+                || trimmed.hasPrefix("var ")
+        }
+    }
+
+    private func valueDeclarationLines(in source: String) -> [String] {
+        source.split(whereSeparator: \.isNewline).map(String.init).filter { line in
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.hasPrefix("@property")
+                || trimmed.hasPrefix("std::string ")
+                || trimmed.hasPrefix("std::optional<")
+                || trimmed.hasPrefix("std::vector<")
+                || trimmed.hasPrefix("std::int32_t ")
+                || trimmed.hasPrefix("bool ")
+        }
+    }
 }
