@@ -6,11 +6,11 @@ Branch: `macos-native`
 
 Plan: `docs/macos-native-migration/PLAN.md`
 
-Current milestone: Milestone 7, Settings, Java, and accounts
+Current milestone: Milestone 8, Creation, discovery, and installation
 
-Active work unit: M7-W7
+Active work unit: M8-W1
 
-Next ready work unit: M7-W7
+Next ready work unit: M8-W1
 
 ## Safety baseline
 
@@ -34,8 +34,8 @@ Next ready work unit: M7-W7
 | 4. Native shell and instance library | complete | System-native shell state and commands are tested |
 | 5. Launch, tasks, and logs | complete | Deterministic launch-task and log contracts are tested |
 | 6. Instance detail and editing | complete | Instance management surfaces have native contracts |
-| 7. Settings, Java, and accounts | active | Settings and fake-account workflows are covered |
-| 8. Creation, discovery, and installation | queued | All supported providers and import flows are covered |
+| 7. Settings, Java, and accounts | complete | Settings, fake-account workflows, offline identity, and secret-boundary evidence are covered |
+| 8. Creation, discovery, and installation | active | All supported providers and import flows are covered |
 | 9. Utilities and rendering exceptions | queued | Remaining dialogs are classified and migrated |
 | 10. Native cutover | queued | Final acceptance matrix is complete |
 
@@ -1682,15 +1682,50 @@ Risk: live `LaunchController::askOfflineName` wiring, actual `LastOfflinePlayerN
 
 Commit: `4eac74821` (implementation); this entry is completed in the follow-up progress-ledger commit.
 
-Next after completion: `M7-W7`, audit every native progress/log/DTO-description/test-fixture path for secret crossing without adding live provider or persistence behavior.
+Next after completion: M8-W1, add a fixture-controlled vanilla instance creation contract without production network mutation or real-data access.
 
 ### M7-W7: No secret crossing audit
 
+Status: complete
+
+Outcome: add an executable non-launch audit for the completed native Settings/account contracts and their tests. The audit checks value declarations, authentication fixtures, log-redaction sentinels, and the progress ledger for credentials, tokens, profiles, Keychain values, provider codes, or other secret material crossing the native boundary.
+
+Files changed: macos/PrismNativeTests/PrismNativeInfrastructureTests.swift and this progress file. No provider request, Keychain access, account persistence, live authentication, launch wiring, upstream data access, signing, installation, publishing, or destructive cleanup was added.
+
+Tests and exact commands:
+
+- xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO -only-testing:PrismNativeTests/PrismNativeInfrastructureTests/testM7AccountBoundaryContainsOnlyNonSecretValueDeclarationsAndFixtures test — passed; the first run exposed and corrected only a repository-root path calculation in the new test, and the corrected focused run exited 0.
+- cmake --build .deriveddata-prism-native-backend --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test --parallel 2 — passed.
+- ctest --test-dir .deriveddata-prism-native-backend --output-on-failure -R '^(FrontendFacadeContract|FrontendFacadePublicHeaders)$' — passed 2/2.
+- xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build — passed.
+- xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO build — passed.
+- xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test — passed; 117/117.
+- xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native-release CODE_SIGNING_ALLOWED=NO test — passed; 117/117.
+- plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist and the Release equivalent — both returned com.lloydME.Prism.
+- file/lipo -info on both Prism.app/Contents/MacOS/Prism artifacts — both remained universal x86_64 arm64.
+- Public bridge Qt/C++ scan over macos/PrismNative/Bridge/*.h — passed; no forbidden public bridge types.
+- Swift account/identity secret, network, process, Keychain, and custom-drawing scans — passed; no forbidden runtime path or custom control drawing.
+- git diff --check and git diff --cached --check — passed.
+
+Result summary: the new audit found no secret-bearing value declaration in the facade, Foundation DTO, or Swift account/identity state. Authentication fixtures contain only https://login.example.invalid/device; the only secret-shaped fixture strings are synthetic log-redaction sentinels, and both C++ and Objective-C++ tests assert that their output is absent and replaced by <redacted>, with data roots replaced by <data-root>. The progress ledger contains no concrete credential-shaped value. No application, launcher executable, screenshot, recording, visual snapshot, upstream Application Support data, real account, Keychain, credential, production service, signing, installation, publishing, or push was accessed.
+
+HIG decision: no UI surface changed in this audit. Existing account and identity presentation remains on the previously recorded SwiftUI Settings controls, system progress/cancellation/recovery affordances, accessibility metadata, and localization-key contracts; no custom control or rendering exception was introduced.
+
+Architecture: make the no-secret contract executable at the existing test boundary. Source sections are inspected for value declarations rather than comments that document excluded backend responsibilities; fixture sections distinguish safe .invalid provider endpoints from the existing synthetic log-redaction test. The Objective-C++ bridge remains the only C++/Foundation conversion boundary, and Swift still receives only immutable non-secret metadata and generation-guarded state.
+
+Risk: the audit prevents accidental field/API and fixture regressions but cannot certify an opaque future provider adapter or infer the safety of arbitrary future diagnostic text. Any live authentication, profile, Keychain, persistence, or provider contract must be separately specified and preserve this boundary. Known macOS 26-versus-14 deployment/link warnings remain non-blocking. No custom-rendering exception was added.
+
+Commit: 40c3ffd7f (implementation); this entry is completed in the follow-up progress-ledger commit.
+
+Next after completion: M8-W1, add a fixture-controlled vanilla instance creation contract without production network mutation or real-data access.
+
+### M8-W1: Fixture-controlled vanilla instance creation
+
 Status: active
 
-Outcome: in progress. Audit the completed native Settings/account contracts and their tests for credentials, tokens, profiles, Keychain values, provider codes, or other secret material crossing into logs, progress values, DTO descriptions, or fixtures.
+Outcome: in progress. Implement the first Milestone 8 native creation workflow for a fixture-controlled vanilla instance, preserving the existing backend as the source of truth and exposing only explicit non-UI values and task outcomes to Swift.
 
-Working boundary: audit and directly related non-secret test/contract corrections only. Do not add provider requests, Keychain access, account persistence, live authentication, launch wiring, upstream data access, signing, installation, publishing, or destructive cleanup. The next round must re-read both migration documents, inspect the last five commits and clean status, then collect source/test evidence before changing anything.
+Working boundary: re-read the legacy NewInstanceDialog/vanilla creation path and its backend collaborators before editing. Add only the smallest QWidget-free facade, Foundation-only bridge, native state, and non-launch tests required for fixture-controlled creation. Do not add provider network requests, live downloads, account access, upstream data access, production mutation, signing, installation, publishing, or destructive cleanup. Use a temporary fixture root and retain the existing Qt composition.
 
 ## Completed commit index
 
@@ -1740,6 +1775,7 @@ Working boundary: audit and directly related non-secret test/contract correction
 | `5a4cef365` | Added fixture-only native account snapshots, active-account selection, cancellation, and confirmed draft-preserving Settings state | facade/public-header CMake targets; CTest 2/2; arm64 Qt Prism target; native XCTest 109/109; PLAN §9 Debug/Release builds; Bundle ID `com.lloydME.Prism`; universal `x86_64 arm64` facade archive; accessibility/localization and Qt/ownership/data/process/network/no-drawing scans; `git diff --check` |
 | `15d2863af` | Added the fixture-only authentication state machine, fake-provider progress/result contract, main-actor bridge delivery, cancellation suppression, and native Settings recovery UI | facade/public-header CMake targets; CTest 2/2; arm64 Qt Prism target; native XCTest 112/112 plus post-fix Debug/Release reruns; PLAN §9 Debug/Release builds; Bundle ID `com.lloydME.Prism`; universal `x86_64 arm64` artifacts; accessibility/localization and Qt/ownership/secret/network/process/no-drawing scans; `git diff --check` |
 | `4eac74821` | Added the fixture-only offline/demo launch identity facade, Foundation bridge, Swift Settings editor, validation/recovery state machine, and cancellation-safe tests | facade/public-header CMake targets; CTest 2/2; arm64 Qt Prism target; Debug/Release native builds; full Debug/Release XCTest 116/116; focused model/structure tests 2/2; Bundle ID `com.lloydME.Prism`; universal `x86_64 arm64` artifacts; accessibility/localization/boundary/secret/no-drawing scans; `git diff --check` |
+| 40c3ffd7f | Added the executable M7-W7 native secret-boundary audit for account DTO declarations, authentication fixtures, log redaction, and the progress ledger | Focused audit test; facade/public-header CMake targets; CTest 2/2; full Debug/Release XCTest 117/117; Debug/Release builds; Bundle ID com.lloydME.Prism; universal x86_64 arm64 artifacts; boundary/secret/endpoint/no-drawing scans; git diff --check |
 
 ## Current architecture findings
 
@@ -1790,6 +1826,8 @@ Working boundary: audit and directly related non-secret test/contract correction
 45. M7-W5 keeps authentication behind a fixture-only, terminal-validated facade runner. Synthetic provider labels, safe verification instructions, localization keys, redacted diagnostics, and account snapshots cross the Objective-C++ boundary as immutable Foundation DTOs; device-code/user codes, authorization codes, bearer/refresh tokens, profiles, Keychain state, browser/network ownership, and provider persistence remain excluded. Swift owns only the main-actor state machine, generation/cancellation guards, retry recovery, and standard Settings presentation; the default composition intentionally reports an unavailable adapter until a later separately approved provider contract exists.
 46. M7-W6 keeps offline/demo launch identity behind fixture-only load/update ports. The facade validates the legacy ASCII name rule and explicit invalid-name escape hatch against the normalized fixture root; Objective-C++ converts only immutable Foundation mode/name/result values and suppresses cancelled or shutdown callbacks; Swift owns confirmed-versus-draft state, recovery, and generation guards. `LastOfflinePlayerName` compatibility mapping, offline account creation, UUID/session derivation, launch processes, persistence, and upstream data remain adapter/backend work and no secret or session material crosses the boundary.
 
+47. M7-W7 makes the account secret boundary executable: public facade and Foundation DTO value declarations are checked for forbidden secret-bearing fields, authentication fixtures are restricted to synthetic .invalid endpoints, log fixtures are required to assert removal of fake secret-shaped sentinels, and the progress ledger is scanned for concrete credential-shaped values. This is a regression guard, not live-provider validation; future adapters must preserve the same non-secret DTO and diagnostic contract.
+
 ## Custom rendering exceptions
 
 No exception is approved.
@@ -1802,4 +1840,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md` and `PROGRESS.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M7-W7`. M6-W1 is complete in `d3f319c494a61d559643964a6253a3ec8c495df3`; M6-W2 is complete in `467bb275e04a087e00a4dd85365273bdcf130185`; M6-W3 is complete in `789502d804528d39098fd21fd227d4572ae18040`; M6-W4 is complete in `891138f6ea639c3af718d74e8f63f65e74650cf6`; M6-W5 is complete in `ebcccb3761bbfdbf66d042e75dae85ace9450823`; M6-W6 is complete in `ed31c77fbedcacfcd5e691d0f67ab08c25dff9e4`; M6-W7 is complete in `a0c6456c1`; M7-W1 is complete in `6149bb3a2`; M7-W2 is complete in `12c6ba49a`; M7-W3 is complete in `76cfc19dd`; M7-W4 is complete in `5a4cef365`; M7-W5 is complete in `15d2863af`; and M7-W6 is complete in `4eac74821`. Preserve all existing fixture-root, Bundle ID, no-launch, no-secrets, and Objective-C++ boundary constraints; do not reopen completed M6 or M7 evidence.
+Read PLAN.md and PROGRESS.md, run git status --short --branch -uall, inspect the last five commits, then activate only ready M8-W1. M6-W1 is complete in d3f319c494a61d559643964a6253a3ec8c495df3; M6-W2 is complete in 467bb275e04a087e00a4dd85365273bdcf130185; M6-W3 is complete in 789502d804528d39098fd21fd227d4572ae18040; M6-W4 is complete in 891138f6ea639c3af718d74e8f63f65e74650cf6; M6-W5 is complete in ebcccb3761bbfdbf66d042e75dae85ace9450823; M6-W6 is complete in ed31c77fbedcacfcd5e691d0f67ab08c25dff9e4; M6-W7 is complete in a0c6456c1; M7-W1 is complete in 6149bb3a2; M7-W2 is complete in 12c6ba49a; M7-W3 is complete in 76cfc19dd; M7-W4 is complete in 5a4cef365; M7-W5 is complete in 15d2863af; M7-W6 is complete in 4eac74821; and M7-W7 is implemented in 40c3ffd7f with its progress-ledger update in the following commit. Preserve all existing fixture-root, Bundle ID, no-launch, no-secrets, and Objective-C++ boundary constraints; do not reopen completed M6 or M7 evidence.
