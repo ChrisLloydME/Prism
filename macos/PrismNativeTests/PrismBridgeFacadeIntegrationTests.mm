@@ -133,6 +133,183 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     XCTAssertTrue(token.isCancelled);
 }
 
+- (void)testFacadeDetailsAndNotesAreConvertedAndConfirmedOnMainActor
+{
+    auto detailsCalls = std::make_shared<std::vector<std::string>>();
+    auto notesCalls = std::make_shared<std::vector<std::string>>();
+    auto detailsRootMatches = std::make_shared<std::atomic<bool>>(true);
+    auto notesRootMatches = std::make_shared<std::atomic<bool>>(true);
+    const std::string fixtureRoot = self.fixtureRootURL.path.UTF8String;
+
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.loadInstanceDetails = [detailsCalls, detailsRootMatches, fixtureRoot](
+                                            const std::filesystem::path& root,
+                                            const std::string& identifier)
+        -> std::optional<FrontendInstanceDetailsSnapshot> {
+        *detailsRootMatches = *detailsRootMatches
+            && root == std::filesystem::path(fixtureRoot).lexically_normal();
+        detailsCalls->push_back(identifier);
+        if (identifier != "fixture.one") {
+            return std::nullopt;
+        }
+        return FrontendInstanceDetailsSnapshot{
+            "fixture.one",
+            "Fixture One",
+            "icon.one",
+            "group.one",
+            "Minecraft",
+            "Existing\nfixture notes ",
+            true,
+        };
+    };
+    dependencies.updateInstanceNotes = [notesCalls, notesRootMatches, fixtureRoot](
+                                            const std::filesystem::path& root,
+                                            const std::string& identifier,
+                                            const std::string& notes) {
+        *notesRootMatches = *notesRootMatches
+            && root == std::filesystem::path(fixtureRoot).lexically_normal();
+        notesCalls->push_back(identifier + ":" + notes);
+        if (identifier == "fixture.one") {
+            return FrontendInstanceNotesUpdateResult{
+                FrontendInstanceNotesUpdateOutcome::Succeeded,
+                notes,
+            };
+        }
+        if (identifier == "unknown-instance") {
+            return FrontendInstanceNotesUpdateResult{
+                FrontendInstanceNotesUpdateOutcome::UnknownInstance,
+                {},
+            };
+        }
+        return FrontendInstanceNotesUpdateResult{
+            FrontendInstanceNotesUpdateOutcome::Rejected,
+            {},
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    XCTestExpectation *detailsCompletion = [self expectationWithDescription:@"Facade details completed"];
+    __block PRInstanceDetails *receivedDetails = nil;
+    __block PRBridgeError *receivedDetailsError = nil;
+    __block BOOL detailsCallbackRanOnMainThread = NO;
+    NSMutableString *mutableIdentifier = [NSMutableString stringWithString:@" fixture.one "];
+    PRBridgeObservationToken *detailsToken = [bridge loadInstanceDetailsWithIdentifier:mutableIdentifier
+                                                                                completion:^(PRInstanceDetails *details,
+                                                                                              PRBridgeError *error) {
+        detailsCallbackRanOnMainThread = [NSThread isMainThread];
+        receivedDetails = details;
+        receivedDetailsError = error;
+        [detailsCompletion fulfill];
+    }];
+    [mutableIdentifier setString:@"fixture.changed.after-call"];
+
+    XCTAssertNotNil(detailsToken);
+    [self waitForExpectations:@[ detailsCompletion ] timeout:2.0];
+    XCTAssertTrue(detailsCallbackRanOnMainThread);
+    XCTAssertNil(receivedDetailsError);
+    XCTAssertEqualObjects(receivedDetails.identifier, @"fixture.one");
+    XCTAssertEqualObjects(receivedDetails.name, @"Fixture One");
+    XCTAssertEqualObjects(receivedDetails.iconKey, @"icon.one");
+    XCTAssertEqualObjects(receivedDetails.groupID, @"group.one");
+    XCTAssertEqualObjects(receivedDetails.instanceType, @"Minecraft");
+    XCTAssertEqualObjects(receivedDetails.notes, @"Existing\nfixture notes ");
+    XCTAssertTrue(receivedDetails.notesEditable);
+    XCTAssertTrue(detailsToken.isCancelled);
+
+    XCTestExpectation *missingDetailsCompletion = [self expectationWithDescription:@"Missing details completed"];
+    receivedDetails = nil;
+    receivedDetailsError = nil;
+    PRBridgeObservationToken *missingDetailsToken =
+        [bridge loadInstanceDetailsWithIdentifier:@"unknown-instance"
+                                         completion:^(PRInstanceDetails *details, PRBridgeError *error) {
+        receivedDetails = details;
+        receivedDetailsError = error;
+        [missingDetailsCompletion fulfill];
+    }];
+    XCTAssertNotNil(missingDetailsToken);
+    [self waitForExpectations:@[ missingDetailsCompletion ] timeout:2.0];
+    XCTAssertNil(receivedDetails);
+    XCTAssertEqual(receivedDetailsError.code, PRBridgeErrorCodeDataUnavailable);
+    XCTAssertEqual(receivedDetailsError.recoveryKind, PRBridgeErrorRecoveryKindRetry);
+    XCTAssertEqualObjects(receivedDetailsError.substitutionValues[@"instanceIdentifier"], @"unknown-instance");
+
+    XCTestExpectation *invalidDetailsCompletion = [self expectationWithDescription:@"Invalid details completed"];
+    receivedDetails = nil;
+    receivedDetailsError = nil;
+    PRBridgeObservationToken *invalidDetailsToken =
+        [bridge loadInstanceDetailsWithIdentifier:@"   "
+                                         completion:^(PRInstanceDetails *details, PRBridgeError *error) {
+        receivedDetails = details;
+        receivedDetailsError = error;
+        [invalidDetailsCompletion fulfill];
+    }];
+    XCTAssertNotNil(invalidDetailsToken);
+    [self waitForExpectations:@[ invalidDetailsCompletion ] timeout:2.0];
+    XCTAssertNil(receivedDetails);
+    XCTAssertEqual(receivedDetailsError.code, PRBridgeErrorCodeInvalidInput);
+
+    __block PRInstanceNotesUpdateResult *receivedNotesResult = nil;
+    __block PRBridgeError *receivedNotesError = nil;
+    __block BOOL notesCallbackRanOnMainThread = NO;
+    void (^runNotesUpdate)(NSString *, NSString *) = ^(NSString *identifier, NSString *notes) {
+        receivedNotesResult = nil;
+        receivedNotesError = nil;
+        notesCallbackRanOnMainThread = NO;
+        XCTestExpectation *completion = [self expectationWithDescription:@"Facade notes update completed"];
+        PRBridgeObservationToken *token = [bridge updateInstanceNotesWithIdentifier:identifier
+                                                                                  notes:notes
+                                                                              completion:^(PRInstanceNotesUpdateResult *result,
+                                                                                            PRBridgeError *error) {
+            notesCallbackRanOnMainThread = [NSThread isMainThread];
+            receivedNotesResult = result;
+            receivedNotesError = error;
+            [completion fulfill];
+        }];
+        XCTAssertNotNil(token);
+        [self waitForExpectations:@[ completion ] timeout:2.0];
+    };
+
+    NSMutableString *mutableNotesIdentifier = [NSMutableString stringWithString:@" fixture.one "];
+    NSMutableString *mutableNotes = [NSMutableString stringWithString:@"Updated\nfixture notes "];
+    runNotesUpdate(mutableNotesIdentifier, mutableNotes);
+    [mutableNotesIdentifier setString:@"fixture.changed.after-call"];
+    [mutableNotes setString:@"fixture notes changed after call"];
+    XCTAssertTrue(notesCallbackRanOnMainThread);
+    XCTAssertNil(receivedNotesError);
+    XCTAssertEqualObjects(receivedNotesResult.identifier, @"fixture.one");
+    XCTAssertEqualObjects(receivedNotesResult.notes, @"Updated\nfixture notes ");
+    XCTAssertEqual(receivedNotesResult.outcome, PRInstanceNotesUpdateOutcomeSucceeded);
+
+    runNotesUpdate(@"unknown-instance", @"Ignored notes");
+    XCTAssertTrue(notesCallbackRanOnMainThread);
+    XCTAssertNil(receivedNotesError);
+    XCTAssertEqual(receivedNotesResult.outcome, PRInstanceNotesUpdateOutcomeUnknownInstance);
+    XCTAssertEqualObjects(receivedNotesResult.notes, @"");
+
+    runNotesUpdate(@"rejected-instance", @"Rejected notes");
+    XCTAssertTrue(notesCallbackRanOnMainThread);
+    XCTAssertNil(receivedNotesError);
+    XCTAssertEqual(receivedNotesResult.outcome, PRInstanceNotesUpdateOutcomeRejected);
+    XCTAssertEqualObjects(receivedNotesResult.notes, @"");
+
+    runNotesUpdate(@"   ", @"Invalid identifier");
+    XCTAssertTrue(notesCallbackRanOnMainThread);
+    XCTAssertNil(receivedNotesResult);
+    XCTAssertEqual(receivedNotesError.code, PRBridgeErrorCodeInvalidInput);
+
+    XCTAssertTrue(detailsRootMatches->load());
+    XCTAssertTrue(notesRootMatches->load());
+    XCTAssertEqual(*detailsCalls, (std::vector<std::string>{ "fixture.one", "unknown-instance" }));
+    XCTAssertEqual(*notesCalls,
+                   (std::vector<std::string>{ "fixture.one:Updated\nfixture notes ",
+                                               "unknown-instance:Ignored notes",
+                                               "rejected-instance:Rejected notes" }));
+}
+
 - (void)testFacadeCommandsConvertFoundationIdentifiersAndPreserveFixtureOutcomes
 {
     auto launchCalls = std::make_shared<std::vector<std::string>>();

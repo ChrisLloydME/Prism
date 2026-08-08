@@ -22,6 +22,336 @@ struct PrismInstanceRow: Identifiable, Equatable, Hashable, Sendable {
     }
 }
 
+struct PrismInstanceDetails: Identifiable, Equatable, Sendable {
+    let id: String
+    let name: String
+    let iconKey: String?
+    let group: String?
+    let instanceType: String?
+    let notes: String
+    let notesEditable: Bool
+
+    init?(bridgeDetails: PRInstanceDetails) {
+        let identifier = bridgeDetails.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = bridgeDetails.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !identifier.isEmpty, !name.isEmpty else {
+            return nil
+        }
+
+        self.id = identifier
+        self.name = name
+        self.iconKey = Self.normalizedOptional(bridgeDetails.iconKey)
+        self.group = Self.normalizedOptional(bridgeDetails.groupID)
+        self.instanceType = Self.normalizedOptional(bridgeDetails.instanceType)
+        self.notes = bridgeDetails.notes
+        self.notesEditable = bridgeDetails.notesEditable
+    }
+
+    init(
+        id: String,
+        name: String,
+        iconKey: String?,
+        group: String?,
+        instanceType: String?,
+        notes: String,
+        notesEditable: Bool
+    ) {
+        self.id = id
+        self.name = name
+        self.iconKey = iconKey
+        self.group = group
+        self.instanceType = instanceType
+        self.notes = notes
+        self.notesEditable = notesEditable
+    }
+
+    private static func normalizedOptional(_ value: String?) -> String? {
+        guard let value else {
+            return nil
+        }
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
+    }
+}
+
+enum PrismInstanceDetailsRecoveryAction: String, Equatable, Sendable {
+    case retry
+    case none
+
+    var titleKey: String {
+        switch self {
+        case .retry:
+            return "Retry"
+        case .none:
+            return "Dismiss"
+        }
+    }
+
+    var accessibilityLabelKey: String {
+        switch self {
+        case .retry:
+            return "Retry Loading Instance Details"
+        case .none:
+            return "Dismiss Instance Details Error"
+        }
+    }
+
+    var helpKey: String {
+        switch self {
+        case .retry:
+            return "Try loading this instance again."
+        case .none:
+            return "Review the instance details error."
+        }
+    }
+}
+
+struct PrismInstanceDetailsFailure: Equatable, Sendable {
+    let instanceIdentifier: String
+    let localizationKey: String
+    let substitutionValues: [String: String]
+    let diagnosticText: String?
+    let recoveryAction: PrismInstanceDetailsRecoveryAction
+    let partialChangesRolledBack: Bool
+
+    var isRetryAvailable: Bool {
+        recoveryAction == .retry
+    }
+}
+
+enum PrismInstanceDetailsState: Equatable, Sendable {
+    case loading(identifier: String)
+    case empty
+    case failed(PrismInstanceDetailsFailure)
+    case content(PrismInstanceDetails)
+}
+
+enum PrismInstanceNotesSaveState: Equatable, Sendable {
+    case idle
+    case saving
+    case failed(PrismInstanceDetailsFailure)
+}
+
+struct PrismInstanceNotesUpdatePresentation: Equatable, Sendable {
+    let instanceIdentifier: String
+    let notes: String
+    let outcome: PRInstanceNotesUpdateOutcome
+
+    init?(bridgeResult: PRInstanceNotesUpdateResult) {
+        let identifier = bridgeResult.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !identifier.isEmpty else {
+            return nil
+        }
+
+        self.instanceIdentifier = identifier
+        self.notes = bridgeResult.notes
+        self.outcome = bridgeResult.outcome
+    }
+}
+
+@MainActor
+final class PrismInstanceDetailsModel: ObservableObject {
+    @Published private(set) var state: PrismInstanceDetailsState = .empty
+    @Published private(set) var draftNotes = ""
+    @Published private(set) var notesSaveState: PrismInstanceNotesSaveState = .idle
+
+    private let onLoad: ((String) -> Void)?
+    private let onSaveNotes: ((String, String) -> Void)?
+    private var activeIdentifier: String?
+
+    init(
+        onLoad: ((String) -> Void)? = nil,
+        onSaveNotes: ((String, String) -> Void)? = nil
+    ) {
+        self.onLoad = onLoad
+        self.onSaveNotes = onSaveNotes
+    }
+
+    var details: PrismInstanceDetails? {
+        guard case .content(let details) = state else {
+            return nil
+        }
+        return details
+    }
+
+    var isLoading: Bool {
+        if case .loading = state {
+            return true
+        }
+        return false
+    }
+
+    var isNotesSaveAvailable: Bool {
+        guard let details, details.notesEditable, notesSaveState != .saving else {
+            return false
+        }
+        return draftNotes != details.notes
+    }
+
+    var notesFailure: PrismInstanceDetailsFailure? {
+        guard case .failed(let failure) = notesSaveState else {
+            return nil
+        }
+        return failure
+    }
+
+    @discardableResult
+    func beginLoading(identifier: String) -> Bool {
+        let normalizedIdentifier = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedIdentifier.isEmpty else {
+            return false
+        }
+
+        activeIdentifier = normalizedIdentifier
+        state = .loading(identifier: normalizedIdentifier)
+        draftNotes = ""
+        notesSaveState = .idle
+        onLoad?(normalizedIdentifier)
+        return true
+    }
+
+    @discardableResult
+    func apply(details bridgeDetails: PRInstanceDetails) -> Bool {
+        guard let details = PrismInstanceDetails(bridgeDetails: bridgeDetails) else {
+            return false
+        }
+
+        activeIdentifier = details.id
+        state = .content(details)
+        draftNotes = details.notes
+        notesSaveState = .idle
+        return true
+    }
+
+    @discardableResult
+    func apply(error: PRBridgeError, instanceIdentifier: String) -> Bool {
+        let normalizedIdentifier = instanceIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let localizationKey = error.localizationKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedIdentifier.isEmpty, !localizationKey.isEmpty else {
+            return false
+        }
+
+        let failure = PrismInstanceDetailsFailure(
+            instanceIdentifier: normalizedIdentifier,
+            localizationKey: localizationKey,
+            substitutionValues: error.substitutionValues,
+            diagnosticText: error.diagnosticText,
+            recoveryAction: error.recoveryKind == .retry ? .retry : .none,
+            partialChangesRolledBack: error.partialChangesRolledBack
+        )
+
+        if isLoading {
+            state = .failed(failure)
+            notesSaveState = .idle
+        } else if activeIdentifier == normalizedIdentifier && details != nil && notesSaveState == .saving {
+            notesSaveState = .failed(failure)
+        } else {
+            activeIdentifier = normalizedIdentifier
+            state = .failed(failure)
+            draftNotes = ""
+            notesSaveState = .idle
+        }
+        return true
+    }
+
+    func setDraftNotes(_ notes: String) {
+        guard details?.notesEditable == true, notesSaveState != .saving else {
+            return
+        }
+        draftNotes = notes
+        if case .failed = notesSaveState {
+            notesSaveState = .idle
+        }
+    }
+
+    @discardableResult
+    func saveNotes() -> Bool {
+        guard let details, details.notesEditable, isNotesSaveAvailable else {
+            return false
+        }
+
+        notesSaveState = .saving
+        onSaveNotes?(details.id, draftNotes)
+        return true
+    }
+
+    @discardableResult
+    func apply(notesResult bridgeResult: PRInstanceNotesUpdateResult) -> Bool {
+        guard let result = PrismInstanceNotesUpdatePresentation(bridgeResult: bridgeResult),
+              let details,
+              details.id == result.instanceIdentifier,
+              notesSaveState == .saving else {
+            return false
+        }
+
+        switch result.outcome {
+        case .succeeded:
+            state = .content(
+                PrismInstanceDetails(
+                    id: details.id,
+                    name: details.name,
+                    iconKey: details.iconKey,
+                    group: details.group,
+                    instanceType: details.instanceType,
+                    notes: result.notes,
+                    notesEditable: details.notesEditable
+                )
+            )
+            draftNotes = result.notes
+            notesSaveState = .idle
+        case .unknownInstance:
+            notesSaveState = .failed(Self.notesFailure(for: result.instanceIdentifier, key: "instance.notes.instanceMissing"))
+        case .rejected:
+            notesSaveState = .failed(Self.notesFailure(for: result.instanceIdentifier, key: "instance.notes.updateRejected"))
+        @unknown default:
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
+    func retry() -> Bool {
+        guard case .failed(let failure) = state,
+              failure.isRetryAvailable else {
+            return false
+        }
+        return beginLoading(identifier: failure.instanceIdentifier)
+    }
+
+    @discardableResult
+    func retryNotes() -> Bool {
+        guard case .failed(let failure) = notesSaveState,
+              failure.isRetryAvailable,
+              let details,
+              details.id == failure.instanceIdentifier,
+              details.notesEditable else {
+            return false
+        }
+
+        notesSaveState = .saving
+        onSaveNotes?(details.id, draftNotes)
+        return true
+    }
+
+    func clear() {
+        activeIdentifier = nil
+        state = .empty
+        draftNotes = ""
+        notesSaveState = .idle
+    }
+
+    private static func notesFailure(for identifier: String, key: String) -> PrismInstanceDetailsFailure {
+        PrismInstanceDetailsFailure(
+            instanceIdentifier: identifier,
+            localizationKey: key,
+            substitutionValues: ["instanceIdentifier": identifier],
+            diagnosticText: nil,
+            recoveryAction: .none,
+            partialChangesRolledBack: false
+        )
+    }
+}
+
 @MainActor
 final class PrismInstanceArtworkStore {
     static let defaultItemLimit = 32

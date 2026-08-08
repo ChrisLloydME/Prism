@@ -34,6 +34,13 @@ void validateInstanceSnapshots(const std::vector<FrontendInstanceSnapshot>& snap
     }
 }
 
+void validateInstanceDetailsSnapshot(const FrontendInstanceDetailsSnapshot& snapshot)
+{
+    if (!snapshot.hasStableIdentifier() || snapshot.name.empty()) {
+        throw std::invalid_argument("Instance details require a stable identifier and name");
+    }
+}
+
 void validateInstanceChanges(const std::vector<FrontendInstanceChange>& changes)
 {
     for (const auto& change : changes) {
@@ -319,6 +326,17 @@ bool isKnownInstanceCommandResult(FrontendInstanceCommandResult result) noexcept
     return false;
 }
 
+bool isKnownInstanceNotesUpdateOutcome(FrontendInstanceNotesUpdateOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendInstanceNotesUpdateOutcome::Succeeded:
+        case FrontendInstanceNotesUpdateOutcome::UnknownInstance:
+        case FrontendInstanceNotesUpdateOutcome::Rejected:
+            return true;
+    }
+    return false;
+}
+
 FrontendInstanceCommandResult executeInstanceCommand(
     const FrontendRuntimeDependencies::InstanceCommand& command,
     const std::filesystem::path& dataRoot,
@@ -334,6 +352,45 @@ FrontendInstanceCommandResult executeInstanceCommand(
     const auto result = command(dataRoot, instanceIdentifier);
     if (!isKnownInstanceCommandResult(result)) {
         throw std::invalid_argument("Instance command returned an unknown result");
+    }
+    return result;
+}
+
+std::optional<FrontendInstanceDetailsSnapshot> executeInstanceDetails(
+    const FrontendRuntimeDependencies::InstanceDetailsLoader& loader,
+    const std::filesystem::path& dataRoot,
+    const std::string& instanceIdentifier)
+{
+    if (instanceIdentifier.empty()) {
+        throw std::invalid_argument("Instance details require a stable identifier");
+    }
+    if (!loader) {
+        return std::nullopt;
+    }
+
+    auto details = loader(dataRoot, instanceIdentifier);
+    if (details.has_value()) {
+        validateInstanceDetailsSnapshot(*details);
+    }
+    return details;
+}
+
+FrontendInstanceNotesUpdateResult executeInstanceNotesUpdate(
+    const FrontendRuntimeDependencies::InstanceNotesUpdater& updater,
+    const std::filesystem::path& dataRoot,
+    const std::string& instanceIdentifier,
+    const std::string& notes)
+{
+    if (instanceIdentifier.empty()) {
+        throw std::invalid_argument("Instance notes require a stable identifier");
+    }
+    if (!updater) {
+        return {};
+    }
+
+    auto result = updater(dataRoot, instanceIdentifier, notes);
+    if (!isKnownInstanceNotesUpdateOutcome(result.outcome)) {
+        throw std::invalid_argument("Instance notes update returned an unknown outcome");
     }
     return result;
 }
@@ -432,6 +489,12 @@ std::vector<FrontendInstanceSnapshot> FrontendFacade::instanceSnapshots() const
     return snapshots;
 }
 
+std::optional<FrontendInstanceDetailsSnapshot> FrontendFacade::instanceDetails(const std::string& instanceIdentifier) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeInstanceDetails(m_runtimeDependencies.loadInstanceDetails, m_dataRoot, instanceIdentifier);
+}
+
 std::vector<FrontendInstanceChange> FrontendFacade::instanceChanges() const
 {
     ensureRunning(m_lifecycleState);
@@ -454,6 +517,13 @@ FrontendInstanceCommandResult FrontendFacade::stopInstance(const std::string& in
 {
     ensureRunning(m_lifecycleState);
     return executeInstanceCommand(m_runtimeDependencies.stopInstance, m_dataRoot, instanceIdentifier);
+}
+
+FrontendInstanceNotesUpdateResult FrontendFacade::updateInstanceNotes(
+    const std::string& instanceIdentifier, const std::string& notes) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeInstanceNotesUpdate(m_runtimeDependencies.updateInstanceNotes, m_dataRoot, instanceIdentifier, notes);
 }
 
 std::optional<FrontendTaskSnapshot> FrontendFacade::taskSnapshot(const std::string& taskIdentifier) const

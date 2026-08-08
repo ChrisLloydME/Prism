@@ -87,6 +87,190 @@ final class PrismShellTests: XCTestCase {
         XCTAssertEqual(retryCount, 1)
     }
 
+    func testInstanceDetailsMappingPreservesNotesAndNormalizesMetadata() throws {
+        let bridgeDetails = try XCTUnwrap(
+            PRInstanceDetails(
+                identifier: " fixture.one ",
+                name: " Fixture One ",
+                iconKey: " icon.one ",
+                groupID: " group.one ",
+                instanceType: " Minecraft ",
+                notes: "line one\nline two ",
+                notesEditable: true
+            )
+        )
+        let details = try XCTUnwrap(PrismInstanceDetails(bridgeDetails: bridgeDetails))
+
+        XCTAssertEqual(details.id, "fixture.one")
+        XCTAssertEqual(details.name, "Fixture One")
+        XCTAssertEqual(details.iconKey, "icon.one")
+        XCTAssertEqual(details.group, "group.one")
+        XCTAssertEqual(details.instanceType, "Minecraft")
+        XCTAssertEqual(details.notes, "line one\nline two ")
+        XCTAssertTrue(details.notesEditable)
+        XCTAssertNil(
+            PrismInstanceDetails(
+                bridgeDetails: try XCTUnwrap(
+                    PRInstanceDetails(
+                        identifier: "   ",
+                        name: "Fixture One",
+                        iconKey: nil,
+                        groupID: nil,
+                        instanceType: nil,
+                        notes: "fixture notes",
+                        notesEditable: false
+                    )
+                )
+            )
+        )
+    }
+
+    func testInstanceDetailsModelConfirmsNotesEditsAndPreservesDraftOnFailure() throws {
+        var loadedIdentifiers: [String] = []
+        var saveRequests: [(String, String)] = []
+        let model = PrismInstanceDetailsModel(
+            onLoad: { loadedIdentifiers.append($0) },
+            onSaveNotes: { saveRequests.append(($0, $1)) }
+        )
+
+        XCTAssertTrue(model.beginLoading(identifier: " fixture.one "))
+        XCTAssertEqual(model.state, .loading(identifier: "fixture.one"))
+        XCTAssertEqual(loadedIdentifiers, ["fixture.one"])
+
+        let bridgeDetails = try XCTUnwrap(
+            PRInstanceDetails(
+                identifier: "fixture.one",
+                name: "Fixture One",
+                iconKey: "icon.one",
+                groupID: "group.one",
+                instanceType: "Minecraft",
+                notes: "confirmed\nnotes",
+                notesEditable: true
+            )
+        )
+        XCTAssertTrue(model.apply(details: bridgeDetails))
+        XCTAssertEqual(model.draftNotes, "confirmed\nnotes")
+
+        model.setDraftNotes("updated\nnotes")
+        XCTAssertTrue(model.isNotesSaveAvailable)
+        XCTAssertTrue(model.saveNotes())
+        XCTAssertEqual(model.notesSaveState, .saving)
+        XCTAssertEqual(saveRequests.count, 1)
+        XCTAssertEqual(saveRequests[0].0, "fixture.one")
+        XCTAssertEqual(saveRequests[0].1, "updated\nnotes")
+
+        let confirmedResult = try XCTUnwrap(
+            PRInstanceNotesUpdateResult(
+                identifier: "fixture.one",
+                notes: "confirmed by facade\nnotes ",
+                outcome: .succeeded
+            )
+        )
+        XCTAssertTrue(model.apply(notesResult: confirmedResult))
+        XCTAssertEqual(model.details?.notes, "confirmed by facade\nnotes ")
+        XCTAssertEqual(model.draftNotes, "confirmed by facade\nnotes ")
+        XCTAssertEqual(model.notesSaveState, .idle)
+
+        model.setDraftNotes("rejected draft")
+        XCTAssertTrue(model.saveNotes())
+        let rejectedResult = try XCTUnwrap(
+            PRInstanceNotesUpdateResult(
+                identifier: "fixture.one",
+                notes: "",
+                outcome: .rejected
+            )
+        )
+        XCTAssertTrue(model.apply(notesResult: rejectedResult))
+        XCTAssertEqual(model.details?.notes, "confirmed by facade\nnotes ")
+        XCTAssertEqual(model.draftNotes, "rejected draft")
+        XCTAssertEqual(model.notesFailure?.localizationKey, "instance.notes.updateRejected")
+        XCTAssertFalse(model.retryNotes())
+
+        model.setDraftNotes("retry draft")
+        XCTAssertTrue(model.saveNotes())
+        let bridgeError = try XCTUnwrap(
+            PRBridgeError(
+                code: .dataUnavailable,
+                localizationKey: "instance.notes.unavailable",
+                substitutionValues: ["instanceIdentifier": "fixture.one"],
+                diagnosticText: "fixture notes unavailable",
+                recoveryKind: .retry,
+                partialChangesRolledBack: false
+            )
+        )
+        XCTAssertTrue(model.apply(error: bridgeError, instanceIdentifier: " fixture.one "))
+        XCTAssertEqual(model.details?.notes, "confirmed by facade\nnotes ")
+        XCTAssertEqual(model.draftNotes, "retry draft")
+        XCTAssertEqual(model.notesFailure?.localizationKey, "instance.notes.unavailable")
+        XCTAssertTrue(model.retryNotes())
+        XCTAssertEqual(model.notesSaveState, .saving)
+        XCTAssertEqual(saveRequests.count, 4)
+        XCTAssertEqual(saveRequests[3].0, "fixture.one")
+        XCTAssertEqual(saveRequests[3].1, "retry draft")
+
+        XCTAssertFalse(
+            model.apply(
+                notesResult: try XCTUnwrap(
+                    PRInstanceNotesUpdateResult(
+                        identifier: "other.instance",
+                        notes: "stale",
+                        outcome: .succeeded
+                    )
+                )
+            )
+        )
+    }
+
+    func testInstanceDetailsSourceUsesNativeFormTextEditorAndRecoveryAPIs() throws {
+        let contentSource = try contentSource()
+        let shellModelSource = try shellModelSource()
+
+        for requiredToken in [
+            "PrismInstanceDetailsView",
+            "Form {",
+            "Section(\"Metadata\")",
+            "LabeledContent",
+            "TextEditor",
+            ".textSelection(.enabled)",
+            "Save Notes",
+            ".keyboardShortcut(.defaultAction)",
+            "ContentUnavailableView",
+            "ProgressView()",
+            "prism.instance-details.notes-editor",
+            "prism.instance-details.save-notes",
+            ".accessibilityLabel(",
+            ".accessibilityValue(",
+            ".help("
+        ] {
+            XCTAssertTrue(contentSource.contains(requiredToken), "Missing native instance detail API: \(requiredToken)")
+        }
+
+        for requiredToken in [
+            "PrismInstanceDetails",
+            "PrismInstanceDetailsModel",
+            "PRInstanceDetails",
+            "PRInstanceNotesUpdateResult",
+            "PrismInstanceDetailsState",
+            "PrismInstanceNotesSaveState",
+            "beginLoading(identifier:",
+            "apply(notesResult bridgeResult:",
+            "isNotesSaveAvailable",
+            "retryNotes()",
+            "notesEditable",
+            "partialChangesRolledBack"
+        ] {
+            XCTAssertTrue(shellModelSource.contains(requiredToken), "Missing instance detail state contract: \(requiredToken)")
+        }
+
+        XCTAssertFalse(contentSource.contains("Canvas("))
+        XCTAssertFalse(contentSource.contains("draw("))
+        XCTAssertFalse(contentSource.contains("Path("))
+        XCTAssertFalse(shellModelSource.contains("QWidget"))
+        XCTAssertFalse(shellModelSource.contains("QDialog"))
+        XCTAssertFalse(shellModelSource.contains("Unmanaged"))
+        XCTAssertFalse(shellModelSource.contains("UnsafeMutable"))
+    }
+
     func testTaskPresentationMapsAllStatesProgressSubtasksAndTerminalMetadata() throws {
         let subtask = try XCTUnwrap(
             PRTaskSubtaskStatus(

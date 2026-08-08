@@ -95,6 +95,17 @@ bool isKnownInstanceCommandOutcome(PRInstanceCommandOutcome outcome)
     return false;
 }
 
+bool isKnownInstanceNotesUpdateOutcome(PRInstanceNotesUpdateOutcome outcome)
+{
+    switch (outcome) {
+        case PRInstanceNotesUpdateOutcomeSucceeded:
+        case PRInstanceNotesUpdateOutcomeUnknownInstance:
+        case PRInstanceNotesUpdateOutcomeRejected:
+            return true;
+    }
+    return false;
+}
+
 std::string stableIdentifierFromFoundation(NSString *identifier)
 {
     if (![identifier isKindOfClass:NSString.class]) {
@@ -111,6 +122,22 @@ std::string stableIdentifierFromFoundation(NSString *identifier)
         throw std::invalid_argument("Instance commands require valid UTF-8 text");
     }
     return std::string(utf8);
+}
+
+std::string utf8TextFromFoundation(NSString *text)
+{
+    if (![text isKindOfClass:NSString.class]) {
+        throw std::invalid_argument("Instance notes require a string value");
+    }
+
+    NSData *data = [text dataUsingEncoding:NSUTF8StringEncoding allowLossyConversion:NO];
+    if (!data) {
+        throw std::invalid_argument("Instance notes require valid UTF-8 text");
+    }
+    if (data.length == 0) {
+        return {};
+    }
+    return std::string(static_cast<const char *>(data.bytes), data.length);
 }
 
 NSString *nullableStringCopy(NSString *value)
@@ -180,6 +207,14 @@ NSString *foundationStringFromUTF8(const std::string& value)
     return string;
 }
 
+NSString *foundationStringFromUTF8AllowEmpty(const std::string& value)
+{
+    if (value.empty()) {
+        return @"";
+    }
+    return foundationStringFromUTF8(value);
+}
+
 PRInstanceSummary *summaryFromFacadeSnapshot(const FrontendInstanceSnapshot& snapshot)
 {
     NSString *identifier = foundationStringFromUTF8(snapshot.id);
@@ -194,6 +229,35 @@ PRInstanceSummary *summaryFromFacadeSnapshot(const FrontendInstanceSnapshot& sna
         throw std::invalid_argument("Facade returned an invalid instance snapshot");
     }
     return summary;
+}
+
+PRInstanceDetails *detailsFromFacadeSnapshot(const FrontendInstanceDetailsSnapshot& snapshot)
+{
+    PRInstanceDetails *details = [[PRInstanceDetails alloc]
+        initWithIdentifier:foundationStringFromUTF8(snapshot.id)
+                       name:foundationStringFromUTF8(snapshot.name)
+                    iconKey:foundationStringFromUTF8(snapshot.iconKey)
+                    groupID:foundationStringFromUTF8(snapshot.groupId)
+              instanceType:foundationStringFromUTF8(snapshot.instanceType)
+                     notes:foundationStringFromUTF8AllowEmpty(snapshot.notes)
+             notesEditable:snapshot.notesEditable];
+    if (!details) {
+        throw std::invalid_argument("Facade returned invalid instance details");
+    }
+    return details;
+}
+
+PRInstanceNotesUpdateOutcome notesUpdateOutcomeFromFacadeResult(FrontendInstanceNotesUpdateOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendInstanceNotesUpdateOutcome::Succeeded:
+            return PRInstanceNotesUpdateOutcomeSucceeded;
+        case FrontendInstanceNotesUpdateOutcome::UnknownInstance:
+            return PRInstanceNotesUpdateOutcomeUnknownInstance;
+        case FrontendInstanceNotesUpdateOutcome::Rejected:
+            return PRInstanceNotesUpdateOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown instance notes outcome");
 }
 
 NSArray<PRInstanceSummary *> *summariesFromFacadeSnapshots(const std::vector<FrontendInstanceSnapshot>& snapshots)
@@ -716,6 +780,31 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@interface PRBridgeDetailsResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithDetails:(nullable PRInstanceDetails *)details
+                           error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRInstanceDetails *details;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeDetailsResult
+
+- (instancetype)initWithDetails:(PRInstanceDetails *)details error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _details = details;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
 @interface PRBridgeCommandResult : NSObject
 
 - (instancetype)init NS_UNAVAILABLE;
@@ -730,6 +819,31 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @implementation PRBridgeCommandResult
 
 - (instancetype)initWithResult:(PRInstanceCommandResult *)result error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _result = result;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
+@interface PRBridgeNotesUpdateResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithResult:(nullable PRInstanceNotesUpdateResult *)result
+                           error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRInstanceNotesUpdateResult *result;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeNotesUpdateResult
+
+- (instancetype)initWithResult:(PRInstanceNotesUpdateResult *)result error:(PRBridgeError *)error
 {
     self = [super init];
     if (self) {
@@ -874,10 +988,12 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *taskObservationStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *snapshotRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *changeRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *detailsRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *taskRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *taskLogRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *taskCancellationRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *commandRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *notesUpdateRequestStates;
 @property(nonatomic, strong) NSLock *observationLock;
 
 - (nullable instancetype)initWithDataRootURL:(NSURL *)dataRootURL
@@ -890,10 +1006,12 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 - (void)removeTaskObservation:(PRBridgeObservationState *)observation;
 - (void)removeSnapshotRequest:(PRBridgeObservationState *)request;
 - (void)removeChangeRequest:(PRBridgeObservationState *)request;
+- (void)removeDetailsRequest:(PRBridgeObservationState *)request;
 - (void)removeTaskRequest:(PRBridgeObservationState *)request;
 - (void)removeTaskLogRequest:(PRBridgeObservationState *)request;
 - (void)removeTaskCancellationRequest:(PRBridgeObservationState *)request;
 - (void)removeCommandRequest:(PRBridgeObservationState *)request;
+- (void)removeNotesUpdateRequest:(PRBridgeObservationState *)request;
 - (nullable PRBridgeObservationToken *)loadTaskStatusWithIdentifier:(NSString *)identifier
                                                             completion:(PRTaskStatusCompletionHandler)completion;
 - (nullable PRBridgeObservationToken *)performTaskCancellationWithIdentifier:(NSString *)identifier
@@ -920,11 +1038,31 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@interface PRInstanceDetails ()
+
+@property(nonatomic, copy, readwrite) NSString *identifier;
+@property(nonatomic, copy, readwrite) NSString *name;
+@property(nonatomic, copy, readwrite, nullable) NSString *iconKey;
+@property(nonatomic, copy, readwrite, nullable) NSString *groupID;
+@property(nonatomic, copy, readwrite, nullable) NSString *instanceType;
+@property(nonatomic, copy, readwrite) NSString *notes;
+@property(nonatomic, assign, readwrite) BOOL notesEditable;
+
+@end
+
 @interface PRInstanceCommandResult ()
 
 @property(nonatomic, assign, readwrite) PRInstanceCommandKind kind;
 @property(nonatomic, copy, readwrite) NSString *identifier;
 @property(nonatomic, assign, readwrite) PRInstanceCommandOutcome outcome;
+
+@end
+
+@interface PRInstanceNotesUpdateResult ()
+
+@property(nonatomic, copy, readwrite) NSString *identifier;
+@property(nonatomic, copy, readwrite) NSString *notes;
+@property(nonatomic, assign, readwrite) PRInstanceNotesUpdateOutcome outcome;
 
 @end
 
@@ -1074,6 +1212,35 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@implementation PRInstanceDetails
+
+- (instancetype)initWithIdentifier:(NSString *)identifier
+                               name:(NSString *)name
+                            iconKey:(NSString *)iconKey
+                            groupID:(NSString *)groupID
+                      instanceType:(NSString *)instanceType
+                             notes:(NSString *)notes
+                     notesEditable:(BOOL)notesEditable
+{
+    if (!isNonEmptyString(identifier) || !isNonEmptyString(name) || ![notes isKindOfClass:NSString.class]) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.identifier = [identifier copy];
+        self.name = [name copy];
+        self.iconKey = nullableStringCopy(iconKey);
+        self.groupID = nullableStringCopy(groupID);
+        self.instanceType = nullableStringCopy(instanceType);
+        self.notes = [notes copy];
+        self.notesEditable = notesEditable;
+    }
+    return self;
+}
+
+@end
+
 @implementation PRInstanceCommandResult
 
 - (instancetype)initWithKind:(PRInstanceCommandKind)kind
@@ -1088,6 +1255,28 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     if (self) {
         self.kind = kind;
         self.identifier = [identifier copy];
+        self.outcome = outcome;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRInstanceNotesUpdateResult
+
+- (instancetype)initWithIdentifier:(NSString *)identifier
+                              notes:(NSString *)notes
+                            outcome:(PRInstanceNotesUpdateOutcome)outcome
+{
+    if (!isNonEmptyString(identifier) || ![notes isKindOfClass:NSString.class]
+        || !isKnownInstanceNotesUpdateOutcome(outcome)) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.identifier = [identifier copy];
+        self.notes = [notes copy];
         self.outcome = outcome;
     }
     return self;
@@ -1424,10 +1613,12 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.taskObservationStates = [NSMutableArray array];
         self.snapshotRequestStates = [NSMutableArray array];
         self.changeRequestStates = [NSMutableArray array];
+        self.detailsRequestStates = [NSMutableArray array];
         self.taskRequestStates = [NSMutableArray array];
         self.taskLogRequestStates = [NSMutableArray array];
         self.taskCancellationRequestStates = [NSMutableArray array];
         self.commandRequestStates = [NSMutableArray array];
+        self.notesUpdateRequestStates = [NSMutableArray array];
         self.observationLock = [[NSLock alloc] init];
         _lifecycle = std::make_unique<NativeFacadeLifecycle>();
         _facade = std::move(facade);
@@ -1677,6 +1868,93 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         }
         if (!state.isCancelled) {
             [state deliverOnMainActor:[[PRBridgeArrayResult alloc] initWithValues:changes error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
+- (PRBridgeObservationToken *)loadInstanceDetailsWithIdentifier:(NSString *)identifier
+                                                        completion:(PRInstanceDetailsCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    NSString *identifierCopy = [identifier copy];
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeDetailsResult *detailsResult = (PRBridgeDetailsResult *)value;
+        [weakRequest cancel];
+        completion(detailsResult.details, detailsResult.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeDetailsRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.detailsRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRInstanceDetails *details = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    const std::string instanceIdentifier = stableIdentifierFromFoundation(identifierCopy);
+                    const std::optional<FrontendInstanceDetailsSnapshot> snapshot =
+                        bridge->_facade->instanceDetails(instanceIdentifier);
+                    if (!snapshot.has_value()) {
+                        error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                                   diagnosticText:@"Instance details are not available"
+                                               substitutionValues:@{ @"instanceIdentifier": identifierCopy ?: @"" }];
+                    } else {
+                        details = detailsFromFacadeSnapshot(*snapshot);
+                    }
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid instance details identifier"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Instance details operation cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Instance details unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown instance details failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeDetailsResult alloc] initWithDetails:details error:error]];
         }
     });
 
@@ -2049,6 +2327,96 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     return [self performInstanceCommand:PRInstanceCommandKindStop identifier:identifier completion:completion];
 }
 
+- (PRBridgeObservationToken *)updateInstanceNotesWithIdentifier:(NSString *)identifier
+                                                           notes:(NSString *)notes
+                                                       completion:(PRInstanceNotesUpdateCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    NSString *identifierCopy = [identifier copy];
+    NSString *notesCopy = [notes copy];
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeNotesUpdateResult *notesResult = (PRBridgeNotesUpdateResult *)value;
+        [weakRequest cancel];
+        completion(notesResult.result, notesResult.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeNotesUpdateRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.notesUpdateRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRInstanceNotesUpdateResult *result = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    const std::string instanceIdentifier = stableIdentifierFromFoundation(identifierCopy);
+                    const std::string notesValue = utf8TextFromFoundation(notesCopy);
+                    const FrontendInstanceNotesUpdateResult updateResult =
+                        bridge->_facade->updateInstanceNotes(instanceIdentifier, notesValue);
+                    result = [[PRInstanceNotesUpdateResult alloc]
+                        initWithIdentifier:foundationStringFromUTF8(instanceIdentifier)
+                                      notes:foundationStringFromUTF8AllowEmpty(updateResult.notes)
+                                    outcome:notesUpdateOutcomeFromFacadeResult(updateResult.outcome)];
+                    if (!result) {
+                        throw std::invalid_argument("Facade returned an invalid instance notes result");
+                    }
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid instance notes"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Instance notes update cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Instance notes update unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown instance notes failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeNotesUpdateResult alloc] initWithResult:result error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
 - (void)removeInstanceObservation:(PRBridgeObservationState *)observation
 {
     [self.observationLock lock];
@@ -2099,6 +2467,16 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.observationLock unlock];
 }
 
+- (void)removeDetailsRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.detailsRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.detailsRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
 - (void)removeTaskRequest:(PRBridgeObservationState *)request
 {
     [self.observationLock lock];
@@ -2139,6 +2517,16 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.observationLock unlock];
 }
 
+- (void)removeNotesUpdateRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.notesUpdateRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.notesUpdateRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
 - (void)cancelAllObservations
 {
     [self.observationLock lock];
@@ -2148,19 +2536,23 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [observations addObjectsFromArray:self.taskObservationStates];
     [observations addObjectsFromArray:self.snapshotRequestStates];
     [observations addObjectsFromArray:self.changeRequestStates];
+    [observations addObjectsFromArray:self.detailsRequestStates];
     [observations addObjectsFromArray:self.taskRequestStates];
     [observations addObjectsFromArray:self.taskLogRequestStates];
     [observations addObjectsFromArray:self.taskCancellationRequestStates];
     [observations addObjectsFromArray:self.commandRequestStates];
+    [observations addObjectsFromArray:self.notesUpdateRequestStates];
     [self.instanceObservationStates removeAllObjects];
     [self.instanceChangeObservationStates removeAllObjects];
     [self.taskObservationStates removeAllObjects];
     [self.snapshotRequestStates removeAllObjects];
     [self.changeRequestStates removeAllObjects];
+    [self.detailsRequestStates removeAllObjects];
     [self.taskRequestStates removeAllObjects];
     [self.taskLogRequestStates removeAllObjects];
     [self.taskCancellationRequestStates removeAllObjects];
     [self.commandRequestStates removeAllObjects];
+    [self.notesUpdateRequestStates removeAllObjects];
     [self.observationLock unlock];
 
     for (PRBridgeObservationState *observation in observations) {

@@ -15,6 +15,9 @@ static_assert(static_cast<std::uint8_t>(FrontendLifecycleState::Stopped) == 2);
 static_assert(static_cast<std::uint8_t>(FrontendInstanceCommandResult::Succeeded) == 0);
 static_assert(static_cast<std::uint8_t>(FrontendInstanceCommandResult::UnknownInstance) == 1);
 static_assert(static_cast<std::uint8_t>(FrontendInstanceCommandResult::Rejected) == 2);
+static_assert(static_cast<std::uint8_t>(FrontendInstanceNotesUpdateOutcome::Succeeded) == 0);
+static_assert(static_cast<std::uint8_t>(FrontendInstanceNotesUpdateOutcome::UnknownInstance) == 1);
+static_assert(static_cast<std::uint8_t>(FrontendInstanceNotesUpdateOutcome::Rejected) == 2);
 static_assert(static_cast<std::uint8_t>(FrontendTaskState::Queued) == 0);
 static_assert(static_cast<std::uint8_t>(FrontendTaskState::Running) == 1);
 static_assert(static_cast<std::uint8_t>(FrontendTaskState::Cancelling) == 2);
@@ -35,10 +38,12 @@ static_assert(static_cast<std::uint8_t>(FrontendTaskCancellationResult::Rejected
 int main()
 {
     const FrontendInstanceSnapshot snapshot{ "header-contract", "Header Contract", "", "" };
+    const FrontendInstanceDetailsSnapshot details{ "header-contract", "Header Contract", "", "", "Minecraft", "", true };
     const FrontendInstanceChange change{ FrontendInstanceChangeKind::Added, snapshot };
     const FrontendLogSnapshot logSnapshot{ "header-contract", {}, 0, 0, false };
     const FrontendRuntimeDependencies dependencies;
-    return snapshot.hasStableIdentifier() && change.instance.id == snapshot.id && logSnapshot.hasStableIdentifier()
+    return snapshot.hasStableIdentifier() && details.hasStableIdentifier() && details.notesEditable
+            && change.instance.id == snapshot.id && logSnapshot.hasStableIdentifier()
             && !dependencies.isComplete()
         ? 0
         : 1;

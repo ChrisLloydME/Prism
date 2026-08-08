@@ -21,11 +21,32 @@ struct FrontendInstanceSnapshot final {
     bool hasStableIdentifier() const noexcept { return !id.empty(); }
 };
 
+/// Immutable instance metadata and notes for the native detail surface.
+/// Paths, Qt objects, and settings ownership remain outside this value type.
+struct FrontendInstanceDetailsSnapshot final {
+    std::string id;
+    std::string name;
+    std::string iconKey;
+    std::string groupId;
+    std::string instanceType;
+    std::string notes;
+    bool notesEditable = true;
+
+    bool hasStableIdentifier() const noexcept { return !id.empty(); }
+};
+
 enum class FrontendInstanceChangeKind : std::uint8_t { Added, Updated, Removed };
 
 enum class FrontendLifecycleState : std::uint8_t { Running, ShuttingDown, Stopped };
 
 enum class FrontendInstanceCommandResult : std::uint8_t { Succeeded, UnknownInstance, Rejected };
+
+enum class FrontendInstanceNotesUpdateOutcome : std::uint8_t { Succeeded, UnknownInstance, Rejected };
+
+struct FrontendInstanceNotesUpdateResult final {
+    FrontendInstanceNotesUpdateOutcome outcome = FrontendInstanceNotesUpdateOutcome::Rejected;
+    std::string notes;
+};
 
 enum class FrontendTaskState : std::uint8_t { Queued, Running, Cancelling, Succeeded, Failed, Cancelled };
 
@@ -99,8 +120,12 @@ struct FrontendRuntimeDependencies final {
     using CancelPendingWork = std::function<void()>;
     using Shutdown = std::function<void()>;
     using InstanceSnapshotLoader = std::function<std::vector<FrontendInstanceSnapshot>(const std::filesystem::path&)>;
+    using InstanceDetailsLoader =
+        std::function<std::optional<FrontendInstanceDetailsSnapshot>(const std::filesystem::path&, const std::string&)>;
     using InstanceChangeLoader = std::function<std::vector<FrontendInstanceChange>(const std::filesystem::path&)>;
     using InstanceCommand = std::function<FrontendInstanceCommandResult(const std::filesystem::path&, const std::string&)>;
+    using InstanceNotesUpdater = std::function<FrontendInstanceNotesUpdateResult(
+        const std::filesystem::path&, const std::string&, const std::string&)>;
     using TaskSnapshotLoader = std::function<std::optional<FrontendTaskSnapshot>(const std::filesystem::path&, const std::string&)>;
     using TaskCancellation = std::function<FrontendTaskCancellationResult(const std::filesystem::path&, const std::string&)>;
     using LogEntryHandler = std::function<void(FrontendLogEntry)>;
@@ -111,9 +136,11 @@ struct FrontendRuntimeDependencies final {
     CancelPendingWork cancelPendingWork;
     Shutdown shutdown;
     InstanceSnapshotLoader loadInstanceSnapshots;
+    InstanceDetailsLoader loadInstanceDetails;
     InstanceChangeLoader loadInstanceChanges;
     InstanceCommand launchInstance;
     InstanceCommand stopInstance;
+    InstanceNotesUpdater updateInstanceNotes;
     TaskSnapshotLoader loadTaskSnapshot;
     TaskCancellation cancelTask;
     TaskLogStreamer streamTaskLogs;
@@ -145,9 +172,12 @@ class FrontendFacade final {
     FrontendLifecycleState lifecycleState() const noexcept { return m_lifecycleState; }
     bool shutdown() noexcept;
     std::vector<FrontendInstanceSnapshot> instanceSnapshots() const;
+    std::optional<FrontendInstanceDetailsSnapshot> instanceDetails(const std::string& instanceIdentifier) const;
     std::vector<FrontendInstanceChange> instanceChanges() const;
     FrontendInstanceCommandResult launchInstance(const std::string& instanceIdentifier) const;
     FrontendInstanceCommandResult stopInstance(const std::string& instanceIdentifier) const;
+    FrontendInstanceNotesUpdateResult updateInstanceNotes(
+        const std::string& instanceIdentifier, const std::string& notes) const;
     std::optional<FrontendTaskSnapshot> taskSnapshot(const std::string& taskIdentifier) const;
     FrontendTaskCancellationResult cancelTask(const std::string& taskIdentifier) const;
     std::optional<FrontendLogSnapshot> taskLogSnapshot(const std::string& taskIdentifier) const;

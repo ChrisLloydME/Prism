@@ -49,6 +49,12 @@ typedef NS_ENUM(NSInteger, PRInstanceCommandOutcome) {
     PRInstanceCommandOutcomeRejected,
 };
 
+typedef NS_ENUM(NSInteger, PRInstanceNotesUpdateOutcome) {
+    PRInstanceNotesUpdateOutcomeSucceeded = 0,
+    PRInstanceNotesUpdateOutcomeUnknownInstance,
+    PRInstanceNotesUpdateOutcomeRejected,
+};
+
 /// Immutable instance metadata that is safe to pass into Swift state.
 @interface PRInstanceSummary : NSObject
 
@@ -65,6 +71,28 @@ typedef NS_ENUM(NSInteger, PRInstanceCommandOutcome) {
 
 @end
 
+/// Immutable instance metadata and notes for the native detail form.
+@interface PRInstanceDetails : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithIdentifier:(NSString *)identifier
+                                        name:(NSString *)name
+                                     iconKey:(nullable NSString *)iconKey
+                                     groupID:(nullable NSString *)groupID
+                               instanceType:(nullable NSString *)instanceType
+                                      notes:(NSString *)notes
+                              notesEditable:(BOOL)notesEditable NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, copy, readonly) NSString *name;
+@property(nonatomic, copy, readonly, nullable) NSString *iconKey;
+@property(nonatomic, copy, readonly, nullable) NSString *groupID;
+@property(nonatomic, copy, readonly, nullable) NSString *instanceType;
+@property(nonatomic, copy, readonly) NSString *notes;
+@property(nonatomic, assign, readonly) BOOL notesEditable;
+
+@end
+
 /// Immutable result for a fixture-safe launch or stop intent.
 @interface PRInstanceCommandResult : NSObject
 
@@ -76,6 +104,20 @@ typedef NS_ENUM(NSInteger, PRInstanceCommandOutcome) {
 @property(nonatomic, assign, readonly) PRInstanceCommandKind kind;
 @property(nonatomic, copy, readonly) NSString *identifier;
 @property(nonatomic, assign, readonly) PRInstanceCommandOutcome outcome;
+
+@end
+
+/// Immutable confirmed result for one notes mutation.
+@interface PRInstanceNotesUpdateResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithIdentifier:(NSString *)identifier
+                                      notes:(NSString *)notes
+                                    outcome:(PRInstanceNotesUpdateOutcome)outcome NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, copy, readonly) NSString *notes;
+@property(nonatomic, assign, readonly) PRInstanceNotesUpdateOutcome outcome;
 
 @end
 

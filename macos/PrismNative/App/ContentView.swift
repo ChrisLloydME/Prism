@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var shellModel = PrismShellModel()
+    @StateObject private var instanceDetailsModel = PrismInstanceDetailsModel()
     @StateObject private var logModel = PrismTaskLogPresentationModel()
     @ObservedObject private var commandModel: PrismCommandModel
     @ObservedObject private var taskModel: PrismTaskPresentationModel
@@ -56,10 +57,14 @@ struct ContentView: View {
                 if let logFailure = logModel.failure {
                     PrismTaskLogFailureView(failure: logFailure, onRetry: { _ = logModel.retry() })
                 }
-                PrismShellDetailView(
-                    state: shellModel.detailState,
-                    onRetry: { shellModel.retry() }
-                )
+                if instanceDetailsModel.showsDetail {
+                    PrismInstanceDetailsView(model: instanceDetailsModel)
+                } else {
+                    PrismShellDetailView(
+                        state: shellModel.detailState,
+                        onRetry: { shellModel.retry() }
+                    )
+                }
             }
             .contextMenu {
                 PrismInstanceContextMenu(model: commandModel)
@@ -343,6 +348,135 @@ struct PrismInstanceArtworkView: View {
             }
         }
         .accessibilityIdentifier("prism.instance-artwork")
+    }
+}
+
+private extension PrismInstanceDetailsModel {
+    var showsDetail: Bool {
+        switch state {
+        case .empty:
+            return false
+        case .loading, .failed, .content:
+            return true
+        }
+    }
+}
+
+@MainActor
+private struct PrismInstanceDetailsView: View {
+    @ObservedObject var model: PrismInstanceDetailsModel
+
+    var body: some View {
+        switch model.state {
+        case .loading:
+            ProgressView("Loading Instance Details")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityLabel(Text("Loading Instance Details"))
+                .accessibilityIdentifier("prism.instance-details.loading-state")
+        case .empty:
+            ContentUnavailableView(
+                "No Instance Selected",
+                systemImage: "rectangle.portrait",
+                description: Text("Select an instance to view its metadata and notes.")
+            )
+            .accessibilityIdentifier("prism.instance-details.empty-state")
+        case .failed(let failure):
+            ContentUnavailableView {
+                Label(LocalizedStringKey(failure.localizationKey), systemImage: "exclamationmark.triangle")
+            } description: {
+                Text(LocalizedStringKey(failure.localizationKey))
+            } actions: {
+                if failure.isRetryAvailable {
+                    Button {
+                        _ = model.retry()
+                    } label: {
+                        Text(LocalizedStringKey(failure.recoveryAction.titleKey))
+                    }
+                    .accessibilityLabel(Text(LocalizedStringKey(failure.recoveryAction.accessibilityLabelKey)))
+                    .help(Text(LocalizedStringKey(failure.recoveryAction.helpKey)))
+                }
+            }
+            .accessibilityIdentifier("prism.instance-details.failed-state")
+        case .content(let details):
+            Form {
+                Section("Metadata") {
+                    LabeledContent("Name") {
+                        Text(details.name)
+                            .accessibilityIdentifier("prism.instance-details.name")
+                    }
+                    if let instanceType = details.instanceType {
+                        LabeledContent("Type") {
+                            Text(instanceType)
+                                .accessibilityIdentifier("prism.instance-details.type")
+                        }
+                    }
+                    if let group = details.group {
+                        LabeledContent("Group") {
+                            Text(group)
+                                .accessibilityIdentifier("prism.instance-details.group")
+                        }
+                    }
+                    LabeledContent("Identifier") {
+                        Text(details.id)
+                            .textSelection(.enabled)
+                            .accessibilityIdentifier("prism.instance-details.identifier")
+                    }
+                }
+
+                Section("Notes") {
+                    TextEditor(
+                        text: Binding(
+                            get: { model.draftNotes },
+                            set: { model.setDraftNotes($0) }
+                        )
+                    )
+                    .frame(minHeight: 180)
+                    .disabled(!details.notesEditable || model.notesSaveState == .saving)
+                    .accessibilityLabel(Text("Instance Notes"))
+                    .accessibilityValue(Text("Editable notes for this instance."))
+                    .accessibilityIdentifier("prism.instance-details.notes-editor")
+
+                    HStack {
+                        if model.notesSaveState == .saving {
+                            ProgressView()
+                                .controlSize(.small)
+                                .accessibilityLabel(Text("Saving Notes"))
+                        }
+                        Spacer()
+                        Button("Save Notes") {
+                            _ = model.saveNotes()
+                        }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(!model.isNotesSaveAvailable)
+                        .accessibilityLabel(Text("Save Instance Notes"))
+                        .help(Text("Save the edited notes for this instance."))
+                        .accessibilityIdentifier("prism.instance-details.save-notes")
+                    }
+
+                    if let failure = model.notesFailure {
+                        Label {
+                            Text(LocalizedStringKey(failure.localizationKey))
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle")
+                        }
+                        .accessibilityValue(Text(failure.diagnosticText ?? "Notes could not be saved."))
+                        .accessibilityIdentifier("prism.instance-details.notes-error")
+                        if failure.isRetryAvailable {
+                            Button {
+                                _ = model.retryNotes()
+                            } label: {
+                                Text(LocalizedStringKey(failure.recoveryAction.titleKey))
+                            }
+                            .accessibilityLabel(Text(LocalizedStringKey(failure.recoveryAction.accessibilityLabelKey)))
+                            .help(Text(LocalizedStringKey(failure.recoveryAction.helpKey)))
+                        }
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle(details.name)
+            .accessibilityIdentifier("prism.instance-details.form")
+        }
     }
 }
 

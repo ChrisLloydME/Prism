@@ -128,6 +128,57 @@ int main()
         && changes[1].kind == FrontendInstanceChangeKind::Updated && changes[2].kind == FrontendInstanceChangeKind::Removed
         && changes[2].instance.id == "fixture-two" && changeRootMatches;
 
+    std::vector<std::string> detailsCalls;
+    std::vector<std::string> notesUpdateCalls;
+    bool detailsRootMatches = true;
+    bool notesRootMatches = true;
+    auto detailsDependencies = makeFixtureDependencies();
+    detailsDependencies.loadInstanceDetails = [&](const std::filesystem::path& root, const std::string& identifier)
+        -> std::optional<FrontendInstanceDetailsSnapshot> {
+        detailsRootMatches = detailsRootMatches && root == fixtureRoot.lexically_normal();
+        detailsCalls.push_back(identifier);
+        if (identifier == "fixture-one") {
+            return FrontendInstanceDetailsSnapshot{ "fixture-one", "Fixture One", "grass", "group-a", "Minecraft",
+                                                    "Keep this fixture offline.", true };
+        }
+        return std::nullopt;
+    };
+    detailsDependencies.updateInstanceNotes = [&](const std::filesystem::path& root,
+                                                   const std::string& identifier,
+                                                   const std::string& notes) {
+        notesRootMatches = notesRootMatches && root == fixtureRoot.lexically_normal();
+        notesUpdateCalls.push_back(identifier + ":" + notes);
+        if (identifier == "fixture-one") {
+            return FrontendInstanceNotesUpdateResult{ FrontendInstanceNotesUpdateOutcome::Succeeded, notes };
+        }
+        if (identifier == "unknown-instance") {
+            return FrontendInstanceNotesUpdateResult{ FrontendInstanceNotesUpdateOutcome::UnknownInstance, {} };
+        }
+        return FrontendInstanceNotesUpdateResult{ FrontendInstanceNotesUpdateOutcome::Rejected, {} };
+    };
+    FrontendFacade detailsFacade(fixtureRoot / "nested" / "..", std::move(detailsDependencies));
+    const auto loadedDetails = detailsFacade.instanceDetails("fixture-one");
+    const auto missingDetails = detailsFacade.instanceDetails("unknown-instance");
+    const auto savedNotes = detailsFacade.updateInstanceNotes("fixture-one", "Updated fixture notes");
+    const auto unknownNotes = detailsFacade.updateInstanceNotes("unknown-instance", "Ignored notes");
+    const auto rejectedNotes = detailsFacade.updateInstanceNotes("rejected-instance", "Rejected notes");
+    const bool detailsContract = loadedDetails.has_value() && loadedDetails->name == "Fixture One"
+        && loadedDetails->instanceType == "Minecraft" && loadedDetails->notes == "Keep this fixture offline."
+        && loadedDetails->notesEditable && !missingDetails.has_value() && savedNotes.outcome == FrontendInstanceNotesUpdateOutcome::Succeeded
+        && savedNotes.notes == "Updated fixture notes"
+        && unknownNotes.outcome == FrontendInstanceNotesUpdateOutcome::UnknownInstance
+        && rejectedNotes.outcome == FrontendInstanceNotesUpdateOutcome::Rejected && detailsRootMatches && notesRootMatches
+        && detailsCalls == std::vector<std::string>{ "fixture-one", "unknown-instance" }
+        && notesUpdateCalls == std::vector<std::string>{ "fixture-one:Updated fixture notes", "unknown-instance:Ignored notes",
+                                                           "rejected-instance:Rejected notes" };
+    const bool rejectedInvalidDetailsIdentifiers = throwsInvalidArgument([&detailsFacade] {
+        (void) detailsFacade.instanceDetails("");
+    }) && throwsInvalidArgument([&detailsFacade] {
+        (void) detailsFacade.updateInstanceNotes("", "fixture notes");
+    });
+    const bool missingDetailsPortsAreSafe = !emptyFacade.instanceDetails("fixture-one").has_value()
+        && emptyFacade.updateInstanceNotes("fixture-one", "fixture notes").outcome == FrontendInstanceNotesUpdateOutcome::Rejected;
+
     std::vector<std::string> launchCalls;
     std::vector<std::string> stopCalls;
     bool commandRootMatches = true;
@@ -405,6 +456,16 @@ int main()
         (void) invalidSnapshotFacade.instanceSnapshots();
     });
 
+    auto invalidDetailsDependencies = makeFixtureDependencies();
+    invalidDetailsDependencies.loadInstanceDetails = [](const std::filesystem::path&, const std::string&)
+        -> std::optional<FrontendInstanceDetailsSnapshot> {
+        return FrontendInstanceDetailsSnapshot{ "fixture-one", "", "", "", "Minecraft", "", true };
+    };
+    FrontendFacade invalidDetailsFacade(fixtureRoot, std::move(invalidDetailsDependencies));
+    const bool rejectedInvalidDetails = throwsInvalidArgument([&invalidDetailsFacade] {
+        (void) invalidDetailsFacade.instanceDetails("fixture-one");
+    });
+
     auto invalidChangeDependencies = makeFixtureDependencies();
     invalidChangeDependencies.loadInstanceChanges = [](const std::filesystem::path&) {
         return std::vector<FrontendInstanceChange>{
@@ -490,13 +551,24 @@ int main()
     }
     const bool destructorShutdownContract = implicitShutdownCount == 1;
 
+    const bool rejectedPostShutdownDetailsWork = detailsFacade.shutdown()
+        && throwsLogicError([&detailsFacade] {
+               (void) detailsFacade.instanceDetails("fixture-one");
+           })
+        && throwsLogicError([&detailsFacade] {
+               (void) detailsFacade.updateInstanceNotes("fixture-one", "after shutdown");
+           });
+
     std::filesystem::remove(fixtureMarker, error);
     std::filesystem::remove(fixtureRoot, error);
-    return fixtureWasPreserved && emptyContract && fixtureSnapshotContract && fixtureChangeContract && commandRootContract
-               && missingCommandPortsAreRejected && rejectedPostShutdownCommands && taskStateContract
+
+    return fixtureWasPreserved && emptyContract && fixtureSnapshotContract && fixtureChangeContract && detailsContract
+               && rejectedInvalidDetailsIdentifiers && missingDetailsPortsAreSafe && rejectedPostShutdownDetailsWork
+               && commandRootContract && missingCommandPortsAreRejected && rejectedPostShutdownCommands && taskStateContract
                && taskCancellationContract && taskForwardingContract && rejectedInvalidTaskIdentifiers
                && missingTaskPortsAreSafe && rejectedPostShutdownTaskWork && rejectedInvalidTaskProgress
                && rejectedInvalidTaskSubtasks && rejectedInvalidTaskTerminalResult && rejectedInvalidSnapshot
+               && rejectedInvalidDetails
                && rejectedInvalidChange && logPrivacyAndBounds && longLogIsTruncated && missingLogPortIsSafe
                && rejectedEmptyRoot && rejectedRelativeRoot && rejectedIncompleteDependencies
                && lifecycleContract && callbacksRanExactlyOnce && destructorShutdownContract && !error

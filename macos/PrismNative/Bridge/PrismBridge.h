@@ -43,8 +43,12 @@ typedef void (^PRInstanceSummariesCompletionHandler)(NSArray<PRInstanceSummary *
                                                       PRBridgeError * _Nullable error);
 typedef void (^PRInstanceChangesCompletionHandler)(NSArray<PRInstanceChange *> *changes,
                                                     PRBridgeError * _Nullable error);
+typedef void (^PRInstanceDetailsCompletionHandler)(PRInstanceDetails * _Nullable details,
+                                                    PRBridgeError * _Nullable error);
 typedef void (^PRInstanceCommandCompletionHandler)(PRInstanceCommandResult * _Nullable result,
                                                     PRBridgeError * _Nullable error);
+typedef void (^PRInstanceNotesUpdateCompletionHandler)(PRInstanceNotesUpdateResult * _Nullable result,
+                                                        PRBridgeError * _Nullable error);
 
 /// Owns one bridge observation registration and cancels it when released.
 @interface PRBridgeObservationToken : NSObject
@@ -89,6 +93,10 @@ typedef void (^PRInstanceCommandCompletionHandler)(PRInstanceCommandResult * _Nu
 - (nullable PRBridgeObservationToken *)loadInstanceSummariesWithCompletion:(PRInstanceSummariesCompletionHandler)completion;
 - (nullable PRBridgeObservationToken *)loadInstanceChangesWithCompletion:(PRInstanceChangesCompletionHandler)completion;
 
+/// Loads immutable metadata and notes for one stable instance identifier.
+- (nullable PRBridgeObservationToken *)loadInstanceDetailsWithIdentifier:(NSString *)identifier
+                                                                 completion:(PRInstanceDetailsCompletionHandler)completion;
+
 /// Loads one immutable task snapshot by stable identifier. Unknown tasks and
 /// lifecycle failures are returned as stable bridge errors; the completion
 /// runs on the main actor.
@@ -114,6 +122,12 @@ typedef void (^PRInstanceCommandCompletionHandler)(PRInstanceCommandResult * _Nu
                                                            completion:(PRInstanceCommandCompletionHandler)completion;
 - (nullable PRBridgeObservationToken *)stopInstanceWithIdentifier:(NSString *)identifier
                                                          completion:(PRInstanceCommandCompletionHandler)completion;
+
+/// Persists notes through the injected facade port and returns the confirmed
+/// value. The bridge never writes an instance file or owns a settings object.
+- (nullable PRBridgeObservationToken *)updateInstanceNotesWithIdentifier:(NSString *)identifier
+                                                                    notes:(NSString *)notes
+                                                                completion:(PRInstanceNotesUpdateCompletionHandler)completion;
 
 @end
 
