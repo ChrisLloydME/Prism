@@ -72,6 +72,10 @@ int main()
         std::ofstream importFile(fixtureRoot / "world-import.zip");
         importFile << "temporary world archive";
     }
+    {
+        std::ofstream invalidArchive(fixtureRoot / "invalid-world.zip");
+        invalidArchive << "not a valid zip archive";
+    }
 
     auto dependencies = makeDependencies();
     bool rootMatches = true;
@@ -145,6 +149,59 @@ int main()
                                              const std::string& instanceIdentifier,
                                              const FrontendInstanceDetailMutationRequest& request) {
         rootMatches = rootMatches && root == fixtureRoot.lexically_normal();
+        if (request.itemIdentifier == "world.permission") {
+            return FrontendInstanceDetailMutationResult{
+                request.kind,
+                request.action,
+                FrontendInstanceDetailMutationOutcome::Rejected,
+                instanceIdentifier,
+                request.itemIdentifier,
+                "instance.world.deletePermissionDenied",
+                "fixture permission denied",
+                false,
+            };
+        }
+        if (request.itemIdentifier == "screenshot.missing") {
+            return FrontendInstanceDetailMutationResult{
+                request.kind,
+                request.action,
+                FrontendInstanceDetailMutationOutcome::UnknownItem,
+                instanceIdentifier,
+                request.itemIdentifier,
+                "instance.screenshot.missing",
+                "fixture screenshot is missing",
+                false,
+            };
+        }
+        if (request.itemIdentifier == "server.conflict") {
+            return FrontendInstanceDetailMutationResult{
+                request.kind,
+                request.action,
+                FrontendInstanceDetailMutationOutcome::Failed,
+                instanceIdentifier,
+                request.itemIdentifier,
+                "instance.server.updateConflict",
+                "fixture server changed externally",
+                true,
+            };
+        }
+        if (request.itemIdentifier == "invalid-world.zip") {
+            std::ifstream archive(request.sourcePath);
+            std::string archiveContents;
+            std::getline(archive, archiveContents);
+            if (archiveContents != "temporary world archive") {
+                return FrontendInstanceDetailMutationResult{
+                    request.kind,
+                    request.action,
+                    FrontendInstanceDetailMutationOutcome::Failed,
+                    instanceIdentifier,
+                    request.itemIdentifier,
+                    "instance.world.importInvalidArchive",
+                    "fixture archive is not a valid world archive",
+                    false,
+                };
+            }
+        }
         if (request.kind == FrontendInstanceDetailKind::Worlds
             && request.action == FrontendInstanceDetailAction::Delete) {
             std::filesystem::remove_all(root / "world-one", error);
@@ -196,6 +253,26 @@ int main()
     updateServer.address = "updated.example:25565";
     const auto updateResult = facade.mutateInstanceDetail("fixture.one", updateServer);
 
+    FrontendInstanceDetailMutationRequest permissionDelete = deleteWorld;
+    permissionDelete.itemIdentifier = "world.permission";
+    const auto permissionResult = facade.mutateInstanceDetail("fixture.one", permissionDelete);
+
+    FrontendInstanceDetailMutationRequest missingScreenshot;
+    missingScreenshot.kind = FrontendInstanceDetailKind::Screenshots;
+    missingScreenshot.action = FrontendInstanceDetailAction::Delete;
+    missingScreenshot.itemIdentifier = "screenshot.missing";
+    missingScreenshot.confirmed = true;
+    const auto missingScreenshotResult = facade.mutateInstanceDetail("fixture.one", missingScreenshot);
+
+    FrontendInstanceDetailMutationRequest conflictingServer = updateServer;
+    conflictingServer.itemIdentifier = "server.conflict";
+    const auto conflictResult = facade.mutateInstanceDetail("fixture.one", conflictingServer);
+
+    FrontendInstanceDetailMutationRequest invalidArchiveImport = importWorld;
+    invalidArchiveImport.itemIdentifier = "invalid-world.zip";
+    invalidArchiveImport.sourcePath = fixtureRoot / "invalid-world.zip";
+    const auto invalidArchiveResult = facade.mutateInstanceDetail("fixture.one", invalidArchiveImport);
+
     FrontendInstanceDetailMutationRequest relativeImport = importWorld;
     relativeImport.sourcePath = "relative.zip";
     const bool rejectedRelativeImport = throwsInvalidArgument([&] { (void) facade.mutateInstanceDetail("fixture.one", relativeImport); });
@@ -232,10 +309,24 @@ int main()
         && !std::filesystem::exists(fixtureRoot / "world-one") && rejectedRelativeImport && rejectedWrongKind
         && rejectedDuplicateServers && missingPortsSafe && calls.size() == 4;
 
+    const bool failureScenarioContract = permissionResult.outcome == FrontendInstanceDetailMutationOutcome::Rejected
+        && permissionResult.localizationKey == "instance.world.deletePermissionDenied"
+        && permissionResult.diagnosticText == "fixture permission denied"
+        && missingScreenshotResult.outcome == FrontendInstanceDetailMutationOutcome::UnknownItem
+        && missingScreenshotResult.localizationKey == "instance.screenshot.missing"
+        && conflictResult.outcome == FrontendInstanceDetailMutationOutcome::Failed
+        && conflictResult.localizationKey == "instance.server.updateConflict"
+        && conflictResult.partialChangesRolledBack
+        && invalidArchiveResult.outcome == FrontendInstanceDetailMutationOutcome::Failed
+        && invalidArchiveResult.localizationKey == "instance.world.importInvalidArchive"
+        && !invalidArchiveResult.partialChangesRolledBack
+        && std::filesystem::exists(fixtureRoot / "invalid-world.zip")
+        && !std::filesystem::exists(fixtureRoot / "invalid-world-imported.zip");
+
     const bool shutdownContract = facade.shutdown()
         && throwsLogicError([&] { (void) facade.instanceWorlds("fixture.one"); })
         && throwsLogicError([&] { (void) facade.instanceLog("fixture.one", "latest.log"); });
 
     std::filesystem::remove_all(fixtureRoot, error);
-    return contract && shutdownContract && !error ? 0 : 2;
+    return contract && failureScenarioContract && shutdownContract && !error ? 0 : 2;
 }

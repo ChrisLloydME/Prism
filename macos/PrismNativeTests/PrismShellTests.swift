@@ -1097,6 +1097,60 @@ final class PrismShellTests: XCTestCase {
         XCTAssertEqual(model.servers.map(\.id), ["server.b", "server.a"])
     }
 
+    func testInstanceServersModelTreatsExternalSnapshotAsAuthoritative() throws {
+        var mutations: [PrismInstanceDetailMutationIntent] = []
+        let model = PrismInstanceServersModel(onMutate: { mutations.append($1) })
+        XCTAssertTrue(model.beginLoading(identifier: "fixture.one"))
+        let serverA = try makeInstanceServer(
+            identifier: "server.a",
+            name: "Alpha",
+            address: "alpha.example:25565"
+        )
+        let serverB = try makeInstanceServer(
+            identifier: "server.b",
+            name: "Beta",
+            address: "beta.example:25565"
+        )
+        XCTAssertTrue(model.apply(servers: [serverA, serverB]))
+        model.selectServer("server.a")
+        model.setDraftName("Locally Edited")
+        model.setDraftAddress("local.example:25565")
+        XCTAssertTrue(model.updateSelected())
+        XCTAssertEqual(model.servers[0].name, "Locally Edited")
+
+        let externalServerA = try makeInstanceServer(
+            identifier: "server.a",
+            name: "Externally Updated",
+            address: "external.example:25565",
+            resourcePolicy: .never,
+            status: .online,
+            onlinePlayers: 8
+        )
+        XCTAssertTrue(model.apply(servers: [externalServerA, serverB]))
+        XCTAssertEqual(model.servers[0].name, "Externally Updated")
+        XCTAssertEqual(model.servers[0].address, "external.example:25565")
+        XCTAssertEqual(model.servers[0].onlinePlayers, 8)
+        XCTAssertNil(model.selectedServerID)
+        XCTAssertNil(model.mutationFailure)
+        XCTAssertEqual(model.mutationState, .idle)
+
+        let staleResult = try XCTUnwrap(
+            PRInstanceDetailMutationResult(
+                kind: .servers,
+                action: .update,
+                outcome: .succeeded,
+                instanceIdentifier: "fixture.one",
+                itemIdentifier: "server.a",
+                localizationKey: "instance.server.updated",
+                diagnosticText: nil,
+                partialChangesRolledBack: false
+            )
+        )
+        XCTAssertFalse(model.apply(mutationResult: staleResult, instanceIdentifier: "fixture.one"))
+        XCTAssertEqual(model.servers[0].name, "Externally Updated")
+        XCTAssertEqual(mutations.map(\.action), [.update])
+    }
+
     func testInstanceScreenshotsAndLogsModelsRouteSystemActionsAndBoundedContent() throws {
         var screenshotMutations: [PrismInstanceDetailMutationIntent] = []
         let screenshotsModel = PrismInstanceScreenshotsModel(

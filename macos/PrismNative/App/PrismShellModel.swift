@@ -3192,6 +3192,7 @@ final class PrismInstanceWorldsModel: ObservableObject {
         selectedWorldID = nil
         pendingDeleteWorldID = nil
         mutationState = .idle
+        lastMutationIntent = nil
         return true
     }
 
@@ -3400,6 +3401,7 @@ final class PrismInstanceServersModel: ObservableObject {
         selectedServerID = nil
         pendingDeleteServerID = nil
         mutationState = .idle
+        lastMutationIntent = nil
         clearDraft()
         return true
     }
@@ -3674,6 +3676,7 @@ final class PrismInstanceScreenshotsModel: ObservableObject {
         selectedScreenshotID = nil
         pendingDeleteScreenshotID = nil
         mutationState = .idle
+        lastMutationIntent = nil
         return true
     }
 
@@ -3876,6 +3879,7 @@ final class PrismInstanceLogsModel: ObservableObject {
         contentState = .idle
         pendingDeleteLogID = nil
         mutationState = .idle
+        lastMutationIntent = nil
         return true
     }
 

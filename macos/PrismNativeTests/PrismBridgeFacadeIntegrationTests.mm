@@ -1925,6 +1925,220 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     XCTAssertTrue(rootMatches->load());
 }
 
+- (void)testInstanceDetailFailureScenariosPreserveRecoveryMetadata
+{
+    auto rootMatches = std::make_shared<std::atomic<bool>>(true);
+    auto mutationCalls = std::make_shared<std::vector<std::string>>();
+    const std::string fixtureRoot = self.fixtureRootURL.path.UTF8String;
+    NSURL *invalidArchiveURL = [self.fixtureRootURL URLByAppendingPathComponent:@"invalid-world.zip"];
+    NSError *writeError = nil;
+    XCTAssertTrue([@"not a valid zip archive" writeToURL:invalidArchiveURL
+                                                atomically:YES
+                                                  encoding:NSUTF8StringEncoding
+                                                     error:&writeError]);
+    XCTAssertNil(writeError);
+
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.mutateInstanceDetail = [rootMatches, mutationCalls, fixtureRoot](
+                                           const std::filesystem::path& root,
+                                           const std::string& identifier,
+                                           const FrontendInstanceDetailMutationRequest& request) {
+        *rootMatches = *rootMatches && root == std::filesystem::path(fixtureRoot).lexically_normal();
+        mutationCalls->push_back(request.itemIdentifier);
+        if (request.itemIdentifier == "world.permission") {
+            return FrontendInstanceDetailMutationResult{
+                request.kind,
+                request.action,
+                FrontendInstanceDetailMutationOutcome::Rejected,
+                identifier,
+                request.itemIdentifier,
+                "instance.world.deletePermissionDenied",
+                "fixture permission denied",
+                false,
+            };
+        }
+        if (request.itemIdentifier == "screenshot.missing") {
+            return FrontendInstanceDetailMutationResult{
+                request.kind,
+                request.action,
+                FrontendInstanceDetailMutationOutcome::UnknownItem,
+                identifier,
+                request.itemIdentifier,
+                "instance.screenshot.missing",
+                "fixture screenshot is missing",
+                false,
+            };
+        }
+        if (request.itemIdentifier == "server.conflict") {
+            return FrontendInstanceDetailMutationResult{
+                request.kind,
+                request.action,
+                FrontendInstanceDetailMutationOutcome::Failed,
+                identifier,
+                request.itemIdentifier,
+                "instance.server.updateConflict",
+                "fixture server changed externally",
+                true,
+            };
+        }
+        return FrontendInstanceDetailMutationResult{
+            request.kind,
+            request.action,
+            FrontendInstanceDetailMutationOutcome::Failed,
+            identifier,
+            request.itemIdentifier,
+            "instance.world.importInvalidArchive",
+            "fixture archive is not a valid world archive",
+            false,
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    auto applyScenario = ^PRInstanceDetailMutationResult *(PRInstanceDetailMutationRequest *request) {
+        XCTestExpectation *completion = [self expectationWithDescription:@"Instance detail scenario completed"];
+        __block PRInstanceDetailMutationResult *result = nil;
+        __block PRBridgeError *error = nil;
+        PRBridgeObservationToken *token = [bridge
+            applyInstanceDetailActionWithIdentifier:@"fixture.one"
+                                             request:request
+                                         completion:^(PRInstanceDetailMutationResult *received,
+                                                     PRBridgeError *receivedError) {
+            result = received;
+            error = receivedError;
+            [completion fulfill];
+        }];
+        XCTAssertNotNil(token);
+        [self waitForExpectations:@[ completion ] timeout:2.0];
+        XCTAssertNil(error);
+        return result;
+    };
+
+    PRInstanceDetailMutationResult *permissionResult = applyScenario(
+        [[PRInstanceDetailMutationRequest alloc] initWithKind:PRInstanceDetailKindWorlds
+                                                        action:PRInstanceDetailActionDelete
+                                               itemIdentifier:@"world.permission"
+                                                    sourceURL:nil
+                                                   targetName:@""
+                                                          name:@""
+                                                       address:@""
+                                                resourcePolicy:PRInstanceServerResourcePolicyAsk
+                                                     confirmed:YES
+                                                      position:-1]);
+    PRInstanceDetailMutationResult *missingResult = applyScenario(
+        [[PRInstanceDetailMutationRequest alloc] initWithKind:PRInstanceDetailKindScreenshots
+                                                        action:PRInstanceDetailActionDelete
+                                               itemIdentifier:@"screenshot.missing"
+                                                    sourceURL:nil
+                                                   targetName:@""
+                                                          name:@""
+                                                       address:@""
+                                                resourcePolicy:PRInstanceServerResourcePolicyAsk
+                                                     confirmed:YES
+                                                      position:-1]);
+    PRInstanceDetailMutationResult *conflictResult = applyScenario(
+        [[PRInstanceDetailMutationRequest alloc] initWithKind:PRInstanceDetailKindServers
+                                                        action:PRInstanceDetailActionUpdate
+                                               itemIdentifier:@"server.conflict"
+                                                    sourceURL:nil
+                                                   targetName:@""
+                                                          name:@"Conflicting Server"
+                                                       address:@"fixture.example:25565"
+                                                resourcePolicy:PRInstanceServerResourcePolicyAsk
+                                                     confirmed:NO
+                                                      position:-1]);
+    PRInstanceDetailMutationResult *invalidArchiveResult = applyScenario(
+        [[PRInstanceDetailMutationRequest alloc] initWithKind:PRInstanceDetailKindWorlds
+                                                        action:PRInstanceDetailActionImport
+                                               itemIdentifier:@"invalid-world.zip"
+                                                    sourceURL:invalidArchiveURL
+                                                   targetName:@""
+                                                          name:@""
+                                                       address:@""
+                                                resourcePolicy:PRInstanceServerResourcePolicyAsk
+                                                     confirmed:NO
+                                                      position:-1]);
+
+    XCTAssertEqual(permissionResult.outcome, PRInstanceDetailMutationOutcomeRejected);
+    XCTAssertEqualObjects(permissionResult.localizationKey, @"instance.world.deletePermissionDenied");
+    XCTAssertEqualObjects(permissionResult.diagnosticText, @"fixture permission denied");
+    XCTAssertFalse(permissionResult.partialChangesRolledBack);
+    XCTAssertEqual(missingResult.outcome, PRInstanceDetailMutationOutcomeUnknownItem);
+    XCTAssertEqualObjects(missingResult.localizationKey, @"instance.screenshot.missing");
+    XCTAssertEqual(conflictResult.outcome, PRInstanceDetailMutationOutcomeFailed);
+    XCTAssertEqualObjects(conflictResult.localizationKey, @"instance.server.updateConflict");
+    XCTAssertEqualObjects(conflictResult.diagnosticText, @"fixture server changed externally");
+    XCTAssertTrue(conflictResult.partialChangesRolledBack);
+    XCTAssertEqual(invalidArchiveResult.outcome, PRInstanceDetailMutationOutcomeFailed);
+    XCTAssertEqualObjects(invalidArchiveResult.localizationKey, @"instance.world.importInvalidArchive");
+    XCTAssertFalse(invalidArchiveResult.partialChangesRolledBack);
+    XCTAssertTrue(rootMatches->load());
+    XCTAssertEqual(mutationCalls->size(), (size_t)4);
+}
+
+- (void)testInstanceDetailMutationCancellationSuppressesQueuedCompletion
+{
+    dispatch_semaphore_t mutatorEntered = dispatch_semaphore_create(0);
+    dispatch_semaphore_t releaseMutator = dispatch_semaphore_create(0);
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.mutateInstanceDetail = [mutatorEntered, releaseMutator](
+                                           const std::filesystem::path&,
+                                           const std::string& identifier,
+                                           const FrontendInstanceDetailMutationRequest& request) {
+        dispatch_semaphore_signal(mutatorEntered);
+        dispatch_semaphore_wait(releaseMutator, DISPATCH_TIME_FOREVER);
+        return FrontendInstanceDetailMutationResult{
+            request.kind,
+            request.action,
+            FrontendInstanceDetailMutationOutcome::Succeeded,
+            identifier,
+            request.itemIdentifier,
+            "instance.detail.updated",
+            "fixture detail mutation succeeded",
+            false,
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    PRInstanceDetailMutationRequest *request =
+        [[PRInstanceDetailMutationRequest alloc] initWithKind:PRInstanceDetailKindWorlds
+                                                        action:PRInstanceDetailActionDelete
+                                               itemIdentifier:@"world.cancelled"
+                                                    sourceURL:nil
+                                                   targetName:@""
+                                                          name:@""
+                                                       address:@""
+                                                resourcePolicy:PRInstanceServerResourcePolicyAsk
+                                                     confirmed:YES
+                                                      position:-1];
+    __block NSUInteger completionCount = 0;
+    PRBridgeObservationToken *token = [bridge
+        applyInstanceDetailActionWithIdentifier:@"fixture.one"
+                                         request:request
+                                     completion:^(__unused PRInstanceDetailMutationResult *result,
+                                                 __unused PRBridgeError *error) {
+        completionCount += 1;
+    }];
+    XCTAssertNotNil(token);
+    XCTAssertEqual(dispatch_semaphore_wait(mutatorEntered, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC)), 0);
+    XCTAssertTrue([token cancel]);
+    dispatch_semaphore_signal(releaseMutator);
+
+    XCTestExpectation *drained = [self expectationWithDescription:@"Cancelled detail mutation drained"];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [drained fulfill];
+    });
+    [self waitForExpectations:@[ drained ] timeout:2.0];
+    XCTAssertEqual(completionCount, (NSUInteger)0);
+}
+
 - (void)testInstanceWorldCancellationSuppressesQueuedCompletion
 {
     dispatch_semaphore_t loaderEntered = dispatch_semaphore_create(0);
