@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 6, Instance detail and editing
 
-Active work unit: M6-W3
+Active work unit: none
 
-Next ready work unit: M6-W3
+Next ready work unit: M6-W4
 
 ## Safety baseline
 
@@ -1243,6 +1243,44 @@ Commit: `467bb275e04a087e00a4dd85365273bdcf130185`.
 
 Next after completion: `M6-W3`, implement the version and component list with system `Table` or `List`.
 
+### M6-W3: Native version and component list
+
+Status: complete
+
+Outcome: add the native read-only version and component workflow. The QWidget-free facade now returns an ordered immutable component snapshot with stable identifiers, display names, versions, enabled/disable capability, dependency/importance/custom flags, problem severity, and bounded problem descriptions. The Foundation-only Objective-C++ bridge converts the snapshot, maps unavailable/invalid/lifecycle failures, supports cancellation, and delivers completions on the main actor. Swift presents a searchable native `Table` with loading, empty, failed, retry, accessibility, and text-selection behavior.
+
+Legacy contract evidence: `launcher/ui/pages/instance/VersionPage.cpp`, `VersionPage.h`, and `VersionPage.ui` expose the legacy Name/Version rows, enabled check state, warning/error decoration, and case-insensitive filtering across displayed component values. `launcher/minecraft/Component.h` and `Component.cpp` define the component identifier/name/version, disable capability, dependency-only/important/custom flags, and problem descriptions. The native unit preserves the observed order and state values but does not expose `PackProfile`, `QAbstractItemModel`, or Qt ownership. Version edits and resource mutations are intentionally outside this unit.
+
+Scope: directly required `launcher/frontend` component values and fixture loader port, the Foundation-only Objective-C++ bridge, native Swift component state/view code, and related facade/bridge/Shell tests. No Qt UI composition, live `BaseInstance`/`PackProfile` ownership, file path, account, Keychain, upstream data, process, network, production service, or other-platform behavior was accessed.
+
+Required evidence: ordered immutable facade snapshots, unique stable-ID and state validation, empty/missing-port behavior, Foundation severity/metadata conversion, main-actor delivery, cancellation suppression, Swift order-preserving model state, search across identifier/name/version/problem text, duplicate/stale/invalid result rejection, retry recovery, standard `Table`/`TableColumn`/`.searchable`/`ProgressView`/`ContentUnavailableView`, accessibility label/value/help/identifier metadata, version text selection, localization-key shape checks, temporary-root facade tests, native tests, Debug/Release builds, Bundle ID checks, bridge/Swift boundary scans, no-drawing scans, and `git diff --check`.
+
+HIG decision: use SwiftUI `Table` with `TableColumn` for the multi-field component list, `.searchable` for system search behavior, `ProgressView` for loading, `ContentUnavailableView` for empty and failed states, SF Symbols for warning/error status, and standard accessibility/help modifiers. Preserve the backend-provided order rather than adding an unrequested sort control. The implementation follows Apple [`Table`](https://developer.apple.com/documentation/swiftui/table), [`TableColumn`](https://developer.apple.com/documentation/swiftui/tablecolumn), [`searchable`](https://developer.apple.com/documentation/swiftui/view/searchable(text:placement:prompt:)), [`ProgressView`](https://developer.apple.com/documentation/swiftui/progressview), [`ContentUnavailableView`](https://developer.apple.com/documentation/swiftui/contentunavailableview), [`accessibility`](https://developer.apple.com/documentation/swiftui/accessibility), and HIG [`tables`](https://developer.apple.com/design/human-interface-guidelines/tables) guidance. No custom control, custom drawing, third-party UI, or rendering exception was added.
+
+Architecture: `FrontendInstanceComponentSnapshot` and `InstanceComponentsLoader` are value-only contracts in `FrontendFacade.h`; the facade validates stable identifiers, unique order entries, known problem severity, and the legacy non-disableable-enabled invariant. `PRInstanceComponent` and `PRBridgeComponentsResult` remain Foundation-only public/private DTOs; `PRPrismBridge` owns C++ conversion, copying, serialized facade access, error translation, request-token lifetime, cancellation, shutdown cleanup, and main-actor delivery. `PrismInstanceComponent` and `PrismInstanceComponentsModel` are validated Swift values and injected intents only; Swift has no Qt, C++, pointer, filesystem, or upstream application ownership.
+
+Files changed: `launcher/frontend/FrontendFacade.cpp`, `launcher/frontend/FrontendFacade.h`, `launcher/frontend/FrontendFacadeContractTest.cpp`, `launcher/frontend/FrontendFacadePublicHeaderTest.cpp`, `macos/PrismNative/Bridge/PrismBridge.h`, `macos/PrismNative/Bridge/PrismBridge.mm`, `macos/PrismNative/Bridge/PrismBridgeModels.h`, `macos/PrismNative/App/ContentView.swift`, `macos/PrismNative/App/PrismShellModel.swift`, `macos/PrismNativeTests/PrismBridgeFacadeIntegrationTests.mm`, and `macos/PrismNativeTests/PrismShellTests.swift`. No Xcode project or CMake source-composition change was required because existing target membership and facade linkage already cover these files.
+
+Tests and exact commands:
+
+- `git diff --check` and `git diff --cached --check` — passed.
+- `cmake --build /private/tmp/prism-m5-w4-cmake --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test --parallel 2` and `ctest --test-dir /private/tmp/prism-m5-w4-cmake --output-on-failure -R '^(FrontendFacadeContract|FrontendFacadePublicHeaders)$'` — passed; arm64 facade build and focused C++ tests passed 2/2.
+- `cmake --build /private/tmp/prism-m5-w4-universal --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test --parallel 2` and `ctest --test-dir /private/tmp/prism-m5-w4-universal --output-on-failure -R '^(FrontendFacadeContract|FrontendFacadePublicHeaders)$'` — passed; universal facade tests passed 2/2. `lipo -info .deriveddata-prism-native-backend/libLauncher_frontend.a` — passed; the archive contains `x86_64` and `arm64`.
+- `cmake --build /private/tmp/prism-m5-w4-cmake --target Prism --parallel 2` — passed; the existing arm64 Qt `Prism` target linked without execution. Existing deployment-version and dependency warnings remain unchanged.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test -only-testing:PrismNativeTests/PrismShellTests -only-testing:PrismNativeTests/PrismBridgeFacadeIntegrationTests` — passed; focused bridge/Shell tests counted 46/46 in `.deriveddata-prism-native/Logs/Test/Test-PrismNative-2026.08.09_01-53-21-+0800.xcresult` using `xcrun xcresulttool get test-results tests --path .deriveddata-prism-native/Logs/Test/Test-PrismNative-2026.08.09_01-53-21-+0800.xcresult | rg '"nodeType" : "Test Case"' | wc -l`.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed; full native XCTest passed 84/84 in `.deriveddata-prism-native/Logs/Test/Test-PrismNative-2026.08.09_01-49-23-+0800.xcresult`.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` and the equivalent Release command with `.deriveddata-prism-native-release` — both passed.
+- `plutil -extract CFBundleIdentifier raw .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` and `plutil -extract CFBundleIdentifier raw .deriveddata-prism-native-release/Build/Products/Release/Prism.app/Contents/Info.plist` — both returned `com.lloydME.Prism`.
+- Objective-C public-header syntax and Objective-C++ bridge syntax — passed. Foundation-only bridge, Swift Qt/C++/ownership, upstream-path/network, facade-public-header, no-drawing, and localization-shape scans — passed with no forbidden matches; structural inspection found native `Table`, `TableColumn`, `.searchable`, system recovery states, accessibility/help metadata, and version text selection.
+
+Result summary: the component list has executable non-launch evidence for order, empty state, unavailable recovery, invalid data, problem-state conversion, cancellation, stale/duplicate rejection, retry, accessibility metadata, keyboard/search interaction, and temporary-root isolation. All changed UI uses Apple system controls and no custom-rendering exception was added. No application launch, screenshot, recording, visual snapshot, upstream application/data, real account, Keychain, signing, installation, publishing, push, or destructive action was used.
+
+Risk: the runtime component adapter remains fixture-injected and does not yet discover live `PackProfile` state. The list is intentionally read-only in M6-W3: M6-W4 owns mods and pack resources, including enable, drag/drop, import, reveal, delete, confirmation, rollback, and cancellation contracts. The native app composition still requires later work to connect production instance detail data; no live backend behavior is claimed by this unit.
+
+Commit: `789502d804528d39098fd21fd227d4572ae18040`.
+
+Next after completion: `M6-W4`, implement the native mods and pack-resource list with explicit mutation/recovery contracts.
+
 ## Completed commit index
 
 | Commit | Outcome | Verification |
@@ -1281,6 +1319,7 @@ Next after completion: `M6-W3`, implement the version and component list with sy
 | `54f74badc` | Added bridge integration scenario coverage for terminal task outcomes, launch rejection, cancellation, retry eligibility, shutdown, and log truncation | arm64/universal CMake facade tests 2/2; arm64 Qt Prism target; focused bridge tests 11/11; full native tests 72/72; Debug/Release builds; Objective-C/Objective-C++ syntax; boundary and no-drawing scans; Debug/Release `plutil`; `git diff --check` |
 | `d3f319c49` | Added native instance metadata and confirmed notes editing across the QWidget-free facade, Objective-C++ bridge, and SwiftUI detail form | arm64/universal CMake facade tests 2/2; arm64 Qt Prism target; focused native tests 38/38; full native tests 76/76; Bundle ID `com.lloydME.Prism`; Debug/Release builds; Objective-C/Objective-C++ syntax; boundary/accessibility/no-drawing scans; `git diff --check` |
 | `467bb275e` | Added the confirmed non-secret native instance settings Form and draft-preserving update contract | arm64/universal CMake facade tests 2/2; arm64 Qt Prism target; focused native tests 41/41; full native tests 79/79; Bundle ID `com.lloydME.Prism`; Debug/Release builds; Objective-C/Objective-C++ syntax; boundary/accessibility/localization/no-drawing scans; `git diff --check` |
+| `789502d80` | Added the ordered native version/component snapshot, Foundation bridge, and Swift Table/search workflow | arm64/universal CMake facade tests 2/2; arm64 Qt Prism target; focused native tests 46/46; full native tests 84/84; Bundle ID `com.lloydME.Prism`; Debug/Release builds; Objective-C/Objective-C++ syntax; boundary/accessibility/localization/no-drawing scans; `git diff --check` |
 
 ## Current architecture findings
 
@@ -1321,6 +1360,7 @@ Next after completion: `M6-W3`, implement the version and component list with sy
 35. M5-W6 closes Milestone 5 scenario evidence at the bridge boundary: C++ facade ports provide fixture success/rejection/cancellation/failure/terminal/log-bound behavior, while Objective-C++ tests now prove Foundation conversion, main-actor delivery, retry errors, shutdown, and cancellation suppression without introducing a production launch or process source.
 36. M6-W1 defines immutable instance-detail metadata and confirmed notes-update contracts. The facade accepts only explicit fixture/runtime ports; Objective-C++ owns C++ values, Foundation copies, errors, cancellation, and main-actor delivery; Swift owns validated detail state and preserves unconfirmed drafts. The native surface uses only standard `Form`, `LabeledContent`, `TextEditor`, `ProgressView`, `ContentUnavailableView`, and accessibility/help APIs, with no paths, Qt types, or custom drawing crossing the boundary.
 37. M6-W2 defines an explicit non-secret instance-settings snapshot/update contract. The facade validates identifiers, join enums, dimensions, memory ranges, unique loader names, and confirmed success snapshots; Objective-C++ owns typed Foundation conversion, request-token lifetime, serialized facade access, errors, shutdown cancellation, and main-actor delivery. Swift owns the confirmed settings versus editable draft split and uses standard `Form` controls. Account selection and environment-variable values are intentionally excluded until their security/identity contracts are migrated.
+38. M6-W3 defines the read-only version/component contract. `FrontendInstanceComponentSnapshot` preserves the ordered PackProfile-derived list as value data; the facade validates stable IDs and state invariants; `PRPrismBridge` converts problem severity and metadata through Foundation-only DTOs with cancellation and main-actor delivery; Swift owns searchable `Table` presentation and recovery state. Component enablement, resource import, drag/drop, reveal, delete, and version/file mutation remain separate later contracts.
 
 ## Custom rendering exceptions
 
@@ -1334,4 +1374,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M6-W3`. M6-W1 is complete in `d3f319c494a61d559643964a6253a3ec8c495df3`; M6-W2 is complete in the implementation commit recorded above and may not be reopened. M6-W3 may implement only the version and component list with system `Table` or `List` while preserving the existing facade/bridge ownership and temporary-fixture safety contracts. Do not begin M6-W4 or later work until M6-W3 evidence is verified and committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M6-W4`. M6-W1 is complete in `d3f319c494a61d559643964a6253a3ec8c495df3`; M6-W2 is complete in `467bb275e04a087e00a4dd85365273bdcf130185`; M6-W3 is complete in `789502d804528d39098fd21fd227d4572ae18040` and may not be reopened. M6-W4 may implement only the native mods and pack-resource list plus its explicitly authorized mutations and recovery contracts; preserve the existing facade/bridge ownership and temporary-fixture safety contracts. Do not begin M6-W5 or later work until M6-W4 evidence is verified and committed.
