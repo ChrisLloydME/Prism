@@ -139,6 +139,21 @@ bool isKnownInstanceSettingsUpdateOutcome(PRInstanceSettingsUpdateOutcome outcom
     return false;
 }
 
+bool isKnownGlobalSettingsUpdateOutcome(PRGlobalSettingsUpdateOutcome outcome)
+{
+    switch (outcome) {
+        case PRGlobalSettingsUpdateOutcomeSucceeded:
+        case PRGlobalSettingsUpdateOutcomeRejected:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownGlobalSettingsCatFit(NSString *catFit)
+{
+    return [catFit isEqualToString:@"fit"] || [catFit isEqualToString:@"fill"] || [catFit isEqualToString:@"strech"];
+}
+
 std::string stableIdentifierFromFoundation(NSString *identifier)
 {
     if (![identifier isKindOfClass:NSString.class]) {
@@ -246,6 +261,38 @@ NSString *foundationStringFromUTF8AllowEmpty(const std::string& value)
         return @"";
     }
     return foundationStringFromUTF8(value);
+}
+
+NSURL *directoryURLFromFacadePath(const std::filesystem::path& path)
+{
+    const std::string representation = path.string();
+    if (representation.empty() || !path.is_absolute()) {
+        throw std::invalid_argument("Facade returned an invalid global settings directory");
+    }
+    NSString *pathString = [[NSString alloc] initWithBytes:representation.data()
+                                                     length:representation.size()
+                                                   encoding:NSUTF8StringEncoding];
+    if (!pathString) {
+        throw std::invalid_argument("Facade returned a non-UTF-8 global settings directory");
+    }
+    NSURL *directoryURL = [NSURL fileURLWithPath:pathString isDirectory:YES];
+    if (!directoryURL || !directoryURL.path.isAbsolutePath) {
+        throw std::invalid_argument("Facade returned an invalid global settings directory URL");
+    }
+    return directoryURL;
+}
+
+std::filesystem::path directoryPathFromFoundation(NSURL *directoryURL)
+{
+    if (!directoryURL || !directoryURL.isFileURL || directoryURL.path.length == 0
+        || !directoryURL.path.isAbsolutePath) {
+        throw std::invalid_argument("Global settings require an absolute directory URL");
+    }
+    const char *fileSystemRepresentation = directoryURL.fileSystemRepresentation;
+    if (!fileSystemRepresentation || fileSystemRepresentation[0] == '\0') {
+        throw std::invalid_argument("Global settings directory requires a filesystem representation");
+    }
+    return std::filesystem::path(fileSystemRepresentation);
 }
 
 PRInstanceSummary *summaryFromFacadeSnapshot(const FrontendInstanceSnapshot& snapshot)
@@ -1063,6 +1110,82 @@ PRInstanceSettingsUpdateOutcome settingsUpdateOutcomeFromFacadeResult(FrontendIn
             return PRInstanceSettingsUpdateOutcomeRejected;
     }
     throw std::invalid_argument("Facade returned an unknown instance settings update outcome");
+}
+
+PRGlobalSettings *globalSettingsFromFacadeSnapshot(const FrontendGlobalSettingsSnapshot& snapshot)
+{
+    PRGlobalSettings *settings = [[PRGlobalSettings alloc]
+        initWithInstanceDirectoryURL:directoryURLFromFacadePath(snapshot.instanceDirectory)
+                            iconTheme:foundationStringFromUTF8AllowEmpty(snapshot.iconTheme)
+                    applicationTheme:foundationStringFromUTF8AllowEmpty(snapshot.applicationTheme)
+                      backgroundCat:foundationStringFromUTF8AllowEmpty(snapshot.backgroundCat)
+                        catOpacity:snapshot.catOpacity
+                            catFit:foundationStringFromUTF8AllowEmpty(snapshot.catFit)
+                          language:foundationStringFromUTF8AllowEmpty(snapshot.language)
+                  useSystemLocale:snapshot.useSystemLocale
+           menuBarInsteadOfToolBar:snapshot.menuBarInsteadOfToolBar
+                 statusBarVisible:snapshot.statusBarVisible
+                   toolbarsLocked:snapshot.toolbarsLocked
+                numberOfConcurrentTasks:snapshot.numberOfConcurrentTasks
+            numberOfConcurrentDownloads:snapshot.numberOfConcurrentDownloads
+                  numberOfManualRetries:snapshot.numberOfManualRetries
+                      requestTimeoutSeconds:snapshot.requestTimeoutSeconds
+                               consoleFont:foundationStringFromUTF8AllowEmpty(snapshot.consoleFont)
+                           consoleFontSize:snapshot.consoleFontSize
+                            consoleMaxLines:snapshot.consoleMaxLines
+                         consoleOverflowStop:snapshot.consoleOverflowStop
+                                 showConsole:snapshot.showConsole
+                              autoCloseConsole:snapshot.autoCloseConsole
+                            showConsoleOnError:snapshot.showConsoleOnError
+                             logPrePostOutput:snapshot.logPrePostOutput];
+    if (!settings) {
+        throw std::invalid_argument("Facade returned invalid global settings");
+    }
+    return settings;
+}
+
+FrontendGlobalSettingsSnapshot globalSettingsFromFoundationObject(PRGlobalSettings *settings)
+{
+    if (!settings) {
+        throw std::invalid_argument("Global settings require a value");
+    }
+
+    FrontendGlobalSettingsSnapshot converted;
+    converted.instanceDirectory = directoryPathFromFoundation(settings.instanceDirectoryURL);
+    converted.iconTheme = utf8TextFromFoundation(settings.iconTheme);
+    converted.applicationTheme = utf8TextFromFoundation(settings.applicationTheme);
+    converted.backgroundCat = utf8TextFromFoundation(settings.backgroundCat);
+    converted.catOpacity = static_cast<int>(settings.catOpacity);
+    converted.catFit = utf8TextFromFoundation(settings.catFit);
+    converted.language = utf8TextFromFoundation(settings.language);
+    converted.useSystemLocale = settings.useSystemLocale;
+    converted.menuBarInsteadOfToolBar = settings.menuBarInsteadOfToolBar;
+    converted.statusBarVisible = settings.statusBarVisible;
+    converted.toolbarsLocked = settings.toolbarsLocked;
+    converted.numberOfConcurrentTasks = static_cast<int>(settings.numberOfConcurrentTasks);
+    converted.numberOfConcurrentDownloads = static_cast<int>(settings.numberOfConcurrentDownloads);
+    converted.numberOfManualRetries = static_cast<int>(settings.numberOfManualRetries);
+    converted.requestTimeoutSeconds = static_cast<int>(settings.requestTimeoutSeconds);
+    converted.consoleFont = utf8TextFromFoundation(settings.consoleFont);
+    converted.consoleFontSize = static_cast<int>(settings.consoleFontSize);
+    converted.consoleMaxLines = static_cast<int>(settings.consoleMaxLines);
+    converted.consoleOverflowStop = settings.consoleOverflowStop;
+    converted.showConsole = settings.showConsole;
+    converted.autoCloseConsole = settings.autoCloseConsole;
+    converted.showConsoleOnError = settings.showConsoleOnError;
+    converted.logPrePostOutput = settings.logPrePostOutput;
+    return converted;
+}
+
+PRGlobalSettingsUpdateOutcome globalSettingsUpdateOutcomeFromFacadeResult(FrontendGlobalSettingsUpdateOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendGlobalSettingsUpdateOutcome::Succeeded:
+            return PRGlobalSettingsUpdateOutcomeSucceeded;
+        case FrontendGlobalSettingsUpdateOutcome::Rejected:
+            return PRGlobalSettingsUpdateOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown global settings update outcome");
 }
 
 PRInstanceNotesUpdateOutcome notesUpdateOutcomeFromFacadeResult(FrontendInstanceNotesUpdateOutcome outcome)
@@ -1948,6 +2071,56 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@interface PRBridgeGlobalSettingsResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithSettings:(nullable PRGlobalSettings *)settings
+                            error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRGlobalSettings *settings;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeGlobalSettingsResult
+
+- (instancetype)initWithSettings:(PRGlobalSettings *)settings error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _settings = settings;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
+@interface PRBridgeGlobalSettingsUpdateResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithResult:(nullable PRGlobalSettingsUpdateResult *)result
+                           error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRGlobalSettingsUpdateResult *result;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeGlobalSettingsUpdateResult
+
+- (instancetype)initWithResult:(PRGlobalSettingsUpdateResult *)result error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _result = result;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
 @interface PRBridgeTaskStatusResult : NSObject
 
 - (instancetype)init NS_UNAVAILABLE;
@@ -2379,6 +2552,41 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, copy, readwrite) NSString *identifier;
 @property(nonatomic, strong, readwrite, nullable) PRInstanceSettings *settings;
 @property(nonatomic, assign, readwrite) PRInstanceSettingsUpdateOutcome outcome;
+
+@end
+
+@interface PRGlobalSettings ()
+
+@property(nonatomic, copy, readwrite) NSURL *instanceDirectoryURL;
+@property(nonatomic, copy, readwrite) NSString *iconTheme;
+@property(nonatomic, copy, readwrite) NSString *applicationTheme;
+@property(nonatomic, copy, readwrite) NSString *backgroundCat;
+@property(nonatomic, assign, readwrite) NSInteger catOpacity;
+@property(nonatomic, copy, readwrite) NSString *catFit;
+@property(nonatomic, copy, readwrite) NSString *language;
+@property(nonatomic, assign, readwrite) BOOL useSystemLocale;
+@property(nonatomic, assign, readwrite) BOOL menuBarInsteadOfToolBar;
+@property(nonatomic, assign, readwrite) BOOL statusBarVisible;
+@property(nonatomic, assign, readwrite) BOOL toolbarsLocked;
+@property(nonatomic, assign, readwrite) NSInteger numberOfConcurrentTasks;
+@property(nonatomic, assign, readwrite) NSInteger numberOfConcurrentDownloads;
+@property(nonatomic, assign, readwrite) NSInteger numberOfManualRetries;
+@property(nonatomic, assign, readwrite) NSInteger requestTimeoutSeconds;
+@property(nonatomic, copy, readwrite) NSString *consoleFont;
+@property(nonatomic, assign, readwrite) NSInteger consoleFontSize;
+@property(nonatomic, assign, readwrite) NSInteger consoleMaxLines;
+@property(nonatomic, assign, readwrite) BOOL consoleOverflowStop;
+@property(nonatomic, assign, readwrite) BOOL showConsole;
+@property(nonatomic, assign, readwrite) BOOL autoCloseConsole;
+@property(nonatomic, assign, readwrite) BOOL showConsoleOnError;
+@property(nonatomic, assign, readwrite) BOOL logPrePostOutput;
+
+@end
+
+@interface PRGlobalSettingsUpdateResult ()
+
+@property(nonatomic, strong, readwrite, nullable) PRGlobalSettings *settings;
+@property(nonatomic, assign, readwrite) PRGlobalSettingsUpdateOutcome outcome;
 
 @end
 
@@ -3132,6 +3340,94 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     self = [super init];
     if (self) {
         self.identifier = [identifier copy];
+        self.settings = settings;
+        self.outcome = outcome;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRGlobalSettings
+
+- (instancetype)initWithInstanceDirectoryURL:(NSURL *)instanceDirectoryURL
+                                     iconTheme:(NSString *)iconTheme
+                             applicationTheme:(NSString *)applicationTheme
+                               backgroundCat:(NSString *)backgroundCat
+                                 catOpacity:(NSInteger)catOpacity
+                                     catFit:(NSString *)catFit
+                                   language:(NSString *)language
+                           useSystemLocale:(BOOL)useSystemLocale
+                    menuBarInsteadOfToolBar:(BOOL)menuBarInsteadOfToolBar
+                          statusBarVisible:(BOOL)statusBarVisible
+                            toolbarsLocked:(BOOL)toolbarsLocked
+                 numberOfConcurrentTasks:(NSInteger)numberOfConcurrentTasks
+             numberOfConcurrentDownloads:(NSInteger)numberOfConcurrentDownloads
+                   numberOfManualRetries:(NSInteger)numberOfManualRetries
+                       requestTimeoutSeconds:(NSInteger)requestTimeoutSeconds
+                                consoleFont:(NSString *)consoleFont
+                            consoleFontSize:(NSInteger)consoleFontSize
+                             consoleMaxLines:(NSInteger)consoleMaxLines
+                          consoleOverflowStop:(BOOL)consoleOverflowStop
+                                  showConsole:(BOOL)showConsole
+                               autoCloseConsole:(BOOL)autoCloseConsole
+                             showConsoleOnError:(BOOL)showConsoleOnError
+                              logPrePostOutput:(BOOL)logPrePostOutput
+{
+    if (!instanceDirectoryURL.isFileURL || instanceDirectoryURL.path.length == 0
+        || !instanceDirectoryURL.path.isAbsolutePath || ![iconTheme isKindOfClass:NSString.class]
+        || ![applicationTheme isKindOfClass:NSString.class] || ![backgroundCat isKindOfClass:NSString.class]
+        || ![catFit isKindOfClass:NSString.class] || !isKnownGlobalSettingsCatFit(catFit)
+        || ![language isKindOfClass:NSString.class] || ![consoleFont isKindOfClass:NSString.class]
+        || catOpacity < 0 || catOpacity > 100 || numberOfConcurrentTasks < 1
+        || numberOfConcurrentDownloads < 1 || numberOfManualRetries < 0 || requestTimeoutSeconds < 0
+        || consoleFontSize < 5 || consoleFontSize > 16 || consoleMaxLines < 10000
+        || consoleMaxLines > 1000000) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.instanceDirectoryURL = [instanceDirectoryURL copy];
+        self.iconTheme = [iconTheme copy];
+        self.applicationTheme = [applicationTheme copy];
+        self.backgroundCat = [backgroundCat copy];
+        self.catOpacity = catOpacity;
+        self.catFit = [catFit copy];
+        self.language = [language copy];
+        self.useSystemLocale = useSystemLocale;
+        self.menuBarInsteadOfToolBar = menuBarInsteadOfToolBar;
+        self.statusBarVisible = statusBarVisible;
+        self.toolbarsLocked = toolbarsLocked;
+        self.numberOfConcurrentTasks = numberOfConcurrentTasks;
+        self.numberOfConcurrentDownloads = numberOfConcurrentDownloads;
+        self.numberOfManualRetries = numberOfManualRetries;
+        self.requestTimeoutSeconds = requestTimeoutSeconds;
+        self.consoleFont = [consoleFont copy];
+        self.consoleFontSize = consoleFontSize;
+        self.consoleMaxLines = consoleMaxLines;
+        self.consoleOverflowStop = consoleOverflowStop;
+        self.showConsole = showConsole;
+        self.autoCloseConsole = autoCloseConsole;
+        self.showConsoleOnError = showConsoleOnError;
+        self.logPrePostOutput = logPrePostOutput;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRGlobalSettingsUpdateResult
+
+- (instancetype)initWithSettings:(PRGlobalSettings *)settings outcome:(PRGlobalSettingsUpdateOutcome)outcome
+{
+    if (!isKnownGlobalSettingsUpdateOutcome(outcome)
+        || (outcome == PRGlobalSettingsUpdateOutcomeSucceeded && !settings)) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
         self.settings = settings;
         self.outcome = outcome;
     }
@@ -5280,6 +5576,181 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
         if (!state.isCancelled) {
             [state deliverOnMainActor:[[PRBridgeSettingsUpdateResult alloc] initWithResult:result error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
+- (PRBridgeObservationToken *)loadGlobalSettingsWithCompletion:(PRGlobalSettingsCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeGlobalSettingsResult *settingsResult = (PRBridgeGlobalSettingsResult *)value;
+        [weakRequest cancel];
+        completion(settingsResult.settings, settingsResult.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeSettingsRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.settingsRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRGlobalSettings *settings = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    const std::optional<FrontendGlobalSettingsSnapshot> snapshot = bridge->_facade->globalSettings();
+                    if (!snapshot.has_value()) {
+                        error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                                   diagnosticText:@"Global settings are not available"
+                                               substitutionValues:@{}];
+                    } else {
+                        settings = globalSettingsFromFacadeSnapshot(*snapshot);
+                    }
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid global settings"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Global settings operation cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Global settings unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown global settings failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeGlobalSettingsResult alloc] initWithSettings:settings error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
+- (PRBridgeObservationToken *)updateGlobalSettings:(PRGlobalSettings *)settings
+                                          completion:(PRGlobalSettingsUpdateCompletionHandler)completion
+{
+    if (!completion || !settings || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    PRGlobalSettings *settingsCopy = settings;
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeGlobalSettingsUpdateResult *settingsResult = (PRBridgeGlobalSettingsUpdateResult *)value;
+        [weakRequest cancel];
+        completion(settingsResult.result, settingsResult.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeSettingsUpdateRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.settingsUpdateRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRGlobalSettingsUpdateResult *result = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    const FrontendGlobalSettingsSnapshot requestedSettings = globalSettingsFromFoundationObject(settingsCopy);
+                    const FrontendGlobalSettingsUpdateResult updateResult =
+                        bridge->_facade->updateGlobalSettings(requestedSettings);
+                    PRGlobalSettings *confirmedSettings = nil;
+                    if (updateResult.settings.has_value()) {
+                        confirmedSettings = globalSettingsFromFacadeSnapshot(*updateResult.settings);
+                    }
+                    result = [[PRGlobalSettingsUpdateResult alloc]
+                        initWithSettings:confirmedSettings
+                                 outcome:globalSettingsUpdateOutcomeFromFacadeResult(updateResult.outcome)];
+                    if (!result) {
+                        throw std::invalid_argument("Facade returned an invalid global settings update result");
+                    }
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid global settings"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Global settings update cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Global settings update unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown global settings update failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeGlobalSettingsUpdateResult alloc]
+                initWithResult:result
+                          error:error]];
         }
     });
 

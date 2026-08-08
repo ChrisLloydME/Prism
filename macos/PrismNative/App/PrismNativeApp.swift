@@ -4,6 +4,7 @@ import SwiftUI
 struct PrismNativeApp: App {
     @StateObject private var commandModel = PrismCommandModel()
     @StateObject private var taskModel = PrismTaskPresentationModel()
+    @StateObject private var globalSettingsModel = PrismGlobalSettingsModel()
 
     var body: some Scene {
         WindowGroup {
@@ -15,9 +16,7 @@ struct PrismNativeApp: App {
         }
 
         Settings {
-            Text("Settings will move here as the native migration progresses.")
-                .padding(24)
-                .frame(width: 420)
+            PrismSettingsView(model: globalSettingsModel)
         }
     }
 }

@@ -77,6 +77,35 @@ FrontendInstanceSettingsSnapshot fixtureSettings(const std::string& identifier)
     return settings;
 }
 
+FrontendGlobalSettingsSnapshot fixtureGlobalSettings(const std::filesystem::path& fixtureRoot)
+{
+    FrontendGlobalSettingsSnapshot settings;
+    settings.instanceDirectory = fixtureRoot / "instances";
+    settings.iconTheme = "fixture-icons";
+    settings.applicationTheme = "fixture-theme";
+    settings.backgroundCat = "fixture-cat";
+    settings.catOpacity = 73;
+    settings.catFit = "strech";
+    settings.language = "en_US";
+    settings.useSystemLocale = true;
+    settings.menuBarInsteadOfToolBar = true;
+    settings.statusBarVisible = false;
+    settings.toolbarsLocked = true;
+    settings.numberOfConcurrentTasks = 10;
+    settings.numberOfConcurrentDownloads = 6;
+    settings.numberOfManualRetries = 2;
+    settings.requestTimeoutSeconds = 60;
+    settings.consoleFont = "Menlo";
+    settings.consoleFontSize = 12;
+    settings.consoleMaxLines = 20000;
+    settings.consoleOverflowStop = false;
+    settings.showConsole = true;
+    settings.autoCloseConsole = true;
+    settings.showConsoleOnError = false;
+    settings.logPrePostOutput = true;
+    return settings;
+}
+
 FrontendRuntimeDependencies baseFixtureDependencies()
 {
     FrontendRuntimeDependencies dependencies;
@@ -908,6 +937,140 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     XCTAssertEqual(missingError.recoveryKind, PRBridgeErrorRecoveryKindRetry);
     XCTAssertTrue(loadedRootMatches->load());
     XCTAssertTrue(updateRootMatches->load());
+}
+
+- (void)testFacadeGlobalSettingsAreConvertedAndConfirmedOnMainActor
+{
+    auto loadedRootMatches = std::make_shared<std::atomic<bool>>(true);
+    auto updateRootMatches = std::make_shared<std::atomic<bool>>(true);
+    auto updateCalls = std::make_shared<std::vector<int>>();
+    const std::string fixtureRoot = self.fixtureRootURL.path.UTF8String;
+
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.loadGlobalSettings = [loadedRootMatches, fixtureRoot](const std::filesystem::path& root)
+        -> std::optional<FrontendGlobalSettingsSnapshot> {
+        *loadedRootMatches = root == std::filesystem::path(fixtureRoot).lexically_normal();
+        return fixtureGlobalSettings(std::filesystem::path(fixtureRoot));
+    };
+    dependencies.updateGlobalSettings = [updateRootMatches, updateCalls, fixtureRoot](
+                                            const std::filesystem::path& root,
+                                            const FrontendGlobalSettingsSnapshot& requested) {
+        *updateRootMatches = root == std::filesystem::path(fixtureRoot).lexically_normal();
+        updateCalls->push_back(requested.catOpacity);
+        auto confirmed = requested;
+        confirmed.catOpacity = 88;
+        return FrontendGlobalSettingsUpdateResult{
+            FrontendGlobalSettingsUpdateOutcome::Succeeded,
+            std::move(confirmed),
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    XCTestExpectation *loadCompletion = [self expectationWithDescription:@"Global settings loaded"];
+    __block PRGlobalSettings *receivedSettings = nil;
+    __block PRBridgeError *receivedLoadError = nil;
+    __block BOOL loadRanOnMainThread = NO;
+    PRBridgeObservationToken *loadToken = [bridge loadGlobalSettingsWithCompletion:^(PRGlobalSettings *settings,
+                                                                                      PRBridgeError *error) {
+        loadRanOnMainThread = [NSThread isMainThread];
+        receivedSettings = settings;
+        receivedLoadError = error;
+        [loadCompletion fulfill];
+    }];
+    XCTAssertNotNil(loadToken);
+    [self waitForExpectations:@[ loadCompletion ] timeout:2.0];
+    XCTAssertTrue(loadRanOnMainThread);
+    XCTAssertNil(receivedLoadError);
+    XCTAssertTrue(loadToken.isCancelled);
+    XCTAssertEqualObjects(receivedSettings.instanceDirectoryURL.path,
+                          [self.fixtureRootURL URLByAppendingPathComponent:@"instances"].path);
+    XCTAssertEqualObjects(receivedSettings.iconTheme, @"fixture-icons");
+    XCTAssertEqualObjects(receivedSettings.catFit, @"strech");
+    XCTAssertEqual(receivedSettings.catOpacity, (NSInteger)73);
+    XCTAssertEqual(receivedSettings.numberOfConcurrentTasks, (NSInteger)10);
+    XCTAssertEqual(receivedSettings.consoleMaxLines, (NSInteger)20000);
+
+    PRGlobalSettings *requestedSettings = [[PRGlobalSettings alloc]
+        initWithInstanceDirectoryURL:receivedSettings.instanceDirectoryURL
+                            iconTheme:receivedSettings.iconTheme
+                    applicationTheme:receivedSettings.applicationTheme
+                      backgroundCat:receivedSettings.backgroundCat
+                        catOpacity:81
+                            catFit:receivedSettings.catFit
+                          language:receivedSettings.language
+                  useSystemLocale:receivedSettings.useSystemLocale
+           menuBarInsteadOfToolBar:receivedSettings.menuBarInsteadOfToolBar
+                 statusBarVisible:receivedSettings.statusBarVisible
+                   toolbarsLocked:receivedSettings.toolbarsLocked
+                numberOfConcurrentTasks:receivedSettings.numberOfConcurrentTasks
+            numberOfConcurrentDownloads:receivedSettings.numberOfConcurrentDownloads
+                  numberOfManualRetries:receivedSettings.numberOfManualRetries
+                      requestTimeoutSeconds:receivedSettings.requestTimeoutSeconds
+                               consoleFont:receivedSettings.consoleFont
+                           consoleFontSize:receivedSettings.consoleFontSize
+                            consoleMaxLines:receivedSettings.consoleMaxLines
+                         consoleOverflowStop:receivedSettings.consoleOverflowStop
+                                 showConsole:receivedSettings.showConsole
+                              autoCloseConsole:receivedSettings.autoCloseConsole
+                            showConsoleOnError:receivedSettings.showConsoleOnError
+                             logPrePostOutput:receivedSettings.logPrePostOutput];
+    XCTAssertNotNil(requestedSettings);
+
+    XCTestExpectation *updateCompletion = [self expectationWithDescription:@"Global settings update completed"];
+    __block PRGlobalSettingsUpdateResult *receivedUpdate = nil;
+    __block PRBridgeError *receivedUpdateError = nil;
+    PRBridgeObservationToken *updateToken = [bridge updateGlobalSettings:requestedSettings
+                                                                  completion:^(PRGlobalSettingsUpdateResult *result,
+                                                                               PRBridgeError *error) {
+        XCTAssertTrue([NSThread isMainThread]);
+        receivedUpdate = result;
+        receivedUpdateError = error;
+        [updateCompletion fulfill];
+    }];
+    XCTAssertNotNil(updateToken);
+    [self waitForExpectations:@[ updateCompletion ] timeout:2.0];
+    XCTAssertNil(receivedUpdateError);
+    XCTAssertTrue(updateToken.isCancelled);
+    XCTAssertEqual(receivedUpdate.outcome, PRGlobalSettingsUpdateOutcomeSucceeded);
+    XCTAssertNotNil(receivedUpdate.settings);
+    XCTAssertEqual(receivedUpdate.settings.catOpacity, (NSInteger)88);
+    XCTAssertEqual(*updateCalls, (std::vector<int>{ 81 }));
+    XCTAssertTrue(loadedRootMatches->load());
+    XCTAssertTrue(updateRootMatches->load());
+}
+
+- (void)testFacadeGlobalSettingsCancellationSuppressesQueuedCompletion
+{
+    dispatch_semaphore_t loaderEntered = dispatch_semaphore_create(0);
+    dispatch_semaphore_t releaseLoader = dispatch_semaphore_create(0);
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.loadGlobalSettings = [loaderEntered, releaseLoader, fixtureRoot = self.fixtureRootURL.path.UTF8String](
+                                           const std::filesystem::path& root)
+        -> std::optional<FrontendGlobalSettingsSnapshot> {
+        XCTAssertTrue(root == std::filesystem::path(fixtureRoot).lexically_normal());
+        dispatch_semaphore_signal(loaderEntered);
+        dispatch_semaphore_wait(releaseLoader, DISPATCH_TIME_FOREVER);
+        return fixtureGlobalSettings(std::filesystem::path(fixtureRoot));
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTestExpectation *completion = [self expectationWithDescription:@"Cancelled global settings completion"];
+    completion.inverted = YES;
+    PRBridgeObservationToken *token = [bridge loadGlobalSettingsWithCompletion:^(__unused PRGlobalSettings *settings,
+                                                                                    __unused PRBridgeError *error) {
+        [completion fulfill];
+    }];
+    XCTAssertNotNil(token);
+    XCTAssertEqual(dispatch_semaphore_wait(loaderEntered, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)), 0);
+    XCTAssertTrue([token cancel]);
+    dispatch_semaphore_signal(releaseLoader);
+    [self waitForExpectations:@[ completion ] timeout:0.2];
 }
 
 - (void)testFacadeCommandsConvertFoundationIdentifiersAndPreserveFixtureOutcomes

@@ -2196,6 +2196,143 @@ final class PrismShellTests: XCTestCase {
         }
     }
 
+    func testGlobalSettingsModelRoundTripsConfirmedValuesAndPreservesDraftAfterRejection() throws {
+        let fixture = try PrismTemporaryFixtureRoot()
+        let instanceDirectory = fixture.urlForRelativePath("instances")
+        try FileManager.default.createDirectory(at: instanceDirectory, withIntermediateDirectories: true)
+        let initialBridge = try makeGlobalSettings(instanceDirectoryURL: instanceDirectory, catOpacity: 73)
+        let initial = try XCTUnwrap(PrismGlobalSettings(bridgeSettings: initialBridge))
+        var generations: [Int] = []
+        let model = PrismGlobalSettingsModel(
+            initialSettings: initial,
+            onSave: { _, generation in generations.append(generation) }
+        )
+
+        model.updateDraft { $0.catOpacity = 81 }
+        XCTAssertTrue(model.isSaveAvailable)
+        XCTAssertTrue(model.save())
+        let rejected = try XCTUnwrap(
+            PRGlobalSettingsUpdateResult(settings: nil, outcome: .rejected)
+        )
+        XCTAssertTrue(model.apply(updateResult: rejected, generation: try XCTUnwrap(generations.first)))
+        XCTAssertEqual(model.confirmed?.catOpacity, 73)
+        XCTAssertEqual(model.draft?.catOpacity, 81)
+        XCTAssertEqual(model.saveFailure?.localizationKey, "global.settings.updateRejected")
+
+        model.updateDraft { $0.catOpacity = 84 }
+        XCTAssertTrue(model.save())
+        let confirmedBridge = try makeGlobalSettings(instanceDirectoryURL: instanceDirectory, catOpacity: 88)
+        let confirmedResult = try XCTUnwrap(
+            PRGlobalSettingsUpdateResult(settings: confirmedBridge, outcome: .succeeded)
+        )
+        XCTAssertTrue(model.apply(updateResult: confirmedResult, generation: try XCTUnwrap(generations.last)))
+        XCTAssertEqual(model.confirmed?.catOpacity, 88)
+        XCTAssertEqual(model.draft?.catOpacity, 88)
+        XCTAssertFalse(model.hasChanges)
+    }
+
+    func testGlobalSettingsModelRejectsStaleConfirmedWriteAndDirectoryCancellation() throws {
+        let fixture = try PrismTemporaryFixtureRoot()
+        let confirmedDirectory = fixture.urlForRelativePath("instances")
+        let newerDirectory = fixture.urlForRelativePath("new-instances")
+        let fileURL = fixture.urlForRelativePath("not-a-directory.txt")
+        try FileManager.default.createDirectory(at: confirmedDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: newerDirectory, withIntermediateDirectories: true)
+        try Data("fixture".utf8).write(to: fileURL)
+
+        var directoryState = PrismDirectorySelectionState(confirmedURL: confirmedDirectory)
+        XCTAssertFalse(directoryState.apply(filePanelResult: .failure(NSError(domain: "cancel", code: 1))))
+        XCTAssertEqual(directoryState.draftURL, confirmedDirectory)
+        XCTAssertFalse(directoryState.apply(filePanelResult: .success(fileURL)))
+        XCTAssertEqual(directoryState.draftURL, confirmedDirectory)
+        XCTAssertTrue(directoryState.apply(filePanelResult: .success(newerDirectory)))
+        XCTAssertEqual(directoryState.draftURL, newerDirectory.standardizedFileURL)
+        directoryState.cancel()
+        XCTAssertEqual(directoryState.draftURL, confirmedDirectory)
+
+        let initial = try XCTUnwrap(
+            PrismGlobalSettings(bridgeSettings: makeGlobalSettings(instanceDirectoryURL: confirmedDirectory, catOpacity: 73))
+        )
+        var generations: [Int] = []
+        let model = PrismGlobalSettingsModel(
+            initialSettings: initial,
+            onSave: { _, generation in generations.append(generation) }
+        )
+        model.updateDraft { $0.catOpacity = 81 }
+        XCTAssertTrue(model.save())
+        let staleGeneration = try XCTUnwrap(generations.first)
+        let newer = try XCTUnwrap(
+            makeGlobalSettings(instanceDirectoryURL: newerDirectory, catOpacity: 91)
+        )
+        XCTAssertTrue(model.apply(settings: newer))
+        let staleResult = try XCTUnwrap(
+            PRGlobalSettingsUpdateResult(settings: makeGlobalSettings(instanceDirectoryURL: confirmedDirectory, catOpacity: 82), outcome: .succeeded)
+        )
+        XCTAssertFalse(model.apply(updateResult: staleResult, generation: staleGeneration))
+        XCTAssertEqual(model.confirmed?.catOpacity, 91)
+        XCTAssertEqual(model.confirmed?.instanceDirectoryURL, newerDirectory.standardizedFileURL)
+    }
+
+    func testSettingsSourceUsesStandardSceneControlsAndExplicitBoundaries() throws {
+        let settingsSource = try settingsSource()
+        let appSource = try appSource()
+        for requiredToken in [
+            "Settings {",
+            "Form {",
+            "Section(\"",
+            "Picker(",
+            "Toggle(",
+            "Stepper(",
+            "TextField(",
+            "fileImporter(",
+            "ProgressView(",
+            "ContentUnavailableView",
+            ".keyboardShortcut(.defaultAction)",
+            ".accessibilityIdentifier(\"prism.settings",
+            "Cancel leaves the current directory unchanged"
+        ] {
+            XCTAssertTrue(settingsSource.contains(requiredToken), "Missing Settings contract: \(requiredToken)")
+        }
+        XCTAssertTrue(appSource.contains("Settings {"))
+        XCTAssertTrue(appSource.contains("PrismSettingsView(model: globalSettingsModel)"))
+        for forbiddenToken in [
+            "QWidget", "QDialog", "Qt", "Unmanaged", "UnsafeMutable", "UnsafeRaw", "Canvas(",
+            "draw(", "Path(", "CGContext", "NSBezierPath", "[String: Any]", "Keychain", "Process("
+        ] {
+            XCTAssertFalse(settingsSource.contains(forbiddenToken), "Forbidden Settings boundary: \(forbiddenToken)")
+        }
+    }
+
+    private func makeGlobalSettings(instanceDirectoryURL: URL, catOpacity: Int) throws -> PRGlobalSettings {
+        try XCTUnwrap(
+            PRGlobalSettings(
+                instanceDirectoryURL: instanceDirectoryURL,
+                iconTheme: "fixture-icons",
+                applicationTheme: "fixture-theme",
+                backgroundCat: "fixture-cat",
+                catOpacity: catOpacity,
+                catFit: "strech",
+                language: "en_US",
+                useSystemLocale: true,
+                menuBarInsteadOfToolBar: true,
+                statusBarVisible: false,
+                toolbarsLocked: true,
+                numberOfConcurrentTasks: 10,
+                numberOfConcurrentDownloads: 6,
+                numberOfManualRetries: 2,
+                requestTimeoutSeconds: 60,
+                consoleFont: "Menlo",
+                consoleFontSize: 12,
+                consoleMaxLines: 20_000,
+                consoleOverflowStop: false,
+                showConsole: true,
+                autoCloseConsole: true,
+                showConsoleOnError: false,
+                logPrePostOutput: true
+            )
+        )
+    }
+
     private func fixtureInstances() -> [PrismInstanceRow] {
         [
             PrismInstanceRow(id: "fixture.zeta", name: "Zeta", group: "Beta"),
@@ -2226,6 +2363,24 @@ final class PrismShellTests: XCTestCase {
             .deletingLastPathComponent()
         let sourceURL = sourceRoot
             .appendingPathComponent("PrismNative/App/PrismShellModel.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private func settingsSource() throws -> String {
+        let sourceRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = sourceRoot
+            .appendingPathComponent("PrismNative/App/PrismSettings.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private func appSource() throws -> String {
+        let sourceRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = sourceRoot
+            .appendingPathComponent("PrismNative/App/PrismNativeApp.swift")
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 

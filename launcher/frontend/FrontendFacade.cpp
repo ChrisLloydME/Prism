@@ -371,6 +371,23 @@ void validateInstanceSettingsSnapshot(const FrontendInstanceSettingsSnapshot& se
     }
 }
 
+bool isKnownGlobalSettingsCatFit(const std::string& catFit) noexcept
+{
+    return catFit == "fit" || catFit == "fill" || catFit == "strech";
+}
+
+void validateGlobalSettingsSnapshot(const FrontendGlobalSettingsSnapshot& settings)
+{
+    if (settings.instanceDirectory.empty() || !settings.instanceDirectory.is_absolute()
+        || !isKnownGlobalSettingsCatFit(settings.catFit) || settings.catOpacity < 0 || settings.catOpacity > 100
+        || settings.numberOfConcurrentTasks < 1 || settings.numberOfConcurrentDownloads < 1
+        || settings.numberOfManualRetries < 0 || settings.requestTimeoutSeconds < 0
+        || settings.consoleFontSize < 5 || settings.consoleFontSize > 16
+        || settings.consoleMaxLines < 10000 || settings.consoleMaxLines > 1000000) {
+        throw std::invalid_argument("Global settings require valid directory, enum, and numeric values");
+    }
+}
+
 void validateInstanceChanges(const std::vector<FrontendInstanceChange>& changes)
 {
     for (const auto& change : changes) {
@@ -990,6 +1007,50 @@ FrontendInstanceSettingsUpdateResult executeInstanceSettingsUpdate(
     return result;
 }
 
+std::optional<FrontendGlobalSettingsSnapshot> executeGlobalSettings(
+    const FrontendRuntimeDependencies::GlobalSettingsLoader& loader,
+    const std::filesystem::path& dataRoot)
+{
+    if (!loader) {
+        return std::nullopt;
+    }
+
+    auto settings = loader(dataRoot);
+    if (settings.has_value()) {
+        validateGlobalSettingsSnapshot(*settings);
+    }
+    return settings;
+}
+
+FrontendGlobalSettingsUpdateResult executeGlobalSettingsUpdate(
+    const FrontendRuntimeDependencies::GlobalSettingsUpdater& updater,
+    const std::filesystem::path& dataRoot,
+    const FrontendGlobalSettingsSnapshot& settings)
+{
+    validateGlobalSettingsSnapshot(settings);
+    if (!updater) {
+        return {};
+    }
+
+    auto result = updater(dataRoot, settings);
+    switch (result.outcome) {
+        case FrontendGlobalSettingsUpdateOutcome::Succeeded:
+            if (!result.settings.has_value()) {
+                throw std::invalid_argument("Successful global settings updates require confirmed settings");
+            }
+            validateGlobalSettingsSnapshot(*result.settings);
+            break;
+        case FrontendGlobalSettingsUpdateOutcome::Rejected:
+            if (result.settings.has_value()) {
+                validateGlobalSettingsSnapshot(*result.settings);
+            }
+            break;
+        default:
+            throw std::invalid_argument("Global settings update returned an unknown outcome");
+    }
+    return result;
+}
+
 std::optional<FrontendTaskSnapshot> executeTaskSnapshot(
     const FrontendRuntimeDependencies::TaskSnapshotLoader& loader,
     const std::filesystem::path& dataRoot,
@@ -1199,6 +1260,19 @@ FrontendInstanceSettingsUpdateResult FrontendFacade::updateInstanceSettings(
     ensureRunning(m_lifecycleState);
     return executeInstanceSettingsUpdate(
         m_runtimeDependencies.updateInstanceSettings, m_dataRoot, instanceIdentifier, settings);
+}
+
+std::optional<FrontendGlobalSettingsSnapshot> FrontendFacade::globalSettings() const
+{
+    ensureRunning(m_lifecycleState);
+    return executeGlobalSettings(m_runtimeDependencies.loadGlobalSettings, m_dataRoot);
+}
+
+FrontendGlobalSettingsUpdateResult FrontendFacade::updateGlobalSettings(
+    const FrontendGlobalSettingsSnapshot& settings) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeGlobalSettingsUpdate(m_runtimeDependencies.updateGlobalSettings, m_dataRoot, settings);
 }
 
 std::optional<FrontendTaskSnapshot> FrontendFacade::taskSnapshot(const std::string& taskIdentifier) const

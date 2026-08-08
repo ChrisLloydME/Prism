@@ -328,6 +328,43 @@ struct FrontendInstanceSettingsUpdateResult final {
     std::optional<FrontendInstanceSettingsSnapshot> settings;
 };
 
+/// Confirmed, non-secret global settings for the native macOS Settings scene.
+/// Directory access is represented by one normalized absolute path owned by an
+/// injected adapter; bookmark bytes, account state, environment values,
+/// commands, and provider credentials are deliberately absent.
+struct FrontendGlobalSettingsSnapshot final {
+    std::filesystem::path instanceDirectory;
+    std::string iconTheme;
+    std::string applicationTheme;
+    std::string backgroundCat;
+    int catOpacity = 100;
+    std::string catFit = "fit";
+    std::string language;
+    bool useSystemLocale = false;
+    bool menuBarInsteadOfToolBar = false;
+    bool statusBarVisible = true;
+    bool toolbarsLocked = false;
+    int numberOfConcurrentTasks = 10;
+    int numberOfConcurrentDownloads = 6;
+    int numberOfManualRetries = 1;
+    int requestTimeoutSeconds = 60;
+    std::string consoleFont;
+    int consoleFontSize = 11;
+    int consoleMaxLines = 100000;
+    bool consoleOverflowStop = true;
+    bool showConsole = false;
+    bool autoCloseConsole = false;
+    bool showConsoleOnError = true;
+    bool logPrePostOutput = true;
+};
+
+enum class FrontendGlobalSettingsUpdateOutcome : std::uint8_t { Succeeded, Rejected };
+
+struct FrontendGlobalSettingsUpdateResult final {
+    FrontendGlobalSettingsUpdateOutcome outcome = FrontendGlobalSettingsUpdateOutcome::Rejected;
+    std::optional<FrontendGlobalSettingsSnapshot> settings;
+};
+
 enum class FrontendTaskState : std::uint8_t { Queued, Running, Cancelling, Succeeded, Failed, Cancelled };
 
 enum class FrontendTaskProgressKind : std::uint8_t { None, Indeterminate, Determinate };
@@ -438,6 +475,10 @@ struct FrontendRuntimeDependencies final {
         const std::filesystem::path&, const std::string&)>;
     using InstanceSettingsUpdater = std::function<FrontendInstanceSettingsUpdateResult(
         const std::filesystem::path&, const std::string&, const FrontendInstanceSettingsSnapshot&)>;
+    using GlobalSettingsLoader =
+        std::function<std::optional<FrontendGlobalSettingsSnapshot>(const std::filesystem::path&)>;
+    using GlobalSettingsUpdater = std::function<FrontendGlobalSettingsUpdateResult(
+        const std::filesystem::path&, const FrontendGlobalSettingsSnapshot&)>;
     using TaskSnapshotLoader = std::function<std::optional<FrontendTaskSnapshot>(const std::filesystem::path&, const std::string&)>;
     using TaskCancellation = std::function<FrontendTaskCancellationResult(const std::filesystem::path&, const std::string&)>;
     using LogEntryHandler = std::function<void(FrontendLogEntry)>;
@@ -464,6 +505,8 @@ struct FrontendRuntimeDependencies final {
     InstanceNotesUpdater updateInstanceNotes;
     InstanceSettingsLoader loadInstanceSettings;
     InstanceSettingsUpdater updateInstanceSettings;
+    GlobalSettingsLoader loadGlobalSettings;
+    GlobalSettingsUpdater updateGlobalSettings;
     TaskSnapshotLoader loadTaskSnapshot;
     TaskCancellation cancelTask;
     TaskLogStreamer streamTaskLogs;
@@ -521,6 +564,8 @@ class FrontendFacade final {
     std::optional<FrontendInstanceSettingsSnapshot> instanceSettings(const std::string& instanceIdentifier) const;
     FrontendInstanceSettingsUpdateResult updateInstanceSettings(
         const std::string& instanceIdentifier, const FrontendInstanceSettingsSnapshot& settings) const;
+    std::optional<FrontendGlobalSettingsSnapshot> globalSettings() const;
+    FrontendGlobalSettingsUpdateResult updateGlobalSettings(const FrontendGlobalSettingsSnapshot& settings) const;
     std::optional<FrontendTaskSnapshot> taskSnapshot(const std::string& taskIdentifier) const;
     FrontendTaskCancellationResult cancelTask(const std::string& taskIdentifier) const;
     std::optional<FrontendLogSnapshot> taskLogSnapshot(const std::string& taskIdentifier) const;

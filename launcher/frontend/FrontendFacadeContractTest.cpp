@@ -92,6 +92,35 @@ FrontendInstanceSettingsSnapshot fixtureSettings(const std::string& identifier)
     return settings;
 }
 
+FrontendGlobalSettingsSnapshot fixtureGlobalSettings(const std::filesystem::path& fixtureRoot)
+{
+    FrontendGlobalSettingsSnapshot settings;
+    settings.instanceDirectory = fixtureRoot / "instances";
+    settings.iconTheme = "fixture-icons";
+    settings.applicationTheme = "fixture-theme";
+    settings.backgroundCat = "fixture-cat";
+    settings.catOpacity = 73;
+    settings.catFit = "strech";
+    settings.language = "en_US";
+    settings.useSystemLocale = true;
+    settings.menuBarInsteadOfToolBar = true;
+    settings.statusBarVisible = false;
+    settings.toolbarsLocked = true;
+    settings.numberOfConcurrentTasks = 10;
+    settings.numberOfConcurrentDownloads = 6;
+    settings.numberOfManualRetries = 2;
+    settings.requestTimeoutSeconds = 60;
+    settings.consoleFont = "Menlo";
+    settings.consoleFontSize = 12;
+    settings.consoleMaxLines = 20000;
+    settings.consoleOverflowStop = false;
+    settings.showConsole = true;
+    settings.autoCloseConsole = true;
+    settings.showConsoleOnError = false;
+    settings.logPrePostOutput = true;
+    return settings;
+}
+
 template <typename Function>
 bool throwsInvalidArgument(Function&& function)
 {
@@ -489,6 +518,69 @@ int main()
         && emptyFacade.updateInstanceSettings("fixture-one", fixtureSettings("fixture-one")).outcome
             == FrontendInstanceSettingsUpdateOutcome::Rejected;
 
+    std::size_t globalSettingsLoadCalls = 0;
+    std::size_t globalSettingsUpdateCalls = 0;
+    bool globalSettingsRootMatches = true;
+    auto globalSettingsDependencies = makeFixtureDependencies();
+    globalSettingsDependencies.loadGlobalSettings = [&](const std::filesystem::path& root)
+        -> std::optional<FrontendGlobalSettingsSnapshot> {
+        globalSettingsRootMatches = globalSettingsRootMatches && root == fixtureRoot.lexically_normal();
+        ++globalSettingsLoadCalls;
+        return fixtureGlobalSettings(fixtureRoot);
+    };
+    globalSettingsDependencies.updateGlobalSettings = [&](const std::filesystem::path& root,
+                                                          const FrontendGlobalSettingsSnapshot& requested) {
+        globalSettingsRootMatches = globalSettingsRootMatches && root == fixtureRoot.lexically_normal();
+        ++globalSettingsUpdateCalls;
+        auto confirmed = requested;
+        confirmed.catOpacity = 88;
+        return FrontendGlobalSettingsUpdateResult{
+            FrontendGlobalSettingsUpdateOutcome::Succeeded,
+            std::move(confirmed),
+        };
+    };
+    FrontendFacade globalSettingsFacade(fixtureRoot / "nested" / "..", std::move(globalSettingsDependencies));
+    const auto loadedGlobalSettings = globalSettingsFacade.globalSettings();
+    auto requestedGlobalSettings = fixtureGlobalSettings(fixtureRoot);
+    requestedGlobalSettings.catOpacity = 81;
+    const auto savedGlobalSettings = globalSettingsFacade.updateGlobalSettings(requestedGlobalSettings);
+    const bool globalSettingsContract = loadedGlobalSettings.has_value()
+        && loadedGlobalSettings->instanceDirectory == fixtureRoot / "instances"
+        && loadedGlobalSettings->catFit == "strech" && loadedGlobalSettings->catOpacity == 73
+        && savedGlobalSettings.outcome == FrontendGlobalSettingsUpdateOutcome::Succeeded
+        && savedGlobalSettings.settings.has_value() && savedGlobalSettings.settings->catOpacity == 88
+        && globalSettingsLoadCalls == 1 && globalSettingsUpdateCalls == 1 && globalSettingsRootMatches;
+    auto invalidGlobalLoadDependencies = makeFixtureDependencies();
+    invalidGlobalLoadDependencies.loadGlobalSettings = [&](const std::filesystem::path&) {
+        auto invalid = fixtureGlobalSettings(fixtureRoot);
+        invalid.catFit = "unknown-fit";
+        return std::optional<FrontendGlobalSettingsSnapshot>(std::move(invalid));
+    };
+    FrontendFacade invalidGlobalLoadFacade(fixtureRoot, std::move(invalidGlobalLoadDependencies));
+    const bool invalidGlobalSettingsRejected = throwsInvalidArgument([&invalidGlobalLoadFacade] {
+        (void) invalidGlobalLoadFacade.globalSettings();
+    });
+    auto invalidGlobalUpdateDependencies = makeFixtureDependencies();
+    invalidGlobalUpdateDependencies.updateGlobalSettings = [](const std::filesystem::path&,
+                                                              const FrontendGlobalSettingsSnapshot&) {
+        return FrontendGlobalSettingsUpdateResult{
+            FrontendGlobalSettingsUpdateOutcome::Succeeded,
+            std::nullopt,
+        };
+    };
+    FrontendFacade invalidGlobalUpdateFacade(fixtureRoot, std::move(invalidGlobalUpdateDependencies));
+    auto invalidGlobalRequest = fixtureGlobalSettings(fixtureRoot);
+    invalidGlobalRequest.consoleMaxLines = 9999;
+    const bool invalidGlobalSettingsUpdateRejected = throwsInvalidArgument([&invalidGlobalUpdateFacade,
+                                                                              &invalidGlobalRequest] {
+        (void) invalidGlobalUpdateFacade.updateGlobalSettings(invalidGlobalRequest);
+    }) && throwsInvalidArgument([&invalidGlobalUpdateFacade, &requestedGlobalSettings] {
+        (void) invalidGlobalUpdateFacade.updateGlobalSettings(requestedGlobalSettings);
+    });
+    const bool missingGlobalSettingsPortsAreSafe = !emptyFacade.globalSettings().has_value()
+        && emptyFacade.updateGlobalSettings(fixtureGlobalSettings(fixtureRoot)).outcome
+            == FrontendGlobalSettingsUpdateOutcome::Rejected;
+
     std::vector<std::string> launchCalls;
     std::vector<std::string> stopCalls;
     bool commandRootMatches = true;
@@ -875,6 +967,13 @@ int main()
         && throwsLogicError([&settingsFacade, &requestedSettings] {
                (void) settingsFacade.updateInstanceSettings("fixture-one", requestedSettings);
            });
+    const bool rejectedPostShutdownGlobalSettingsWork = globalSettingsFacade.shutdown()
+        && throwsLogicError([&globalSettingsFacade] {
+               (void) globalSettingsFacade.globalSettings();
+           })
+        && throwsLogicError([&globalSettingsFacade, &requestedGlobalSettings] {
+               (void) globalSettingsFacade.updateGlobalSettings(requestedGlobalSettings);
+           });
     const bool rejectedPostShutdownComponentsWork = componentFacade.shutdown()
         && throwsLogicError([&componentFacade] {
                (void) componentFacade.instanceComponents("fixture-one");
@@ -903,6 +1002,8 @@ int main()
                && rejectedInvalidResources && rejectedInvalidMutationResult
                && rejectedPostShutdownResourceWork
                && logPrivacyAndBounds && longLogIsTruncated && missingLogPortIsSafe
+               && globalSettingsContract && invalidGlobalSettingsRejected && invalidGlobalSettingsUpdateRejected
+               && missingGlobalSettingsPortsAreSafe && rejectedPostShutdownGlobalSettingsWork
                && rejectedEmptyRoot && rejectedRelativeRoot && rejectedIncompleteDependencies
                && lifecycleContract && callbacksRanExactlyOnce && destructorShutdownContract && !error
         ? 0

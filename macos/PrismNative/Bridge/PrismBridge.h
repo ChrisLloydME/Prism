@@ -71,6 +71,10 @@ typedef void (^PRInstanceSettingsCompletionHandler)(PRInstanceSettings * _Nullab
                                                      PRBridgeError * _Nullable error);
 typedef void (^PRInstanceSettingsUpdateCompletionHandler)(PRInstanceSettingsUpdateResult * _Nullable result,
                                                            PRBridgeError * _Nullable error);
+typedef void (^PRGlobalSettingsCompletionHandler)(PRGlobalSettings * _Nullable settings,
+                                                   PRBridgeError * _Nullable error);
+typedef void (^PRGlobalSettingsUpdateCompletionHandler)(PRGlobalSettingsUpdateResult * _Nullable result,
+                                                         PRBridgeError * _Nullable error);
 
 /// Owns one bridge observation registration and cancels it when released.
 @interface PRBridgeObservationToken : NSObject
@@ -208,6 +212,17 @@ typedef void (^PRInstanceSettingsUpdateCompletionHandler)(PRInstanceSettingsUpda
 - (nullable PRBridgeObservationToken *)updateInstanceSettingsWithIdentifier:(NSString *)identifier
                                                                     settings:(PRInstanceSettings *)settings
                                                                   completion:(PRInstanceSettingsUpdateCompletionHandler)completion;
+
+/// Loads immutable, non-secret global settings for the standard macOS Settings
+/// scene. Directory selection is represented by a Foundation URL; bookmark
+/// bytes and security-scope persistence stay in the adapter.
+- (nullable PRBridgeObservationToken *)loadGlobalSettingsWithCompletion:(PRGlobalSettingsCompletionHandler)completion;
+
+/// Persists one explicitly typed global settings snapshot and returns the
+/// confirmed result. Java, account, credential, environment, command, and
+/// provider-secret values are not part of this contract.
+- (nullable PRBridgeObservationToken *)updateGlobalSettings:(PRGlobalSettings *)settings
+                                                  completion:(PRGlobalSettingsUpdateCompletionHandler)completion;
 
 @end
 

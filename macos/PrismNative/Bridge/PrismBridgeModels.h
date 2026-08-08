@@ -591,6 +591,79 @@ typedef NS_ENUM(NSInteger, PRInstanceSettingsUpdateOutcome) {
 
 @end
 
+/// Immutable, non-secret global settings for the native Settings scene.
+/// The directory URL is a scoped system-panel result; bookmark bytes and
+/// their persistence remain inside the adapter and never enter this model.
+@interface PRGlobalSettings : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithInstanceDirectoryURL:(NSURL *)instanceDirectoryURL
+                                             iconTheme:(NSString *)iconTheme
+                                     applicationTheme:(NSString *)applicationTheme
+                                       backgroundCat:(NSString *)backgroundCat
+                                         catOpacity:(NSInteger)catOpacity
+                                             catFit:(NSString *)catFit
+                                           language:(NSString *)language
+                                   useSystemLocale:(BOOL)useSystemLocale
+                            menuBarInsteadOfToolBar:(BOOL)menuBarInsteadOfToolBar
+                                  statusBarVisible:(BOOL)statusBarVisible
+                                    toolbarsLocked:(BOOL)toolbarsLocked
+                         numberOfConcurrentTasks:(NSInteger)numberOfConcurrentTasks
+                     numberOfConcurrentDownloads:(NSInteger)numberOfConcurrentDownloads
+                           numberOfManualRetries:(NSInteger)numberOfManualRetries
+                               requestTimeoutSeconds:(NSInteger)requestTimeoutSeconds
+                                        consoleFont:(NSString *)consoleFont
+                                    consoleFontSize:(NSInteger)consoleFontSize
+                                     consoleMaxLines:(NSInteger)consoleMaxLines
+                                  consoleOverflowStop:(BOOL)consoleOverflowStop
+                                          showConsole:(BOOL)showConsole
+                                       autoCloseConsole:(BOOL)autoCloseConsole
+                                     showConsoleOnError:(BOOL)showConsoleOnError
+                                      logPrePostOutput:(BOOL)logPrePostOutput NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSURL *instanceDirectoryURL;
+@property(nonatomic, copy, readonly) NSString *iconTheme;
+@property(nonatomic, copy, readonly) NSString *applicationTheme;
+@property(nonatomic, copy, readonly) NSString *backgroundCat;
+@property(nonatomic, assign, readonly) NSInteger catOpacity;
+@property(nonatomic, copy, readonly) NSString *catFit;
+@property(nonatomic, copy, readonly) NSString *language;
+@property(nonatomic, assign, readonly) BOOL useSystemLocale;
+@property(nonatomic, assign, readonly) BOOL menuBarInsteadOfToolBar;
+@property(nonatomic, assign, readonly) BOOL statusBarVisible;
+@property(nonatomic, assign, readonly) BOOL toolbarsLocked;
+@property(nonatomic, assign, readonly) NSInteger numberOfConcurrentTasks;
+@property(nonatomic, assign, readonly) NSInteger numberOfConcurrentDownloads;
+@property(nonatomic, assign, readonly) NSInteger numberOfManualRetries;
+@property(nonatomic, assign, readonly) NSInteger requestTimeoutSeconds;
+@property(nonatomic, copy, readonly) NSString *consoleFont;
+@property(nonatomic, assign, readonly) NSInteger consoleFontSize;
+@property(nonatomic, assign, readonly) NSInteger consoleMaxLines;
+@property(nonatomic, assign, readonly) BOOL consoleOverflowStop;
+@property(nonatomic, assign, readonly) BOOL showConsole;
+@property(nonatomic, assign, readonly) BOOL autoCloseConsole;
+@property(nonatomic, assign, readonly) BOOL showConsoleOnError;
+@property(nonatomic, assign, readonly) BOOL logPrePostOutput;
+
+@end
+
+typedef NS_ENUM(NSInteger, PRGlobalSettingsUpdateOutcome) {
+    PRGlobalSettingsUpdateOutcomeSucceeded = 0,
+    PRGlobalSettingsUpdateOutcomeRejected,
+};
+
+/// Immutable confirmed result for one global settings mutation.
+@interface PRGlobalSettingsUpdateResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithSettings:(nullable PRGlobalSettings *)settings
+                                   outcome:(PRGlobalSettingsUpdateOutcome)outcome NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRGlobalSettings *settings;
+@property(nonatomic, assign, readonly) PRGlobalSettingsUpdateOutcome outcome;
+
+@end
+
 /// Immutable progress state for one task subtask.
 @interface PRTaskSubtaskStatus : NSObject
 
