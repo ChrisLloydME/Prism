@@ -274,6 +274,41 @@ bool isKnownAccountAuthenticationOutcome(PRAccountAuthenticationOutcome outcome)
     return false;
 }
 
+bool isKnownOfflineLaunchIdentityMode(PROfflineLaunchIdentityMode mode)
+{
+    switch (mode) {
+        case PROfflineLaunchIdentityModeOffline:
+        case PROfflineLaunchIdentityModeDemo:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownOfflineLaunchIdentityLoadOutcome(PROfflineLaunchIdentityLoadOutcome outcome)
+{
+    switch (outcome) {
+        case PROfflineLaunchIdentityLoadOutcomeSucceeded:
+        case PROfflineLaunchIdentityLoadOutcomeFailed:
+        case PROfflineLaunchIdentityLoadOutcomeCancelled:
+        case PROfflineLaunchIdentityLoadOutcomeRejected:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownOfflineLaunchIdentityUpdateOutcome(PROfflineLaunchIdentityUpdateOutcome outcome)
+{
+    switch (outcome) {
+        case PROfflineLaunchIdentityUpdateOutcomeSucceeded:
+        case PROfflineLaunchIdentityUpdateOutcomeInvalidName:
+        case PROfflineLaunchIdentityUpdateOutcomeFailed:
+        case PROfflineLaunchIdentityUpdateOutcomeCancelled:
+        case PROfflineLaunchIdentityUpdateOutcomeRejected:
+            return true;
+    }
+    return false;
+}
+
 std::string stableIdentifierFromFoundation(NSString *identifier)
 {
     if (![identifier isKindOfClass:NSString.class]) {
@@ -1618,6 +1653,102 @@ PRAccountAuthenticationResult *accountAuthenticationResultFromFacadeResult(
     return converted;
 }
 
+PROfflineLaunchIdentityMode offlineLaunchIdentityModeFromFacadeResult(FrontendOfflineLaunchIdentityMode mode)
+{
+    switch (mode) {
+        case FrontendOfflineLaunchIdentityMode::Offline:
+            return PROfflineLaunchIdentityModeOffline;
+        case FrontendOfflineLaunchIdentityMode::Demo:
+            return PROfflineLaunchIdentityModeDemo;
+    }
+    throw std::invalid_argument("Facade returned an unknown offline launch identity mode");
+}
+
+PROfflineLaunchIdentityLoadOutcome offlineLaunchIdentityLoadOutcomeFromFacadeResult(
+    FrontendOfflineLaunchIdentityLoadOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendOfflineLaunchIdentityLoadOutcome::Succeeded:
+            return PROfflineLaunchIdentityLoadOutcomeSucceeded;
+        case FrontendOfflineLaunchIdentityLoadOutcome::Failed:
+            return PROfflineLaunchIdentityLoadOutcomeFailed;
+        case FrontendOfflineLaunchIdentityLoadOutcome::Cancelled:
+            return PROfflineLaunchIdentityLoadOutcomeCancelled;
+        case FrontendOfflineLaunchIdentityLoadOutcome::Rejected:
+            return PROfflineLaunchIdentityLoadOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown offline launch identity load outcome");
+}
+
+PROfflineLaunchIdentityUpdateOutcome offlineLaunchIdentityUpdateOutcomeFromFacadeResult(
+    FrontendOfflineLaunchIdentityUpdateOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendOfflineLaunchIdentityUpdateOutcome::Succeeded:
+            return PROfflineLaunchIdentityUpdateOutcomeSucceeded;
+        case FrontendOfflineLaunchIdentityUpdateOutcome::InvalidName:
+            return PROfflineLaunchIdentityUpdateOutcomeInvalidName;
+        case FrontendOfflineLaunchIdentityUpdateOutcome::Failed:
+            return PROfflineLaunchIdentityUpdateOutcomeFailed;
+        case FrontendOfflineLaunchIdentityUpdateOutcome::Cancelled:
+            return PROfflineLaunchIdentityUpdateOutcomeCancelled;
+        case FrontendOfflineLaunchIdentityUpdateOutcome::Rejected:
+            return PROfflineLaunchIdentityUpdateOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown offline launch identity update outcome");
+}
+
+PROfflineLaunchIdentity *offlineLaunchIdentityFromFacadeSnapshot(
+    const FrontendOfflineLaunchIdentitySnapshot& snapshot)
+{
+    PROfflineLaunchIdentity *converted = [[PROfflineLaunchIdentity alloc]
+        initWithMode:offlineLaunchIdentityModeFromFacadeResult(snapshot.mode)
+   accountIdentifier:snapshot.accountIdentifier.has_value()
+       ? foundationStringFromUTF8(*snapshot.accountIdentifier)
+       : nil
+                 name:foundationStringFromUTF8(snapshot.name)];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid offline launch identity");
+    }
+    return converted;
+}
+
+PROfflineLaunchIdentityLoadResult *offlineLaunchIdentityLoadResultFromFacadeResult(
+    const FrontendOfflineLaunchIdentityLoadResult& result)
+{
+    PROfflineLaunchIdentity *identity = result.identity.has_value()
+        ? offlineLaunchIdentityFromFacadeSnapshot(*result.identity)
+        : nil;
+    PROfflineLaunchIdentityLoadResult *converted = [[PROfflineLaunchIdentityLoadResult alloc]
+        initWithIdentity:identity
+                 outcome:offlineLaunchIdentityLoadOutcomeFromFacadeResult(result.outcome)
+          localizationKey:foundationStringFromUTF8AllowEmpty(result.localizationKey)
+            diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+                retryable:result.retryable];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid offline launch identity load result");
+    }
+    return converted;
+}
+
+PROfflineLaunchIdentityUpdateResult *offlineLaunchIdentityUpdateResultFromFacadeResult(
+    const FrontendOfflineLaunchIdentityUpdateResult& result)
+{
+    PROfflineLaunchIdentity *identity = result.identity.has_value()
+        ? offlineLaunchIdentityFromFacadeSnapshot(*result.identity)
+        : nil;
+    PROfflineLaunchIdentityUpdateResult *converted = [[PROfflineLaunchIdentityUpdateResult alloc]
+        initWithIdentity:identity
+                 outcome:offlineLaunchIdentityUpdateOutcomeFromFacadeResult(result.outcome)
+          localizationKey:foundationStringFromUTF8AllowEmpty(result.localizationKey)
+            diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+                retryable:result.retryable];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid offline launch identity update result");
+    }
+    return converted;
+}
+
 PRInstanceNotesUpdateOutcome notesUpdateOutcomeFromFacadeResult(FrontendInstanceNotesUpdateOutcome outcome)
 {
     switch (outcome) {
@@ -2681,6 +2812,56 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@interface PRBridgeOfflineLaunchIdentityLoadDelivery : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithResult:(nullable PROfflineLaunchIdentityLoadResult *)result
+                          error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PROfflineLaunchIdentityLoadResult *result;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeOfflineLaunchIdentityLoadDelivery
+
+- (instancetype)initWithResult:(PROfflineLaunchIdentityLoadResult *)result error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _result = result;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
+@interface PRBridgeOfflineLaunchIdentityUpdateDelivery : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithResult:(nullable PROfflineLaunchIdentityUpdateResult *)result
+                          error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PROfflineLaunchIdentityUpdateResult *result;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeOfflineLaunchIdentityUpdateDelivery
+
+- (instancetype)initWithResult:(PROfflineLaunchIdentityUpdateResult *)result error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _result = result;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
 @interface PRBridgeTaskStatusResult : NSObject
 
 - (instancetype)init NS_UNAVAILABLE;
@@ -2836,6 +3017,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *accountSnapshotRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *accountSelectionRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *accountAuthenticationRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *offlineIdentityLoadRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *offlineIdentityUpdateRequestStates;
 @property(nonatomic, strong) NSLock *observationLock;
 
 - (nullable instancetype)initWithDataRootURL:(NSURL *)dataRootURL
@@ -2870,6 +3053,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 - (void)removeAccountSnapshotRequest:(PRBridgeObservationState *)request;
 - (void)removeAccountSelectionRequest:(PRBridgeObservationState *)request;
 - (void)removeAccountAuthenticationRequest:(PRBridgeObservationState *)request;
+- (void)removeOfflineIdentityLoadRequest:(PRBridgeObservationState *)request;
+- (void)removeOfflineIdentityUpdateRequest:(PRBridgeObservationState *)request;
 - (nullable PRBridgeObservationToken *)loadTaskStatusWithIdentifier:(NSString *)identifier
                                                             completion:(PRTaskStatusCompletionHandler)completion;
 - (nullable PRBridgeObservationToken *)performTaskCancellationWithIdentifier:(NSString *)identifier
@@ -3248,6 +3433,34 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @property(nonatomic, strong, readwrite, nullable) PRAccountSnapshot *account;
 @property(nonatomic, assign, readwrite) PRAccountAuthenticationOutcome outcome;
+@property(nonatomic, copy, readwrite) NSString *localizationKey;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readwrite) BOOL retryable;
+
+@end
+
+@interface PROfflineLaunchIdentity ()
+
+@property(nonatomic, assign, readwrite) PROfflineLaunchIdentityMode mode;
+@property(nonatomic, copy, readwrite, nullable) NSString *accountIdentifier;
+@property(nonatomic, copy, readwrite) NSString *name;
+
+@end
+
+@interface PROfflineLaunchIdentityLoadResult ()
+
+@property(nonatomic, strong, readwrite, nullable) PROfflineLaunchIdentity *identity;
+@property(nonatomic, assign, readwrite) PROfflineLaunchIdentityLoadOutcome outcome;
+@property(nonatomic, copy, readwrite) NSString *localizationKey;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readwrite) BOOL retryable;
+
+@end
+
+@interface PROfflineLaunchIdentityUpdateResult ()
+
+@property(nonatomic, strong, readwrite, nullable) PROfflineLaunchIdentity *identity;
+@property(nonatomic, assign, readwrite) PROfflineLaunchIdentityUpdateOutcome outcome;
 @property(nonatomic, copy, readwrite) NSString *localizationKey;
 @property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
 @property(nonatomic, assign, readwrite) BOOL retryable;
@@ -4439,6 +4652,88 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@implementation PROfflineLaunchIdentity
+
+- (instancetype)initWithMode:(PROfflineLaunchIdentityMode)mode
+            accountIdentifier:(NSString *)accountIdentifier
+                          name:(NSString *)name
+{
+    if (!isKnownOfflineLaunchIdentityMode(mode) || (accountIdentifier && !isNonEmptyString(accountIdentifier))
+        || !isNonEmptyString(name)) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.mode = mode;
+        self.accountIdentifier = [accountIdentifier copy];
+        self.name = [name copy];
+    }
+    return self;
+}
+
+@end
+
+@implementation PROfflineLaunchIdentityLoadResult
+
+- (instancetype)initWithIdentity:(PROfflineLaunchIdentity *)identity
+                           outcome:(PROfflineLaunchIdentityLoadOutcome)outcome
+                    localizationKey:(NSString *)localizationKey
+                      diagnosticText:(NSString *)diagnosticText
+                          retryable:(BOOL)retryable
+{
+    if (!isKnownOfflineLaunchIdentityLoadOutcome(outcome) || !isNonEmptyString(localizationKey)
+        || (outcome == PROfflineLaunchIdentityLoadOutcomeSucceeded && !identity)
+        || (outcome != PROfflineLaunchIdentityLoadOutcomeSucceeded && identity)) {
+        return nil;
+    }
+    if (diagnosticText && ![diagnosticText isKindOfClass:NSString.class]) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.identity = identity;
+        self.outcome = outcome;
+        self.localizationKey = [localizationKey copy];
+        self.diagnosticText = [diagnosticText copy];
+        self.retryable = retryable;
+    }
+    return self;
+}
+
+@end
+
+@implementation PROfflineLaunchIdentityUpdateResult
+
+- (instancetype)initWithIdentity:(PROfflineLaunchIdentity *)identity
+                           outcome:(PROfflineLaunchIdentityUpdateOutcome)outcome
+                    localizationKey:(NSString *)localizationKey
+                      diagnosticText:(NSString *)diagnosticText
+                          retryable:(BOOL)retryable
+{
+    if (!isKnownOfflineLaunchIdentityUpdateOutcome(outcome) || !isNonEmptyString(localizationKey)
+        || (outcome == PROfflineLaunchIdentityUpdateOutcomeSucceeded && !identity)
+        || (outcome != PROfflineLaunchIdentityUpdateOutcomeSucceeded && identity)) {
+        return nil;
+    }
+    if (diagnosticText && ![diagnosticText isKindOfClass:NSString.class]) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.identity = identity;
+        self.outcome = outcome;
+        self.localizationKey = [localizationKey copy];
+        self.diagnosticText = [diagnosticText copy];
+        self.retryable = retryable;
+    }
+    return self;
+}
+
+@end
+
 @implementation PRTaskSubtaskStatus
 
 - (instancetype)initWithIdentifier:(NSString *)identifier
@@ -4790,6 +5085,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.accountSnapshotRequestStates = [NSMutableArray array];
         self.accountSelectionRequestStates = [NSMutableArray array];
         self.accountAuthenticationRequestStates = [NSMutableArray array];
+        self.offlineIdentityLoadRequestStates = [NSMutableArray array];
+        self.offlineIdentityUpdateRequestStates = [NSMutableArray array];
         self.observationLock = [[NSLock alloc] init];
         _lifecycle = std::make_unique<NativeFacadeLifecycle>();
         _facade = std::move(facade);
@@ -7196,6 +7493,212 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     return [[PRBridgeObservationToken alloc] initWithState:request];
 }
 
+- (PRBridgeObservationToken *)loadOfflineLaunchIdentityWithMode:(PROfflineLaunchIdentityMode)mode
+                                                accountIdentifier:(NSString *)accountIdentifier
+                                                     fallbackName:(NSString *)fallbackName
+                                                      completion:(PROfflineLaunchIdentityLoadCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+    if (!isKnownOfflineLaunchIdentityMode(mode)) {
+        return nil;
+    }
+
+    NSString *accountIdentifierCopy = [accountIdentifier copy];
+    NSString *fallbackNameCopy = [fallbackName copy];
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeOfflineLaunchIdentityLoadDelivery *delivery = (PRBridgeOfflineLaunchIdentityLoadDelivery *)value;
+        if (delivery.result || delivery.error) {
+            [weakRequest cancel];
+            completion(delivery.result, delivery.error);
+        }
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeOfflineIdentityLoadRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.offlineIdentityLoadRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PROfflineLaunchIdentityLoadResult *result = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    FrontendOfflineLaunchIdentityRequest identityRequest;
+                    switch (mode) {
+                        case PROfflineLaunchIdentityModeOffline:
+                            identityRequest.mode = FrontendOfflineLaunchIdentityMode::Offline;
+                            break;
+                        case PROfflineLaunchIdentityModeDemo:
+                            identityRequest.mode = FrontendOfflineLaunchIdentityMode::Demo;
+                            break;
+                    }
+                    if (accountIdentifierCopy) {
+                        identityRequest.accountIdentifier = stableIdentifierFromFoundation(accountIdentifierCopy);
+                    }
+                    identityRequest.fallbackName = utf8TextFromFoundation(fallbackNameCopy);
+                    result = offlineLaunchIdentityLoadResultFromFacadeResult(
+                        bridge->_facade->loadOfflineLaunchIdentity(identityRequest));
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid offline launch identity"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Offline launch identity load cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Offline launch identity unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown offline launch identity load failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeOfflineLaunchIdentityLoadDelivery alloc]
+                initWithResult:result
+                          error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
+- (PRBridgeObservationToken *)updateOfflineLaunchIdentityWithMode:(PROfflineLaunchIdentityMode)mode
+                                                  accountIdentifier:(NSString *)accountIdentifier
+                                                               name:(NSString *)name
+                                                  allowInvalidName:(BOOL)allowInvalidName
+                                                        completion:(PROfflineLaunchIdentityUpdateCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+    if (!isKnownOfflineLaunchIdentityMode(mode)) {
+        return nil;
+    }
+
+    NSString *accountIdentifierCopy = [accountIdentifier copy];
+    NSString *nameCopy = [name copy];
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeOfflineLaunchIdentityUpdateDelivery *delivery = (PRBridgeOfflineLaunchIdentityUpdateDelivery *)value;
+        if (delivery.result || delivery.error) {
+            [weakRequest cancel];
+            completion(delivery.result, delivery.error);
+        }
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeOfflineIdentityUpdateRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.offlineIdentityUpdateRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PROfflineLaunchIdentityUpdateResult *result = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    FrontendOfflineLaunchIdentityUpdateRequest identityRequest;
+                    switch (mode) {
+                        case PROfflineLaunchIdentityModeOffline:
+                            identityRequest.mode = FrontendOfflineLaunchIdentityMode::Offline;
+                            break;
+                        case PROfflineLaunchIdentityModeDemo:
+                            identityRequest.mode = FrontendOfflineLaunchIdentityMode::Demo;
+                            break;
+                    }
+                    if (accountIdentifierCopy) {
+                        identityRequest.accountIdentifier = stableIdentifierFromFoundation(accountIdentifierCopy);
+                    }
+                    identityRequest.name = utf8TextFromFoundation(nameCopy);
+                    identityRequest.allowInvalidName = allowInvalidName;
+                    result = offlineLaunchIdentityUpdateResultFromFacadeResult(
+                        bridge->_facade->updateOfflineLaunchIdentity(identityRequest));
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid offline launch identity"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Offline launch identity update cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Offline launch identity unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown offline launch identity update failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeOfflineLaunchIdentityUpdateDelivery alloc]
+                initWithResult:result
+                          error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
 - (void)removeInstanceObservation:(PRBridgeObservationState *)observation
 {
     [self.observationLock lock];
@@ -7466,6 +7969,26 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.observationLock unlock];
 }
 
+- (void)removeOfflineIdentityLoadRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.offlineIdentityLoadRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.offlineIdentityLoadRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
+- (void)removeOfflineIdentityUpdateRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.offlineIdentityUpdateRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.offlineIdentityUpdateRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
 - (void)cancelAllObservations
 {
     [self.observationLock lock];
@@ -7497,6 +8020,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [observations addObjectsFromArray:self.accountSnapshotRequestStates];
     [observations addObjectsFromArray:self.accountSelectionRequestStates];
     [observations addObjectsFromArray:self.accountAuthenticationRequestStates];
+    [observations addObjectsFromArray:self.offlineIdentityLoadRequestStates];
+    [observations addObjectsFromArray:self.offlineIdentityUpdateRequestStates];
     [self.instanceObservationStates removeAllObjects];
     [self.instanceChangeObservationStates removeAllObjects];
     [self.taskObservationStates removeAllObjects];
@@ -7524,6 +8049,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.accountSnapshotRequestStates removeAllObjects];
     [self.accountSelectionRequestStates removeAllObjects];
     [self.accountAuthenticationRequestStates removeAllObjects];
+    [self.offlineIdentityLoadRequestStates removeAllObjects];
+    [self.offlineIdentityUpdateRequestStates removeAllObjects];
     [self.observationLock unlock];
 
     for (PRBridgeObservationState *observation in observations) {

@@ -2748,6 +2748,180 @@ final class PrismShellTests: XCTestCase {
         XCTAssertTrue(unavailableModel.canRetry)
     }
 
+    func testOfflineLaunchIdentityModelPreservesValidationConfirmationCancellationAndRecovery() throws {
+        XCTAssertTrue(PrismOfflineLaunchIdentityValidation.isValidLegacyName("abc"))
+        XCTAssertTrue(PrismOfflineLaunchIdentityValidation.isValidLegacyName("Native_Player16"))
+        XCTAssertFalse(PrismOfflineLaunchIdentityValidation.isValidLegacyName("ab"))
+        XCTAssertFalse(PrismOfflineLaunchIdentityValidation.isValidLegacyName("bad name"))
+        XCTAssertFalse(PrismOfflineLaunchIdentityValidation.isValidLegacyName("éclair"))
+
+        var loadRequests: [(PrismOfflineLaunchIdentityMode, String?, String, Int)] = []
+        var saveRequests: [(PrismOfflineLaunchIdentityMode, String?, String, Bool, Int)] = []
+        var cancellationCount = 0
+        let model = PrismOfflineLaunchIdentityModel(
+            onLoad: { mode, accountIdentifier, fallbackName, generation in
+                loadRequests.append((mode, accountIdentifier, fallbackName, generation))
+            },
+            onSave: { mode, accountIdentifier, name, allowInvalidNames, generation in
+                saveRequests.append((mode, accountIdentifier, name, allowInvalidNames, generation))
+            },
+            onCancel: { cancellationCount += 1 }
+        )
+
+        XCTAssertTrue(
+            model.load(
+                mode: .offline,
+                accountIdentifier: " account.fixture.offline ",
+                fallbackName: "Player"
+            )
+        )
+        let loadGeneration = try XCTUnwrap(loadRequests.first?.3)
+        XCTAssertTrue(model.isLoading)
+        let loadedIdentity = try XCTUnwrap(
+            PROfflineLaunchIdentity(
+                mode: .offline,
+                accountIdentifier: "account.fixture.offline",
+                name: "Saved_Player"
+            )
+        )
+        let loadedResult = try XCTUnwrap(
+            PROfflineLaunchIdentityLoadResult(
+                identity: loadedIdentity,
+                outcome: .succeeded,
+                localizationKey: "accounts.offlineIdentity.loaded",
+                diagnosticText: nil,
+                retryable: false
+            )
+        )
+        XCTAssertTrue(model.apply(loadResult: loadedResult, generation: loadGeneration))
+        XCTAssertEqual(model.confirmedIdentity?.name, "Saved_Player")
+        XCTAssertEqual(model.draftName, "Saved_Player")
+
+        XCTAssertTrue(model.updateDraftName("bad name"))
+        XCTAssertFalse(model.canSave)
+        XCTAssertTrue(model.updateAllowInvalidNames(true))
+        XCTAssertTrue(model.canSave)
+        XCTAssertTrue(model.save())
+        let saveGeneration = try XCTUnwrap(saveRequests.first?.4)
+        XCTAssertEqual(saveRequests.first?.2, "bad name")
+        XCTAssertEqual(saveRequests.first?.3, true)
+        let invalidNameResult = try XCTUnwrap(
+            PROfflineLaunchIdentityUpdateResult(
+                identity: nil,
+                outcome: .invalidName,
+                localizationKey: "accounts.offlineIdentity.invalidName",
+                diagnosticText: "Fixture name rejected.",
+                retryable: false
+            )
+        )
+        XCTAssertTrue(model.apply(updateResult: invalidNameResult, generation: saveGeneration))
+        XCTAssertEqual(model.failure?.localizationKey, "accounts.offlineIdentity.invalidName")
+        XCTAssertFalse(model.canRetry)
+
+        XCTAssertTrue(model.beginEditing())
+        XCTAssertTrue(model.updateDraftName("Native_Player"))
+        XCTAssertTrue(model.updateAllowInvalidNames(false))
+        XCTAssertTrue(model.save())
+        let confirmedSaveGeneration = try XCTUnwrap(saveRequests.last?.4)
+        let confirmedIdentity = try XCTUnwrap(
+            PROfflineLaunchIdentity(
+                mode: .offline,
+                accountIdentifier: "account.fixture.offline",
+                name: "Native_Player"
+            )
+        )
+        let confirmedResult = try XCTUnwrap(
+            PROfflineLaunchIdentityUpdateResult(
+                identity: confirmedIdentity,
+                outcome: .succeeded,
+                localizationKey: "accounts.offlineIdentity.saved",
+                diagnosticText: nil,
+                retryable: false
+            )
+        )
+        XCTAssertTrue(model.apply(updateResult: confirmedResult, generation: confirmedSaveGeneration))
+        XCTAssertEqual(model.confirmedIdentity?.name, "Native_Player")
+        if case .succeeded(let finalIdentity) = model.state {
+            XCTAssertEqual(finalIdentity.name, "Native_Player")
+        } else {
+            XCTFail("Expected a confirmed offline launch identity")
+        }
+
+        XCTAssertTrue(model.load(accountIdentifier: "account.fixture.offline", fallbackName: "Player"))
+        let staleGeneration = try XCTUnwrap(loadRequests.last?.3)
+        XCTAssertTrue(model.cancel())
+        XCTAssertEqual(cancellationCount, 1)
+        XCTAssertFalse(model.apply(loadResult: loadedResult, generation: staleGeneration))
+
+        let unavailableModel = PrismOfflineLaunchIdentityModel()
+        XCTAssertFalse(unavailableModel.load(accountIdentifier: "account.fixture.offline", fallbackName: "Player"))
+        XCTAssertEqual(unavailableModel.failure?.localizationKey, "accounts.offlineIdentity.unavailable")
+        XCTAssertTrue(unavailableModel.canRetry)
+        XCTAssertFalse(unavailableModel.retry())
+    }
+
+    func testOfflineLaunchIdentitySourcesUseSystemControlsAndFoundationBoundary() throws {
+        let accountSource = try accountSource()
+        let appSource = try appSource()
+        let identitySource = try offlineIdentitySource()
+        let bridgeHeaderSource = try bridgeHeaderSource()
+        let bridgeModelsSource = try bridgeModelsSource()
+
+        for requiredToken in [
+            "GroupBox(\"Offline Launch Identity\")",
+            "TextField(",
+            "Toggle(",
+            "ContentUnavailableView",
+            "ProgressView(",
+            "prism.settings.accounts.offline-identity-name",
+            "prism.settings.accounts.offline-identity-save",
+            "prism.settings.accounts.offline-identity-cancel",
+            "prism.settings.accounts.offline-identity-rule",
+            "Allow invalid names"
+        ] {
+            XCTAssertTrue(accountSource.contains(requiredToken), "Missing native offline identity UI API: \(requiredToken)")
+        }
+
+        for requiredToken in [
+            "PrismOfflineLaunchIdentity",
+            "PrismOfflineLaunchIdentityModel",
+            "PrismOfflineLaunchIdentityValidation",
+            "PrismOfflineLaunchIdentityState",
+            "apply(loadResult:",
+            "apply(updateResult:",
+            "func cancel()",
+            "func retry()",
+            "allowInvalidNames"
+        ] {
+            XCTAssertTrue(identitySource.contains(requiredToken), "Missing offline identity state contract: \(requiredToken)")
+        }
+
+        for requiredToken in [
+            "loadOfflineLaunchIdentityWithMode",
+            "updateOfflineLaunchIdentityWithMode",
+            "PROfflineLaunchIdentityLoadCompletionHandler",
+            "PROfflineLaunchIdentityUpdateCompletionHandler"
+        ] {
+            XCTAssertTrue(bridgeHeaderSource.contains(requiredToken), "Missing offline identity bridge API: \(requiredToken)")
+        }
+        for requiredToken in [
+            "PROfflineLaunchIdentity",
+            "PROfflineLaunchIdentityLoadResult",
+            "PROfflineLaunchIdentityUpdateResult"
+        ] {
+            XCTAssertTrue(bridgeModelsSource.contains(requiredToken), "Missing offline identity DTO: \(requiredToken)")
+        }
+        XCTAssertTrue(appSource.contains("offlineIdentityModel"))
+        XCTAssertFalse(accountSource.contains("Canvas("))
+        XCTAssertFalse(accountSource.contains("draw("))
+        XCTAssertFalse(identitySource.contains("QWidget"))
+        XCTAssertFalse(identitySource.contains("QDialog"))
+        XCTAssertFalse(identitySource.contains("URLSession"))
+        XCTAssertFalse(identitySource.contains("Keychain"))
+        XCTAssertFalse(identitySource.contains("refresh_token"))
+        XCTAssertFalse(identitySource.contains("access_token"))
+    }
+
     private func makeGlobalSettings(instanceDirectoryURL: URL, catOpacity: Int) throws -> PRGlobalSettings {
         try XCTUnwrap(
             PRGlobalSettings(
@@ -2844,6 +3018,15 @@ final class PrismShellTests: XCTestCase {
             .deletingLastPathComponent()
         let sourceURL = sourceRoot
             .appendingPathComponent("PrismNative/App/PrismAccountAuthentication.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private func offlineIdentitySource() throws -> String {
+        let sourceRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = sourceRoot
+            .appendingPathComponent("PrismNative/App/PrismOfflineLaunchIdentity.swift")
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 

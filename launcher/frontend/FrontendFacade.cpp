@@ -705,6 +705,128 @@ void validateAccountAuthenticationResult(
     }
 }
 
+bool isKnownOfflineLaunchIdentityMode(FrontendOfflineLaunchIdentityMode mode) noexcept
+{
+    switch (mode) {
+        case FrontendOfflineLaunchIdentityMode::Offline:
+        case FrontendOfflineLaunchIdentityMode::Demo:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownOfflineLaunchIdentityLoadOutcome(FrontendOfflineLaunchIdentityLoadOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendOfflineLaunchIdentityLoadOutcome::Succeeded:
+        case FrontendOfflineLaunchIdentityLoadOutcome::Failed:
+        case FrontendOfflineLaunchIdentityLoadOutcome::Cancelled:
+        case FrontendOfflineLaunchIdentityLoadOutcome::Rejected:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownOfflineLaunchIdentityUpdateOutcome(FrontendOfflineLaunchIdentityUpdateOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendOfflineLaunchIdentityUpdateOutcome::Succeeded:
+        case FrontendOfflineLaunchIdentityUpdateOutcome::InvalidName:
+        case FrontendOfflineLaunchIdentityUpdateOutcome::Failed:
+        case FrontendOfflineLaunchIdentityUpdateOutcome::Cancelled:
+        case FrontendOfflineLaunchIdentityUpdateOutcome::Rejected:
+            return true;
+    }
+    return false;
+}
+
+bool isValidOfflineLaunchIdentityName(const std::string& name) noexcept
+{
+    if (name.size() < 3 || name.size() > 16) {
+        return false;
+    }
+    for (const unsigned char character : name) {
+        if (!((character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z')
+              || (character >= '0' && character <= '9') || character == '_')) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void validateOfflineLaunchIdentityContext(
+    FrontendOfflineLaunchIdentityMode mode,
+    const std::optional<std::string>& accountIdentifier)
+{
+    if (!isKnownOfflineLaunchIdentityMode(mode)
+        || (accountIdentifier.has_value() && accountIdentifier->empty())) {
+        throw std::invalid_argument("Offline launch identity requires a known mode and non-empty account identifier");
+    }
+}
+
+void validateOfflineLaunchIdentitySnapshot(
+    const FrontendOfflineLaunchIdentitySnapshot& identity,
+    FrontendOfflineLaunchIdentityMode expectedMode,
+    const std::optional<std::string>& expectedAccountIdentifier)
+{
+    validateOfflineLaunchIdentityContext(expectedMode, expectedAccountIdentifier);
+    validateOfflineLaunchIdentityContext(identity.mode, identity.accountIdentifier);
+    if (identity.mode != expectedMode || identity.accountIdentifier != expectedAccountIdentifier || identity.name.empty()) {
+        throw std::invalid_argument("Offline launch identity snapshot does not match its request");
+    }
+}
+
+void validateOfflineLaunchIdentityLoadRequest(const FrontendOfflineLaunchIdentityRequest& request)
+{
+    validateOfflineLaunchIdentityContext(request.mode, request.accountIdentifier);
+    if (request.fallbackName.empty()) {
+        throw std::invalid_argument("Offline launch identity loading requires a fallback name");
+    }
+}
+
+void validateOfflineLaunchIdentityLoadResult(
+    const FrontendOfflineLaunchIdentityLoadResult& result,
+    const FrontendOfflineLaunchIdentityRequest& request)
+{
+    if (!isKnownOfflineLaunchIdentityLoadOutcome(result.outcome) || result.localizationKey.empty()) {
+        throw std::invalid_argument("Offline launch identity load result requires a known outcome and localization key");
+    }
+    if (result.identity.has_value()) {
+        validateOfflineLaunchIdentitySnapshot(*result.identity, request.mode, request.accountIdentifier);
+    }
+    if (result.outcome == FrontendOfflineLaunchIdentityLoadOutcome::Succeeded) {
+        if (!result.identity.has_value()) {
+            throw std::invalid_argument("Successful offline launch identity loading requires an identity");
+        }
+    } else if (result.identity.has_value()) {
+        throw std::invalid_argument("Non-successful offline launch identity loading cannot carry an identity");
+    }
+}
+
+void validateOfflineLaunchIdentityUpdateRequest(const FrontendOfflineLaunchIdentityUpdateRequest& request)
+{
+    validateOfflineLaunchIdentityContext(request.mode, request.accountIdentifier);
+}
+
+void validateOfflineLaunchIdentityUpdateResult(
+    const FrontendOfflineLaunchIdentityUpdateResult& result,
+    const FrontendOfflineLaunchIdentityUpdateRequest& request)
+{
+    if (!isKnownOfflineLaunchIdentityUpdateOutcome(result.outcome) || result.localizationKey.empty()) {
+        throw std::invalid_argument("Offline launch identity update result requires a known outcome and localization key");
+    }
+    if (result.identity.has_value()) {
+        validateOfflineLaunchIdentitySnapshot(*result.identity, request.mode, request.accountIdentifier);
+    }
+    if (result.outcome == FrontendOfflineLaunchIdentityUpdateOutcome::Succeeded) {
+        if (!result.identity.has_value() || result.identity->name != request.name) {
+            throw std::invalid_argument("Successful offline launch identity update must confirm the requested name");
+        }
+    } else if (result.identity.has_value()) {
+        throw std::invalid_argument("Non-successful offline launch identity update cannot carry an identity");
+    }
+}
+
 void validateInstanceChanges(const std::vector<FrontendInstanceChange>& changes)
 {
     for (const auto& change : changes) {
@@ -1496,6 +1618,57 @@ FrontendAccountAuthenticationResult executeAccountAuthentication(
     return result;
 }
 
+FrontendOfflineLaunchIdentityLoadResult executeOfflineLaunchIdentityLoad(
+    const FrontendRuntimeDependencies::OfflineLaunchIdentityLoader& loader,
+    const std::filesystem::path& dataRoot,
+    const FrontendOfflineLaunchIdentityRequest& request)
+{
+    validateOfflineLaunchIdentityLoadRequest(request);
+    if (!loader) {
+        return FrontendOfflineLaunchIdentityLoadResult{
+            FrontendOfflineLaunchIdentityLoadOutcome::Rejected,
+            std::nullopt,
+            "accounts.offlineIdentity.unavailable",
+            "Offline launch identity is unavailable.",
+            true,
+        };
+    }
+
+    auto result = loader(dataRoot, request);
+    validateOfflineLaunchIdentityLoadResult(result, request);
+    return result;
+}
+
+FrontendOfflineLaunchIdentityUpdateResult executeOfflineLaunchIdentityUpdate(
+    const FrontendRuntimeDependencies::OfflineLaunchIdentityUpdater& updater,
+    const std::filesystem::path& dataRoot,
+    const FrontendOfflineLaunchIdentityUpdateRequest& request)
+{
+    validateOfflineLaunchIdentityUpdateRequest(request);
+    if (request.name.empty() || (!request.allowInvalidName && !isValidOfflineLaunchIdentityName(request.name))) {
+        return FrontendOfflineLaunchIdentityUpdateResult{
+            FrontendOfflineLaunchIdentityUpdateOutcome::InvalidName,
+            std::nullopt,
+            "accounts.offlineIdentity.invalidName",
+            "Offline launch names must be 3–16 English letters, numbers, or underscores.",
+            false,
+        };
+    }
+    if (!updater) {
+        return FrontendOfflineLaunchIdentityUpdateResult{
+            FrontendOfflineLaunchIdentityUpdateOutcome::Rejected,
+            std::nullopt,
+            "accounts.offlineIdentity.unavailable",
+            "Offline launch identity is unavailable.",
+            true,
+        };
+    }
+
+    auto result = updater(dataRoot, request);
+    validateOfflineLaunchIdentityUpdateResult(result, request);
+    return result;
+}
+
 std::optional<FrontendTaskSnapshot> executeTaskSnapshot(
     const FrontendRuntimeDependencies::TaskSnapshotLoader& loader,
     const std::filesystem::path& dataRoot,
@@ -1751,6 +1924,20 @@ FrontendAccountAuthenticationResult FrontendFacade::authenticateAccount(
 {
     ensureRunning(m_lifecycleState);
     return executeAccountAuthentication(m_runtimeDependencies.authenticateAccount, m_dataRoot, request, progressHandler);
+}
+
+FrontendOfflineLaunchIdentityLoadResult FrontendFacade::loadOfflineLaunchIdentity(
+    const FrontendOfflineLaunchIdentityRequest& request) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeOfflineLaunchIdentityLoad(m_runtimeDependencies.loadOfflineLaunchIdentity, m_dataRoot, request);
+}
+
+FrontendOfflineLaunchIdentityUpdateResult FrontendFacade::updateOfflineLaunchIdentity(
+    const FrontendOfflineLaunchIdentityUpdateRequest& request) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeOfflineLaunchIdentityUpdate(m_runtimeDependencies.updateOfflineLaunchIdentity, m_dataRoot, request);
 }
 
 std::optional<FrontendTaskSnapshot> FrontendFacade::taskSnapshot(const std::string& taskIdentifier) const

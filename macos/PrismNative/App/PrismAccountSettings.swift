@@ -490,6 +490,7 @@ final class PrismAccountModel: ObservableObject {
 struct PrismAccountSettingsView: View {
     @ObservedObject var model: PrismAccountModel
     @ObservedObject var authenticationModel: PrismAccountAuthenticationModel
+    @ObservedObject var offlineIdentityModel: PrismOfflineLaunchIdentityModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -636,6 +637,7 @@ struct PrismAccountSettingsView: View {
             }
 
             authenticationView
+            offlineLaunchIdentityView
         }
     }
 
@@ -735,6 +737,159 @@ struct PrismAccountSettingsView: View {
         }
         .disabled(authenticationAccount == nil || authenticationModel.isRunning)
         .accessibilityIdentifier("prism.settings.accounts.authenticate")
+    }
+
+    private var offlineAccount: PrismAccount? {
+        model.accounts.first(where: { $0.type == .offline })
+    }
+
+    private var offlineLaunchIdentityView: some View {
+        GroupBox("Offline Launch Identity") {
+            if let account = offlineAccount {
+                VStack(alignment: .leading, spacing: 8) {
+                    LabeledContent("Account") {
+                        Text(account.displayName)
+                            .lineLimit(1)
+                    }
+                    .accessibilityIdentifier("prism.settings.accounts.offline-identity-account")
+
+                    switch offlineIdentityModel.state {
+                    case .idle:
+                        Text("Choose the player name used by fixture-only offline or demo launches.")
+                            .foregroundStyle(.secondary)
+                        Button("Load Saved Name") {
+                            _ = offlineIdentityModel.load(
+                                mode: .offline,
+                                accountIdentifier: account.id,
+                                fallbackName: "Player"
+                            )
+                        }
+                        .accessibilityIdentifier("prism.settings.accounts.offline-identity-load")
+                    case .loading:
+                        ProgressView("Loading saved name…")
+                            .accessibilityIdentifier("prism.settings.accounts.offline-identity-progress")
+                        Button("Cancel") {
+                            _ = offlineIdentityModel.cancel()
+                        }
+                        .accessibilityIdentifier("prism.settings.accounts.offline-identity-cancel")
+                    case .editing:
+                        offlineIdentityEditor
+                    case .saving:
+                        ProgressView("Confirming player name…")
+                            .accessibilityIdentifier("prism.settings.accounts.offline-identity-progress")
+                        Button("Cancel") {
+                            _ = offlineIdentityModel.cancel()
+                        }
+                        .accessibilityIdentifier("prism.settings.accounts.offline-identity-cancel")
+                    case .succeeded(let identity):
+                        Label("Player name confirmed", systemImage: "checkmark.circle")
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("prism.settings.accounts.offline-identity-succeeded")
+                        Text(identity.name)
+                            .font(.caption)
+                            .accessibilityValue(Text(identity.mode.title))
+                        Button("Edit") {
+                            _ = offlineIdentityModel.beginEditing()
+                        }
+                        .accessibilityIdentifier("prism.settings.accounts.offline-identity-edit")
+                    case .failed(let failure, _, _, _):
+                        Text(failure.diagnosticText ?? failure.localizationKey)
+                            .foregroundStyle(.secondary)
+                            .accessibilityValue(Text(failure.localizationKey))
+                            .accessibilityIdentifier("prism.settings.accounts.offline-identity-error")
+                        HStack {
+                            Button("Retry") {
+                                _ = offlineIdentityModel.retry()
+                            }
+                            .disabled(!failure.isRetryAvailable)
+                            .accessibilityIdentifier("prism.settings.accounts.offline-identity-retry")
+                            Button("Edit") {
+                                _ = offlineIdentityModel.beginEditing()
+                            }
+                            .disabled(offlineIdentityModel.confirmedIdentity == nil)
+                            .accessibilityIdentifier("prism.settings.accounts.offline-identity-edit")
+                        }
+                    case .cancelled:
+                        Text("The offline player-name request was cancelled.")
+                            .foregroundStyle(.secondary)
+                        HStack {
+                            Button("Load Again") {
+                                _ = offlineIdentityModel.load(
+                                    mode: .offline,
+                                    accountIdentifier: account.id,
+                                    fallbackName: "Player"
+                                )
+                            }
+                            .accessibilityIdentifier("prism.settings.accounts.offline-identity-load")
+                            Button("Edit") {
+                                _ = offlineIdentityModel.beginEditing()
+                            }
+                            .disabled(offlineIdentityModel.confirmedIdentity == nil)
+                            .accessibilityIdentifier("prism.settings.accounts.offline-identity-edit")
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                ContentUnavailableView {
+                    Label("No Offline Account", systemImage: "person.crop.circle.badge.questionmark")
+                } description: {
+                    Text("An offline account snapshot is required before choosing a player name.")
+                }
+                .accessibilityIdentifier("prism.settings.accounts.offline-identity-unavailable")
+            }
+        }
+        .accessibilityIdentifier("prism.settings.accounts.offline-identity")
+    }
+
+    private var offlineIdentityEditor: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField(
+                "Player Name",
+                text: Binding(
+                    get: { offlineIdentityModel.draftName },
+                    set: { _ = offlineIdentityModel.updateDraftName($0) }
+                )
+            )
+            .textFieldStyle(.roundedBorder)
+            .disabled(offlineIdentityModel.isSaving)
+            .accessibilityIdentifier("prism.settings.accounts.offline-identity-name")
+
+            Toggle(
+                "Allow invalid names",
+                isOn: Binding(
+                    get: { offlineIdentityModel.allowInvalidNames },
+                    set: { _ = offlineIdentityModel.updateAllowInvalidNames($0) }
+                )
+            )
+            .disabled(offlineIdentityModel.isSaving)
+            .accessibilityIdentifier("prism.settings.accounts.offline-identity-allow-invalid")
+
+            Text(PrismOfflineLaunchIdentityValidation.legacyRuleDescription)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("prism.settings.accounts.offline-identity-rule")
+            if !offlineIdentityModel.draftName.isEmpty && !offlineIdentityModel.nameIsValid
+                && !offlineIdentityModel.allowInvalidNames {
+                Text("This name is not valid unless the warning override is enabled.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("prism.settings.accounts.offline-identity-validation")
+            }
+
+            HStack {
+                Button("Save") {
+                    _ = offlineIdentityModel.save()
+                }
+                .disabled(!offlineIdentityModel.canSave)
+                .accessibilityIdentifier("prism.settings.accounts.offline-identity-save")
+                Button("Cancel") {
+                    _ = offlineIdentityModel.cancel()
+                }
+                .disabled(offlineIdentityModel.isSaving)
+                .accessibilityIdentifier("prism.settings.accounts.offline-identity-cancel")
+            }
+        }
     }
 
     private func unavailableView(

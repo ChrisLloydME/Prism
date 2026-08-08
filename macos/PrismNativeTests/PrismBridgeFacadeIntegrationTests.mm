@@ -1572,6 +1572,144 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     [self waitForExpectations:@[ progressExpectation, completionExpectation ] timeout:0.2];
 }
 
+- (void)testFacadeOfflineLaunchIdentityPreservesLegacyValidationWithoutSecrets
+{
+    auto loadCalls = std::make_shared<std::atomic<int>>(0);
+    auto updateCalls = std::make_shared<std::atomic<int>>(0);
+    auto rootMatches = std::make_shared<std::atomic<bool>>(true);
+    const std::filesystem::path fixtureRoot = std::filesystem::path(self.fixtureRootURL.path.UTF8String).lexically_normal();
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.loadOfflineLaunchIdentity = [loadCalls, rootMatches, fixtureRoot](
+                                                  const std::filesystem::path& root,
+                                                  const FrontendOfflineLaunchIdentityRequest& request) {
+        *rootMatches = *rootMatches && root == fixtureRoot;
+        ++(*loadCalls);
+        return FrontendOfflineLaunchIdentityLoadResult{
+            FrontendOfflineLaunchIdentityLoadOutcome::Succeeded,
+            FrontendOfflineLaunchIdentitySnapshot{ request.mode, request.accountIdentifier, "Saved_Player" },
+            "accounts.offlineIdentity.loaded",
+            "",
+            false,
+        };
+    };
+    dependencies.updateOfflineLaunchIdentity = [updateCalls, rootMatches, fixtureRoot](
+                                                    const std::filesystem::path& root,
+                                                    const FrontendOfflineLaunchIdentityUpdateRequest& request) {
+        *rootMatches = *rootMatches && root == fixtureRoot;
+        ++(*updateCalls);
+        return FrontendOfflineLaunchIdentityUpdateResult{
+            FrontendOfflineLaunchIdentityUpdateOutcome::Succeeded,
+            FrontendOfflineLaunchIdentitySnapshot{ request.mode, request.accountIdentifier, request.name },
+            "accounts.offlineIdentity.saved",
+            "",
+            false,
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    XCTestExpectation *loadExpectation = [self expectationWithDescription:@"Offline identity loaded"];
+    __block PROfflineLaunchIdentityLoadResult *loadResult = nil;
+    __block PRBridgeError *loadError = nil;
+    PRBridgeObservationToken *loadToken = [bridge loadOfflineLaunchIdentityWithMode:PROfflineLaunchIdentityModeOffline
+                                                                     accountIdentifier:@" account.fixture.offline "
+                                                                          fallbackName:@"Player"
+                                                                           completion:^(PROfflineLaunchIdentityLoadResult *result,
+                                                                                        PRBridgeError *error) {
+        XCTAssertTrue([NSThread isMainThread]);
+        loadResult = result;
+        loadError = error;
+        [loadExpectation fulfill];
+    }];
+    XCTAssertNotNil(loadToken);
+    [self waitForExpectations:@[ loadExpectation ] timeout:2.0];
+    XCTAssertNil(loadError);
+    XCTAssertTrue(loadToken.isCancelled);
+    XCTAssertEqual(loadResult.outcome, PROfflineLaunchIdentityLoadOutcomeSucceeded);
+    XCTAssertEqualObjects(loadResult.identity.accountIdentifier, @"account.fixture.offline");
+    XCTAssertEqualObjects(loadResult.identity.name, @"Saved_Player");
+
+    XCTestExpectation *invalidExpectation = [self expectationWithDescription:@"Invalid offline identity rejected"];
+    __block PROfflineLaunchIdentityUpdateResult *invalidResult = nil;
+    PRBridgeObservationToken *invalidToken = [bridge updateOfflineLaunchIdentityWithMode:PROfflineLaunchIdentityModeOffline
+                                                                         accountIdentifier:@"account.fixture.offline"
+                                                                                      name:@"bad name"
+                                                                         allowInvalidName:NO
+                                                                               completion:^(PROfflineLaunchIdentityUpdateResult *result,
+                                                                                            PRBridgeError *error) {
+        XCTAssertNil(error);
+        invalidResult = result;
+        [invalidExpectation fulfill];
+    }];
+    XCTAssertNotNil(invalidToken);
+    [self waitForExpectations:@[ invalidExpectation ] timeout:2.0];
+    XCTAssertEqual(invalidResult.outcome, PROfflineLaunchIdentityUpdateOutcomeInvalidName);
+
+    XCTestExpectation *saveExpectation = [self expectationWithDescription:@"Offline identity saved"];
+    __block PROfflineLaunchIdentityUpdateResult *saveResult = nil;
+    PRBridgeObservationToken *saveToken = [bridge updateOfflineLaunchIdentityWithMode:PROfflineLaunchIdentityModeOffline
+                                                                       accountIdentifier:@"account.fixture.offline"
+                                                                                    name:@"Native_Player"
+                                                                       allowInvalidName:NO
+                                                                             completion:^(PROfflineLaunchIdentityUpdateResult *result,
+                                                                                          PRBridgeError *error) {
+        XCTAssertTrue([NSThread isMainThread]);
+        XCTAssertNil(error);
+        saveResult = result;
+        [saveExpectation fulfill];
+    }];
+    XCTAssertNotNil(saveToken);
+    [self waitForExpectations:@[ saveExpectation ] timeout:2.0];
+    XCTAssertEqual(saveResult.outcome, PROfflineLaunchIdentityUpdateOutcomeSucceeded);
+    XCTAssertEqualObjects(saveResult.identity.name, @"Native_Player");
+    XCTAssertEqual(loadCalls->load(), 1);
+    XCTAssertEqual(updateCalls->load(), 1);
+    XCTAssertTrue(rootMatches->load());
+}
+
+- (void)testFacadeOfflineLaunchIdentityCancellationSuppressesQueuedCompletion
+{
+    dispatch_semaphore_t updaterEntered = dispatch_semaphore_create(0);
+    dispatch_semaphore_t releaseUpdater = dispatch_semaphore_create(0);
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.updateOfflineLaunchIdentity = [updaterEntered, releaseUpdater](
+                                                    const std::filesystem::path&,
+                                                    const FrontendOfflineLaunchIdentityUpdateRequest& request) {
+        dispatch_semaphore_signal(updaterEntered);
+        dispatch_semaphore_wait(releaseUpdater, DISPATCH_TIME_FOREVER);
+        return FrontendOfflineLaunchIdentityUpdateResult{
+            FrontendOfflineLaunchIdentityUpdateOutcome::Cancelled,
+            std::nullopt,
+            "accounts.offlineIdentity.cancelled",
+            "Fixture identity update was cancelled.",
+            false,
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+    XCTestExpectation *completion = [self expectationWithDescription:@"Cancelled offline identity completion"];
+    completion.inverted = YES;
+    PRBridgeObservationToken *token = [bridge updateOfflineLaunchIdentityWithMode:PROfflineLaunchIdentityModeOffline
+                                                                   accountIdentifier:@"account.fixture.offline"
+                                                                                name:@"Native_Player"
+                                                                   allowInvalidName:NO
+                                                                         completion:^(__unused PROfflineLaunchIdentityUpdateResult *result,
+                                                                                      __unused PRBridgeError *error) {
+        [completion fulfill];
+    }];
+    XCTAssertNotNil(token);
+    XCTAssertEqual(dispatch_semaphore_wait(updaterEntered, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)), 0);
+    XCTAssertTrue([token cancel]);
+    dispatch_semaphore_signal(releaseUpdater);
+    [self waitForExpectations:@[ completion ] timeout:0.2];
+}
+
 - (void)testFacadeCommandsConvertFoundationIdentifiersAndPreserveFixtureOutcomes
 {
     auto launchCalls = std::make_shared<std::vector<std::string>>();

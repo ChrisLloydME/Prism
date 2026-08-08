@@ -86,6 +86,10 @@ typedef void (^PRAccountSelectionCompletionHandler)(PRAccountSelectionResult * _
 typedef void (^PRAccountAuthenticationProgressHandler)(PRAccountAuthenticationProgress *progress);
 typedef void (^PRAccountAuthenticationCompletionHandler)(PRAccountAuthenticationResult * _Nullable result,
                                                           PRBridgeError * _Nullable error);
+typedef void (^PROfflineLaunchIdentityLoadCompletionHandler)(PROfflineLaunchIdentityLoadResult * _Nullable result,
+                                                              PRBridgeError * _Nullable error);
+typedef void (^PROfflineLaunchIdentityUpdateCompletionHandler)(PROfflineLaunchIdentityUpdateResult * _Nullable result,
+                                                                PRBridgeError * _Nullable error);
 
 /// Owns one bridge observation registration and cancels it when released.
 @interface PRBridgeObservationToken : NSObject
@@ -262,6 +266,22 @@ typedef void (^PRAccountAuthenticationCompletionHandler)(PRAccountAuthentication
                                                                     action:(PRAccountAuthenticationAction)action
                                                                   progress:(nullable PRAccountAuthenticationProgressHandler)progress
                                                                 completion:(PRAccountAuthenticationCompletionHandler)completion;
+
+/// Loads the fixture-controlled offline/demo player name without launching a
+/// game or reading the installed upstream data root. The adapter owns any
+/// LastOfflinePlayerName compatibility mapping.
+- (nullable PRBridgeObservationToken *)loadOfflineLaunchIdentityWithMode:(PROfflineLaunchIdentityMode)mode
+                                                        accountIdentifier:(nullable NSString *)accountIdentifier
+                                                             fallbackName:(NSString *)fallbackName
+                                                              completion:(PROfflineLaunchIdentityLoadCompletionHandler)completion;
+
+/// Confirms a user-visible offline/demo player name. No token, UUID, session,
+/// Keychain item, or account persistence value crosses this Foundation API.
+- (nullable PRBridgeObservationToken *)updateOfflineLaunchIdentityWithMode:(PROfflineLaunchIdentityMode)mode
+                                                          accountIdentifier:(nullable NSString *)accountIdentifier
+                                                                       name:(NSString *)name
+                                                          allowInvalidName:(BOOL)allowInvalidName
+                                                                completion:(PROfflineLaunchIdentityUpdateCompletionHandler)completion;
 
 @end
 

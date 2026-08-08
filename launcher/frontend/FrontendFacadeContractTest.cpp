@@ -955,6 +955,117 @@ int main()
     const bool missingAuthenticationPortIsSafe = emptyFacade.authenticateAccount(loginRequest).outcome
         == FrontendAccountAuthenticationOutcome::Rejected;
 
+    std::size_t offlineIdentityLoadCalls = 0;
+    std::size_t offlineIdentityUpdateCalls = 0;
+    bool offlineIdentityRootMatches = true;
+    std::string storedOfflineIdentityName = "Saved_Player";
+    auto offlineIdentityDependencies = makeFixtureDependencies();
+    offlineIdentityDependencies.loadOfflineLaunchIdentity = [&](const std::filesystem::path& root,
+                                                                  const FrontendOfflineLaunchIdentityRequest& request) {
+        offlineIdentityRootMatches = offlineIdentityRootMatches && root == fixtureRoot.lexically_normal();
+        ++offlineIdentityLoadCalls;
+        return FrontendOfflineLaunchIdentityLoadResult{
+            FrontendOfflineLaunchIdentityLoadOutcome::Succeeded,
+            FrontendOfflineLaunchIdentitySnapshot{ request.mode, request.accountIdentifier, storedOfflineIdentityName },
+            "accounts.offlineIdentity.loaded",
+            "",
+            false,
+        };
+    };
+    offlineIdentityDependencies.updateOfflineLaunchIdentity = [&](const std::filesystem::path& root,
+                                                                    const FrontendOfflineLaunchIdentityUpdateRequest& request) {
+        offlineIdentityRootMatches = offlineIdentityRootMatches && root == fixtureRoot.lexically_normal();
+        ++offlineIdentityUpdateCalls;
+        if (request.name == "Cancel_Name") {
+            return FrontendOfflineLaunchIdentityUpdateResult{
+                FrontendOfflineLaunchIdentityUpdateOutcome::Cancelled,
+                std::nullopt,
+                "accounts.offlineIdentity.cancelled",
+                "Fixture identity update was cancelled.",
+                false,
+            };
+        }
+        storedOfflineIdentityName = request.name;
+        return FrontendOfflineLaunchIdentityUpdateResult{
+            FrontendOfflineLaunchIdentityUpdateOutcome::Succeeded,
+            FrontendOfflineLaunchIdentitySnapshot{ request.mode, request.accountIdentifier, request.name },
+            "accounts.offlineIdentity.saved",
+            "",
+            false,
+        };
+    };
+    FrontendFacade offlineIdentityFacade(fixtureRoot / "nested" / "..", std::move(offlineIdentityDependencies));
+    FrontendOfflineLaunchIdentityRequest offlineIdentityLoadRequest;
+    offlineIdentityLoadRequest.mode = FrontendOfflineLaunchIdentityMode::Offline;
+    offlineIdentityLoadRequest.accountIdentifier = "account.fixture.offline";
+    offlineIdentityLoadRequest.fallbackName = "Player";
+    const auto loadedOfflineIdentity = offlineIdentityFacade.loadOfflineLaunchIdentity(offlineIdentityLoadRequest);
+    FrontendOfflineLaunchIdentityUpdateRequest invalidOfflineIdentityUpdate;
+    invalidOfflineIdentityUpdate.mode = offlineIdentityLoadRequest.mode;
+    invalidOfflineIdentityUpdate.accountIdentifier = offlineIdentityLoadRequest.accountIdentifier;
+    invalidOfflineIdentityUpdate.name = "bad name";
+    const auto invalidOfflineIdentity = offlineIdentityFacade.updateOfflineLaunchIdentity(invalidOfflineIdentityUpdate);
+    FrontendOfflineLaunchIdentityUpdateRequest validOfflineIdentityUpdate = invalidOfflineIdentityUpdate;
+    validOfflineIdentityUpdate.name = "Native_Player";
+    const auto savedOfflineIdentity = offlineIdentityFacade.updateOfflineLaunchIdentity(validOfflineIdentityUpdate);
+    FrontendOfflineLaunchIdentityUpdateRequest allowedInvalidOfflineIdentityUpdate = invalidOfflineIdentityUpdate;
+    allowedInvalidOfflineIdentityUpdate.name = "Player name";
+    allowedInvalidOfflineIdentityUpdate.allowInvalidName = true;
+    const auto allowedInvalidOfflineIdentity = offlineIdentityFacade.updateOfflineLaunchIdentity(
+        allowedInvalidOfflineIdentityUpdate);
+    FrontendOfflineLaunchIdentityUpdateRequest cancelledOfflineIdentityUpdate = validOfflineIdentityUpdate;
+    cancelledOfflineIdentityUpdate.name = "Cancel_Name";
+    const auto cancelledOfflineIdentity = offlineIdentityFacade.updateOfflineLaunchIdentity(
+        cancelledOfflineIdentityUpdate);
+    const bool offlineIdentityContract = loadedOfflineIdentity.outcome
+            == FrontendOfflineLaunchIdentityLoadOutcome::Succeeded
+        && loadedOfflineIdentity.identity.has_value()
+        && loadedOfflineIdentity.identity->name == "Saved_Player"
+        && invalidOfflineIdentity.outcome == FrontendOfflineLaunchIdentityUpdateOutcome::InvalidName
+        && savedOfflineIdentity.outcome == FrontendOfflineLaunchIdentityUpdateOutcome::Succeeded
+        && savedOfflineIdentity.identity.has_value() && savedOfflineIdentity.identity->name == "Native_Player"
+        && allowedInvalidOfflineIdentity.outcome == FrontendOfflineLaunchIdentityUpdateOutcome::Succeeded
+        && allowedInvalidOfflineIdentity.identity.has_value() && allowedInvalidOfflineIdentity.identity->name == "Player name"
+        && cancelledOfflineIdentity.outcome == FrontendOfflineLaunchIdentityUpdateOutcome::Cancelled
+        && offlineIdentityLoadCalls == 1 && offlineIdentityUpdateCalls == 3 && offlineIdentityRootMatches;
+    auto invalidOfflineLoadDependencies = makeFixtureDependencies();
+    invalidOfflineLoadDependencies.loadOfflineLaunchIdentity = [](
+        const std::filesystem::path&,
+        const FrontendOfflineLaunchIdentityRequest&) {
+        return FrontendOfflineLaunchIdentityLoadResult{
+            FrontendOfflineLaunchIdentityLoadOutcome::Succeeded,
+            std::nullopt,
+            "accounts.offlineIdentity.loaded",
+            "",
+            false,
+        };
+    };
+    FrontendFacade invalidOfflineLoadFacade(fixtureRoot, std::move(invalidOfflineLoadDependencies));
+    const bool invalidOfflineLoadRejected = throwsInvalidArgument([&invalidOfflineLoadFacade, &offlineIdentityLoadRequest] {
+        (void) invalidOfflineLoadFacade.loadOfflineLaunchIdentity(offlineIdentityLoadRequest);
+    });
+    auto invalidOfflineUpdateDependencies = makeFixtureDependencies();
+    invalidOfflineUpdateDependencies.updateOfflineLaunchIdentity = [](
+        const std::filesystem::path&,
+        const FrontendOfflineLaunchIdentityUpdateRequest& request) {
+        return FrontendOfflineLaunchIdentityUpdateResult{
+            FrontendOfflineLaunchIdentityUpdateOutcome::Succeeded,
+            FrontendOfflineLaunchIdentitySnapshot{
+                FrontendOfflineLaunchIdentityMode::Demo, request.accountIdentifier, request.name },
+            "accounts.offlineIdentity.saved",
+            "",
+            false,
+        };
+    };
+    FrontendFacade invalidOfflineUpdateFacade(fixtureRoot, std::move(invalidOfflineUpdateDependencies));
+    const bool invalidOfflineUpdateRejected = throwsInvalidArgument([&invalidOfflineUpdateFacade, &validOfflineIdentityUpdate] {
+        (void) invalidOfflineUpdateFacade.updateOfflineLaunchIdentity(validOfflineIdentityUpdate);
+    });
+    const bool missingOfflineIdentityPortsAreSafe = emptyFacade.loadOfflineLaunchIdentity(offlineIdentityLoadRequest).outcome
+            == FrontendOfflineLaunchIdentityLoadOutcome::Rejected
+        && emptyFacade.updateOfflineLaunchIdentity(validOfflineIdentityUpdate).outcome
+            == FrontendOfflineLaunchIdentityUpdateOutcome::Rejected;
+
     std::vector<std::string> launchCalls;
     std::vector<std::string> stopCalls;
     bool commandRootMatches = true;
@@ -1366,6 +1477,13 @@ int main()
         && throwsLogicError([&authenticationFacade, &loginRequest] {
                (void) authenticationFacade.authenticateAccount(loginRequest);
            });
+    const bool rejectedPostShutdownOfflineIdentityWork = offlineIdentityFacade.shutdown()
+        && throwsLogicError([&offlineIdentityFacade, &offlineIdentityLoadRequest] {
+               (void) offlineIdentityFacade.loadOfflineLaunchIdentity(offlineIdentityLoadRequest);
+           })
+        && throwsLogicError([&offlineIdentityFacade, &validOfflineIdentityUpdate] {
+               (void) offlineIdentityFacade.updateOfflineLaunchIdentity(validOfflineIdentityUpdate);
+           });
     const bool rejectedPostShutdownComponentsWork = componentFacade.shutdown()
         && throwsLogicError([&componentFacade] {
                (void) componentFacade.instanceComponents("fixture-one");
@@ -1400,7 +1518,9 @@ int main()
                && rejectedPostShutdownJavaWork && accountContract && invalidAccountSnapshotsRejected
                && invalidAccountSelectionRejected && missingAccountPortsAreSafe && rejectedPostShutdownAccountWork
                && authenticationContract && invalidAuthenticationRejected && missingAuthenticationPortIsSafe
-               && rejectedPostShutdownAuthenticationWork
+               && rejectedPostShutdownAuthenticationWork && offlineIdentityContract && invalidOfflineLoadRejected
+               && invalidOfflineUpdateRejected && missingOfflineIdentityPortsAreSafe
+               && rejectedPostShutdownOfflineIdentityWork
                && rejectedEmptyRoot && rejectedRelativeRoot && rejectedIncompleteDependencies
                && lifecycleContract && callbacksRanExactlyOnce && destructorShutdownContract && !error
         ? 0

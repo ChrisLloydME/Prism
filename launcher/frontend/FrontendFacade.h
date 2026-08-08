@@ -507,6 +507,56 @@ struct FrontendAccountAuthenticationResult final {
     bool retryable = false;
 };
 
+enum class FrontendOfflineLaunchIdentityMode : std::uint8_t { Offline, Demo };
+enum class FrontendOfflineLaunchIdentityLoadOutcome : std::uint8_t { Succeeded, Failed, Cancelled, Rejected };
+enum class FrontendOfflineLaunchIdentityUpdateOutcome : std::uint8_t {
+    Succeeded,
+    InvalidName,
+    Failed,
+    Cancelled,
+    Rejected,
+};
+
+/// Safe offline-launch identity context. The adapter owns LastOfflinePlayerName
+/// persistence and launch-session/UUID derivation; this value carries only a
+/// fixture-safe account key and user-visible fallback name.
+struct FrontendOfflineLaunchIdentityRequest final {
+    FrontendOfflineLaunchIdentityMode mode = FrontendOfflineLaunchIdentityMode::Offline;
+    std::optional<std::string> accountIdentifier;
+    std::string fallbackName;
+};
+
+/// Confirmed offline-launch identity. The name is user input, not an account
+/// credential; the adapter remains responsible for backend compatibility.
+struct FrontendOfflineLaunchIdentitySnapshot final {
+    FrontendOfflineLaunchIdentityMode mode = FrontendOfflineLaunchIdentityMode::Offline;
+    std::optional<std::string> accountIdentifier;
+    std::string name;
+};
+
+struct FrontendOfflineLaunchIdentityLoadResult final {
+    FrontendOfflineLaunchIdentityLoadOutcome outcome = FrontendOfflineLaunchIdentityLoadOutcome::Rejected;
+    std::optional<FrontendOfflineLaunchIdentitySnapshot> identity;
+    std::string localizationKey;
+    std::string diagnosticText;
+    bool retryable = false;
+};
+
+struct FrontendOfflineLaunchIdentityUpdateRequest final {
+    FrontendOfflineLaunchIdentityMode mode = FrontendOfflineLaunchIdentityMode::Offline;
+    std::optional<std::string> accountIdentifier;
+    std::string name;
+    bool allowInvalidName = false;
+};
+
+struct FrontendOfflineLaunchIdentityUpdateResult final {
+    FrontendOfflineLaunchIdentityUpdateOutcome outcome = FrontendOfflineLaunchIdentityUpdateOutcome::Rejected;
+    std::optional<FrontendOfflineLaunchIdentitySnapshot> identity;
+    std::string localizationKey;
+    std::string diagnosticText;
+    bool retryable = false;
+};
+
 enum class FrontendTaskState : std::uint8_t { Queued, Running, Cancelling, Succeeded, Failed, Cancelled };
 
 enum class FrontendTaskProgressKind : std::uint8_t { None, Indeterminate, Determinate };
@@ -629,6 +679,10 @@ struct FrontendRuntimeDependencies final {
     using AccountAuthenticationProgressHandler = std::function<void(const FrontendAccountAuthenticationProgress&)>;
     using AccountAuthenticationRunner = std::function<FrontendAccountAuthenticationResult(
         const std::filesystem::path&, const FrontendAccountAuthenticationRequest&, const AccountAuthenticationProgressHandler&)>;
+    using OfflineLaunchIdentityLoader = std::function<FrontendOfflineLaunchIdentityLoadResult(
+        const std::filesystem::path&, const FrontendOfflineLaunchIdentityRequest&)>;
+    using OfflineLaunchIdentityUpdater = std::function<FrontendOfflineLaunchIdentityUpdateResult(
+        const std::filesystem::path&, const FrontendOfflineLaunchIdentityUpdateRequest&)>;
     using TaskSnapshotLoader = std::function<std::optional<FrontendTaskSnapshot>(const std::filesystem::path&, const std::string&)>;
     using TaskCancellation = std::function<FrontendTaskCancellationResult(const std::filesystem::path&, const std::string&)>;
     using LogEntryHandler = std::function<void(FrontendLogEntry)>;
@@ -662,6 +716,8 @@ struct FrontendRuntimeDependencies final {
     AccountSnapshotLoader loadAccountSnapshots;
     AccountSelectionUpdater selectActiveAccount;
     AccountAuthenticationRunner authenticateAccount;
+    OfflineLaunchIdentityLoader loadOfflineLaunchIdentity;
+    OfflineLaunchIdentityUpdater updateOfflineLaunchIdentity;
     TaskSnapshotLoader loadTaskSnapshot;
     TaskCancellation cancelTask;
     TaskLogStreamer streamTaskLogs;
@@ -728,6 +784,10 @@ class FrontendFacade final {
     FrontendAccountAuthenticationResult authenticateAccount(
         const FrontendAccountAuthenticationRequest& request,
         const FrontendRuntimeDependencies::AccountAuthenticationProgressHandler& progressHandler = {}) const;
+    FrontendOfflineLaunchIdentityLoadResult loadOfflineLaunchIdentity(
+        const FrontendOfflineLaunchIdentityRequest& request) const;
+    FrontendOfflineLaunchIdentityUpdateResult updateOfflineLaunchIdentity(
+        const FrontendOfflineLaunchIdentityUpdateRequest& request) const;
     std::optional<FrontendTaskSnapshot> taskSnapshot(const std::string& taskIdentifier) const;
     FrontendTaskCancellationResult cancelTask(const std::string& taskIdentifier) const;
     std::optional<FrontendLogSnapshot> taskLogSnapshot(const std::string& taskIdentifier) const;

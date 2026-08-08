@@ -913,6 +913,79 @@ typedef NS_ENUM(NSInteger, PRAccountAuthenticationOutcome) {
 
 @end
 
+typedef NS_ENUM(NSInteger, PROfflineLaunchIdentityMode) {
+    PROfflineLaunchIdentityModeOffline = 0,
+    PROfflineLaunchIdentityModeDemo,
+};
+
+/// Immutable user-visible offline launch identity. Account identifiers are
+/// fixture keys only; launch sessions, UUIDs, and credentials stay in the adapter.
+@interface PROfflineLaunchIdentity : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithMode:(PROfflineLaunchIdentityMode)mode
+                    accountIdentifier:(nullable NSString *)accountIdentifier
+                                  name:(NSString *)name NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, assign, readonly) PROfflineLaunchIdentityMode mode;
+@property(nonatomic, copy, readonly, nullable) NSString *accountIdentifier;
+@property(nonatomic, copy, readonly) NSString *name;
+
+@end
+
+typedef NS_ENUM(NSInteger, PROfflineLaunchIdentityLoadOutcome) {
+    PROfflineLaunchIdentityLoadOutcomeSucceeded = 0,
+    PROfflineLaunchIdentityLoadOutcomeFailed,
+    PROfflineLaunchIdentityLoadOutcomeCancelled,
+    PROfflineLaunchIdentityLoadOutcomeRejected,
+};
+
+/// Immutable load result for a fixture-controlled offline identity.
+@interface PROfflineLaunchIdentityLoadResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithIdentity:(nullable PROfflineLaunchIdentity *)identity
+                                   outcome:(PROfflineLaunchIdentityLoadOutcome)outcome
+                            localizationKey:(NSString *)localizationKey
+                              diagnosticText:(nullable NSString *)diagnosticText
+                                  retryable:(BOOL)retryable NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PROfflineLaunchIdentity *identity;
+@property(nonatomic, assign, readonly) PROfflineLaunchIdentityLoadOutcome outcome;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL retryable;
+
+@end
+
+typedef NS_ENUM(NSInteger, PROfflineLaunchIdentityUpdateOutcome) {
+    PROfflineLaunchIdentityUpdateOutcomeSucceeded = 0,
+    PROfflineLaunchIdentityUpdateOutcomeInvalidName,
+    PROfflineLaunchIdentityUpdateOutcomeFailed,
+    PROfflineLaunchIdentityUpdateOutcomeCancelled,
+    PROfflineLaunchIdentityUpdateOutcomeRejected,
+};
+
+/// Immutable confirmed update result. The bridge validates the explicit
+/// legacy 3–16 ASCII-name rule before invoking the adapter unless the user
+/// explicitly enables the legacy invalid-name escape hatch.
+@interface PROfflineLaunchIdentityUpdateResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithIdentity:(nullable PROfflineLaunchIdentity *)identity
+                                   outcome:(PROfflineLaunchIdentityUpdateOutcome)outcome
+                            localizationKey:(NSString *)localizationKey
+                              diagnosticText:(nullable NSString *)diagnosticText
+                                  retryable:(BOOL)retryable NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PROfflineLaunchIdentity *identity;
+@property(nonatomic, assign, readonly) PROfflineLaunchIdentityUpdateOutcome outcome;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL retryable;
+
+@end
+
 /// Immutable progress state for one task subtask.
 @interface PRTaskSubtaskStatus : NSObject
 

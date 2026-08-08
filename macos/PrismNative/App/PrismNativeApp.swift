@@ -8,6 +8,7 @@ struct PrismNativeApp: App {
     @StateObject private var javaDiscoveryModel = PrismJavaDiscoveryModel()
     @StateObject private var accountModel = PrismAccountModel()
     @StateObject private var authenticationModel = PrismAccountAuthenticationModel()
+    @StateObject private var offlineIdentityModel = PrismOfflineLaunchIdentityModel()
 
     var body: some Scene {
         WindowGroup {
@@ -23,7 +24,8 @@ struct PrismNativeApp: App {
                 model: globalSettingsModel,
                 javaModel: javaDiscoveryModel,
                 accountModel: accountModel,
-                authenticationModel: authenticationModel
+                authenticationModel: authenticationModel,
+                offlineIdentityModel: offlineIdentityModel
             )
         }
     }
