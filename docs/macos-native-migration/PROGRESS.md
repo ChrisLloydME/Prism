@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 6, Instance detail and editing
 
-Active work unit: M6-W6
+Active work unit: M6-W7
 
-Next ready work unit: M6-W6
+Next ready work unit: M6-W7
 
 ## Safety baseline
 
@@ -1357,6 +1357,42 @@ Commit: `ebcccb3761bbfdbf66d042e75dae85ace9450823`.
 
 Next after completion: `M6-W6`, add optimistic-edit rollback where safe and preserve confirmed-backend-state behavior elsewhere; do not start M6-W7 until M6-W6 evidence is verified and committed.
 
+### M6-W6: Safe optimistic server rollback and confirmed-state policy
+
+Status: complete
+
+Outcome: add an explicit native presentation policy for instance-detail mutations. Server name/address/resource-policy edits and adjacent reorder operations now render a reversible in-memory projection from the last confirmed backend snapshot. A rejected or failed result restores the confirmed fields and ordering while preserving the editable draft and retry intent. A second server mutation is rejected while the first is pending. Add, delete, join, refresh, world, screenshot, and log actions remain confirmed-backend-state workflows and do not mutate their lists optimistically.
+
+Legacy contract evidence: `launcher/ui/pages/instance/ServersPage.{h,cpp}` and its private `ServersModel` edit name, address, texture policy, and order in the list model, defer persistence, and lock editing while the instance runs. `launcher/minecraft/WorldTasks.{h,cpp}` models world import, copy, and delete as asynchronous filesystem tasks that update the list only after success. The native policy therefore limits optimism to reversible server presentation state and keeps destructive or filesystem operations on confirmed snapshots; no Qt model or task was imported.
+
+Scope: `macos/PrismNative/App/PrismShellModel.swift` adds `PrismInstanceDetailMutationPresentationPolicy`, a value-only server replacement helper, a confirmed server snapshot, optimistic field/order projection, rollback, retry re-projection, and pending-mutation serialization. `macos/PrismNativeTests/PrismShellTests.swift` adds policy coverage and state-transition tests for optimistic update, rejection rollback, draft preservation, retry, optimistic reorder rollback, backend rollback metadata, successful reload, and concurrent mutation rejection. No facade, bridge, backend, CMake, project-file, Qt, filesystem, process, account, Keychain, network, production data, or other-platform behavior changed.
+
+Required evidence: the policy maps only server `update`, `moveUp`, and `moveDown` to `optimisticServerEdit`; server delete and non-server detail actions map to `confirmedBackendState`. Tests cover the happy path, rejected and failed backend outcomes, empty/stale-safe value handling through the existing model contracts, preserved long-form draft strings, retry, success-triggered reload, confirmed delete sequencing, and a repeated/concurrent request. The backend `partialChangesRolledBack` field remains distinct from the native presentation rollback flag and is asserted independently.
+
+HIG decision: keep the existing SwiftUI `Table`, `Form`, standard controls, system selection, and existing recovery presentation. The model changes only the values that those system views render; it does not add a custom status overlay, bespoke control, custom drawing, or a second dialog flow. This follows Apple HIG [`tables`](https://developer.apple.com/design/human-interface-guidelines/tables), [`forms`](https://developer.apple.com/design/human-interface-guidelines/forms), and [`progress-indicators`](https://developer.apple.com/design/human-interface-guidelines/progress-indicators). Keyboard focus, VoiceOver roles/values/help, menu placement, shortcuts, localization-key-shaped text, and data-root isolation remain provided and tested by the existing native surfaces.
+
+Architecture: `PrismInstanceServersModel` stores `confirmedServers` only after a validated Foundation snapshot crosses the existing bridge. `applyOptimisticPresentation` always starts from that snapshot, so retry cannot stack projections over stale UI state. Failure restores the snapshot before exposing structured recovery metadata; update drafts remain available for retry, while successful results clear the projection and request a fresh confirmed load. The facade, Objective-C++ bridge, and Swift boundary remain Foundation/value-only; no C++ or ownership type crosses into Swift.
+
+Files changed: `macos/PrismNative/App/PrismShellModel.swift` and `macos/PrismNativeTests/PrismShellTests.swift`. The progress entry is committed separately as the required documentation update; no unrelated file was changed.
+
+Tests and exact commands:
+
+- `git diff --check` and `git diff --cached --check` — passed before the implementation commit.
+- `xcodebuild test -project macos/PrismNative.xcodeproj -scheme PrismNative -destination 'platform=macOS,arch=arm64' -only-testing:PrismNativeTests/PrismShellTests -derivedDataPath /private/tmp/prism-m6-w6-shell-tests CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO` — passed; focused Shell tests 38/38. Result: `/tmp/prism-m6-w6-shell-tests/Logs/Test/Test-PrismNative-2026.08.09_03-33-13-+0800.xcresult`.
+- `xcodebuild test -project macos/PrismNative.xcodeproj -scheme PrismNative -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-m6-w6-full-tests CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO` — passed; full native XCTest 95/95, zero failures and zero skipped tests. Result: `.deriveddata-m6-w6-full-tests/Logs/Test/Test-PrismNative-2026.08.09_03-34-18-+0800.xcresult`.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -derivedDataPath .deriveddata-m6-w6-debug CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build` — passed. `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -derivedDataPath .deriveddata-m6-w6-release-verify CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build` — passed.
+- `plutil -extract CFBundleIdentifier raw .deriveddata-m6-w6-debug/Build/Products/Debug/Prism.app/Contents/Info.plist` and the equivalent Release path — both returned `com.lloydME.Prism`.
+- Static scans for Qt/C++/ownership exposure, custom drawing, upstream application/data paths, network APIs, and application-side `String(format:)` — passed with no matches. Existing full XCTest coverage continued to pass command/menu/shortcut, accessibility, localization-shape, fixture-root/data-isolation, and native API structure checks.
+- No launcher backend, facade, bridge, or C++ source changed in M6-W6; the M6-W5 arm64/universal CMake facade tests and arm64 Qt `Prism` target evidence remain applicable and no new backend CMake run was required.
+
+Result summary: safe server edits and reorders are immediately responsive but cannot overwrite the confirmed snapshot; all rejected/failed safe edits visibly roll back and preserve retryable draft input. Confirmed-only actions retain their previous behavior. Full native tests and both products pass with the required identity and static boundary contracts. No application launch, screenshot, recording, visual snapshot, upstream application/data, real account, Keychain, signing, installation, publishing, push, production network, or destructive action was used.
+
+Risk: this is presentation rollback, not a claim that a live backend has persisted or undone `servers.dat`; live server adapters, file watching, ping, running-instance locking, permission/conflict translation, external-change reconciliation, and the M6-W7 scenario matrix remain unimplemented. Backend rollback metadata is preserved but still fixture-injected. No custom-rendering exception was added.
+
+Commit: `ed31c77fbedcacfcd5e691d0f67ab08c25dff9e4`.
+
+Next after completion: `M6-W7`, test permission errors, missing files, conflicts, invalid archives, cancellation, and external changes across the M6 detail workflows; do not begin Milestone 7 until M6-W7 evidence is verified and committed.
+
 ## Completed commit index
 
 | Commit | Outcome | Verification |
@@ -1398,6 +1434,7 @@ Next after completion: `M6-W6`, add optimistic-edit rollback where safe and pres
 | `789502d80` | Added the ordered native version/component snapshot, Foundation bridge, and Swift Table/search workflow | arm64/universal CMake facade tests 2/2; arm64 Qt Prism target; focused native tests 46/46; full native tests 84/84; Bundle ID `com.lloydME.Prism`; Debug/Release builds; Objective-C/Objective-C++ syntax; boundary/accessibility/localization/no-drawing scans; `git diff --check` |
 | `891138f6e` | Added the native mods and pack-resource table with explicit enable, import, reveal, confirmed delete, cancellation, and recovery contracts | arm64/universal CMake facade tests 2/2; arm64 Qt Prism target; focused native tests 17/17 bridge and 34/34 Shell; full native tests 89/89; Bundle ID `com.lloydME.Prism`; Debug/Release builds; Objective-C/Objective-C++ syntax; boundary/accessibility/localization/no-drawing scans; `git diff --check` |
 | `ebcccb376` | Added native worlds, servers, screenshots, and logs contracts with Foundation bridge conversion and SwiftUI tables/forms | arm64/universal CMake facade tests 3/3; arm64 Qt Prism target; focused native tests 19/19 bridge and 37/37 Shell; full native tests 94/94; Bundle ID `com.lloydME.Prism`; Debug/Release builds; Objective-C/Objective-C++ syntax; boundary/accessibility/localization/no-drawing scans; `git diff --check` |
+| `ed31c77fb` | Added safe optimistic server edit/reorder presentation with confirmed-snapshot rollback, draft preservation, retry, and concurrent mutation rejection | Focused Shell tests 38/38; full native tests 95/95; Debug/Release builds; Bundle ID `com.lloydME.Prism`; boundary/accessibility/localization/no-drawing/upstream-data scans; `git diff --check` |
 
 ## Current architecture findings
 
@@ -1441,6 +1478,7 @@ Next after completion: `M6-W6`, add optimistic-edit rollback where safe and pres
 38. M6-W3 defines the read-only version/component contract. `FrontendInstanceComponentSnapshot` preserves the ordered PackProfile-derived list as value data; the facade validates stable IDs and state invariants; `PRPrismBridge` converts problem severity and metadata through Foundation-only DTOs with cancellation and main-actor delivery; Swift owns searchable `Table` presentation and recovery state. Component enablement, resource import, drag/drop, reveal, delete, and version/file mutation remain separate later contracts.
 39. M6-W4 defines the resource boundary without exposing `ResourceFolderModel` or `Resource`: `FrontendInstanceResourceSnapshot` preserves ordered kind-specific metadata, while `FrontendInstanceResourceMutationRequest` requires typed actions, absolute import input, and explicit delete confirmation. Objective-C++ alone converts Foundation URLs and C++ paths, owns cancellation/shutdown cleanup, and delivers immutable DTO results; Swift applies no optimistic mutation and reloads only after confirmed success. Managed packs, live resource adapters, and permission/conflict/archive parity remain later work.
 40. M6-W5 defines one Foundation-only instance-detail boundary for worlds, servers, screenshots, and logs. Facade snapshots preserve backend order and bounded metadata; detail mutations require typed actions, explicit confirmation where destructive, and fixture-safe absolute inputs. Objective-C++ owns conversion, cancellation, shutdown suppression, and main-actor delivery; Swift uses native Table/Form/AppKit text controls and reloads confirmed state without optimistic edits. Live watchers, ping/upload/external-process adapters, and permission/conflict/archive parity remain later work.
+41. M6-W6 makes the safe optimistic boundary explicit: only reversible server field edits and adjacent reorders project from a validated confirmed snapshot; failures restore that snapshot while preserving retryable drafts, and pending mutations serialize. Destructive, filesystem, join, open/copy, and non-server detail actions remain confirmed-backend-state workflows. The rollback is presentation-only until a live backend adapter reports persistence or backend rollback; M6-W7 owns permission, missing-file, conflict, invalid-archive, cancellation, and external-change evidence.
 
 ## Custom rendering exceptions
 
@@ -1454,4 +1492,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M6-W6`. M6-W1 is complete in `d3f319c494a61d559643964a6253a3ec8c495df3`; M6-W2 is complete in `467bb275e04a087e00a4dd85365273bdcf130185`; M6-W3 is complete in `789502d804528d39098fd21fd227d4572ae18040`; M6-W4 is complete in `891138f6ea639c3af718d74e8f63f65e74650cf6`; M6-W5 is complete in `ebcccb3761bbfdbf66d042e75dae85ace9450823` and may not be reopened. M6-W6 may implement only optimistic rollback where safe and confirmed-backend-state behavior elsewhere; preserve the existing facade/bridge ownership and temporary-fixture safety contracts. Do not begin M6-W7 or later work until M6-W6 evidence is verified and committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M6-W7`. M6-W1 is complete in `d3f319c494a61d559643964a6253a3ec8c495df3`; M6-W2 is complete in `467bb275e04a087e00a4dd85365273bdcf130185`; M6-W3 is complete in `789502d804528d39098fd21fd227d4572ae18040`; M6-W4 is complete in `891138f6ea639c3af718d74e8f63f65e74650cf6`; M6-W5 is complete in `ebcccb3761bbfdbf66d042e75dae85ace9450823`; M6-W6 is complete in `ed31c77fbedcacfcd5e691d0f67ab08c25dff9e4` and may not be reopened. M6-W7 may add only the required permission, missing-file, conflict, invalid-archive, cancellation, and external-change scenario evidence while preserving the existing facade/bridge ownership and temporary-fixture safety contracts. Do not begin Milestone 7 or later work until M6-W7 evidence is verified and committed.
