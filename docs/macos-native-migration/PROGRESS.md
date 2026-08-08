@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 7, Settings, Java, and accounts
 
-Active work unit: M7-W1
+Active work unit: none (M7-W2 complete)
 
-Next ready work unit: M7-W1
+Next ready work unit: M7-W3
 
 ## Safety baseline
 
@@ -1513,9 +1513,45 @@ Result summary: the complete source-backed matrix identifies all global `Applica
 
 Risk: several legacy consumers read values at object construction or startup without an explicit restart marker, so “next operation” is intentionally more precise than a blanket restart claim. Native round-trip tests must use temporary Prism roots and fakes; no test may open or mutate the installed upstream launcher configuration. The known Xcode macOS 26-versus-14 deployment warning remains non-blocking. No custom-rendering exception was added.
 
-Commit: pending after the required verification and staged documentation check.
+Commit: `6149bb3a2` (implementation; this ledger entry was completed in the immediately preceding documentation commit).
 
 Next after completion: `M7-W2`, implement the standard SwiftUI Settings scene and non-secret settings round-trip ports from this matrix; keep Java, account/authentication, secret, environment, bookmark-byte, and provider-token semantics deferred.
+
+### M7-W2: Standard SwiftUI Settings scene and non-secret settings round trips
+
+Status: complete
+
+Outcome: consume the M7-W1 matrix through the first standard macOS `Settings` scene and a Foundation-only non-secret settings contract. The native destination now exposes the reviewed general/appearance subset with typed validation, separate confirmed/draft state, revert/save/retry recovery, cancellation-safe directory selection, and Command-Comma discoverability. Fixture-backed facade and bridge tests confirm that accepted values round-trip only after a confirmed backend result and that rejected or stale results cannot overwrite the user’s draft.
+
+Legacy contract consumed: `InstanceDir`; `IconTheme`; `ApplicationTheme`; `BackgroundCat`/legacy `TheCat`; `CatOpacity`; the legacy `CatFit` values including the persisted `strech` spelling; `Language`; `UseSystemLocale`; `MenuBarInsteadOfToolBar`; `StatusBarVisible`; `ToolbarsLocked`; `NumberOfConcurrentTasks`; `NumberOfConcurrentDownloads`; `NumberOfManualRetries`; `RequestTimeout`; `ConsoleFont`; `ConsoleFontSize`; `ConsoleMaxLines`; `ConsoleOverflowStop`; `ShowConsole`; `AutoCloseConsole`; `ShowConsoleOnError`; and `LogPrePostOutput`. The adapter contract keeps the M7-W1 aliases, defaults, ranges, and next-operation/next-launch effect classifications explicit rather than passing a generic settings dictionary.
+
+Working boundary: no Java discovery, account/authentication, provider credentials/tokens, proxy password, arbitrary environment values, launch command execution, Qt UI, custom drawing, bookmark bytes, or upstream data access. The bridge exchanges one Foundation directory URL as the result of a system folder selection; bookmark persistence remains adapter-owned and is not represented in Swift. Any value outside the explicit non-secret contract remains unavailable rather than being guessed or passed through a generic dictionary.
+
+HIG decision: use SwiftUI `Settings`, `TabView`, `Form`, `Section`, `Picker`, `Toggle`, `Stepper`, `TextField`, `ProgressView`, `ContentUnavailableView`, and `.fileImporter` with the system folder panel. This follows Apple’s [Settings HIG](https://developer.apple.com/design/human-interface-guidelines/settings), [SwiftUI Settings scene](https://developer.apple.com/documentation/swiftui/settings), and [SwiftUI Form](https://developer.apple.com/documentation/swiftui/Form) guidance for a macOS settings window and standard Command-Comma discovery. No custom system-control drawing, custom title bar, third-party UI framework, Qt widget, or rendering exception was added.
+
+Architecture: `FrontendGlobalSettingsSnapshot` and its loader/updater are value-only, explicitly typed facade ports. The facade validates absolute directory paths, enumerations, ranges, and confirmed update outcomes. Objective-C++ is the only C++/Foundation ownership and conversion boundary: it copies strings and scalar values, converts the scoped directory URL, maps stable errors/outcomes, performs asynchronous delivery, and suppresses canceled callbacks. Swift owns `PrismGlobalSettings`, `PrismGlobalSettingsModel`, the system-panel result, confirmed/draft separation, and save-generation guards; it never sees Qt, C++ ownership, bookmark bytes, or secret/account values.
+
+Files changed: `launcher/frontend/FrontendFacade.{h,cpp}`, `launcher/frontend/FrontendFacadeContractTest.cpp`, `macos/PrismNative/Bridge/PrismBridgeModels.h`, `macos/PrismNative/Bridge/PrismBridge.{h,mm}`, `macos/PrismNative/App/PrismNativeApp.swift`, new `macos/PrismNative/App/PrismSettings.swift`, `macos/PrismNativeTests/PrismBridgeFacadeIntegrationTests.mm`, `macos/PrismNativeTests/PrismShellTests.swift`, and `macos/PrismNative.xcodeproj/project.pbxproj`. No other-platform behavior, installed upstream application, upstream Application Support data, account, Keychain, production service, signature, or publishing state changed.
+
+Tests and exact commands:
+
+- `cmake --build /private/tmp/prism-m6-w5-arm64-backend --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test --parallel 2` and the equivalent command for `.deriveddata-prism-native-backend` — passed; arm64 and universal facade targets built.
+- `ctest --test-dir /private/tmp/prism-m6-w5-arm64-backend --output-on-failure -R '^(FrontendFacadeContract|FrontendFacadePublicHeaders)$'` and the equivalent universal command — passed; 2/2 in each tree. `lipo -info .deriveddata-prism-native-backend/libLauncher_frontend.a` — retained `x86_64 arm64`.
+- The first `cmake --build /private/tmp/prism-m6-w5-arm64-backend --target Prism --parallel 2` correctly reported that the facade-only directory has no `Prism` target; `cmake --build --target help` confirmed that target list. The historical `/private/tmp/prism-m2-cmake-pkgconfig` directory was absent, so the available Qt6 arm64 configuration `/private/tmp/prism-m5-w4-cmake` was selected after inspecting its `CMakeCache.txt`; `cmake --build /private/tmp/prism-m5-w4-cmake --target Prism --parallel 2` passed and linked the existing Qt target without execution.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-m7-w2-focused-tests CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test -only-testing:PrismNativeTests/PrismBridgeFacadeIntegrationTests -only-testing:PrismNativeTests/PrismShellTests` — passed; focused bridge 23/23 and Shell 42/42, 65/65 total. The first focused run exposed only two URL assertions that compared an unstandardized path to Foundation’s trailing-slash-normalized URL; the assertions were corrected to compare `standardizedFileURL`, and the rerun passed without changing runtime behavior.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-m7-w2-full-tests CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test` — passed; full native XCTest 103/103, zero failures and zero skipped tests. Result: `.deriveddata-m7-w2-full-tests/Logs/Test/Test-PrismNative-2026.08.09_04-37-16-+0800.xcresult`.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-m7-w2-debug CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build` and the equivalent Release command using `.deriveddata-m7-w2-release` — both passed. `plutil -extract CFBundleIdentifier raw -o - .deriveddata-m7-w2-debug/Build/Products/Debug/Prism.app/Contents/Info.plist` and the Release equivalent — both returned `com.lloydME.Prism`.
+- `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -fsyntax-only -x objective-c -target arm64-apple-macos14.0 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk macos/PrismNative/Bridge/PrismBridge.h` and `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++ -fsyntax-only -x objective-c++ -std=c++20 -fobjc-arc -target arm64-apple-macos14.0 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk -Ilauncher/frontend macos/PrismNative/Bridge/PrismBridge.mm` — both passed.
+- Settings structure inspection with `rg` found `Settings`, `Form`, `Section`, `Picker`, `Toggle`, `Stepper`, `TextField`, `ProgressView`, `ContentUnavailableView`, `.fileImporter`, accessibility identifiers, and `.keyboardShortcut(.defaultAction)`; command inspection confirmed `openSettings()` and `.command(",")`. Full native tests covered view-model transitions, menu/shortcut/accessibility/localization-key shape, invalid input, cancellation, recovery, and shutdown-safe bridge delivery; settings has no optional backend metadata to expose.
+- `! rg -n 'QWidget|QDialog|Qt[A-Za-z]|std::|Unmanaged|UnsafeMutable|UnsafeRaw|Canvas\(|draw\(|Path\(|CGContext|NSBezierPath' macos/PrismNative/App --glob '*.swift'`, the public bridge scan, the upstream path/network/process scan, and the refined custom-drawing scan `! rg -n -P 'String\(format:|Canvas\(|\bPath\(|CGContext|NSBezierPath|CALayer' macos/PrismNative/App macos/PrismNative/Bridge --glob '*.{swift,h,mm}'` — all passed with no matches. `git diff --check` passed before implementation commit and `git diff --cached --check` passed before staging it.
+
+Result summary: the native settings destination, typed facade contract, Foundation bridge conversion, draft-preserving model, directory cancellation behavior, confirmed update semantics, accessibility metadata, menu shortcut, and non-launch verification are complete for the M7-W1 non-secret subset. The current app composition remains fixture-backed and isolated; no live settings file or upstream data was read or mutated.
+
+Risk: the production global-settings loader/updater and security-scoped bookmark persistence are still injected/deferred, so this unit proves the contract and native state machine without claiming live settings persistence. Java discovery, accounts/authentication, provider tokens, proxy passwords, environment values, commands, and other excluded matrix rows remain future work. The known macOS 26-versus-14 deployment warnings remain non-blocking. No custom-rendering exception was added.
+
+Commit: `12c6ba49a` (implementation); this entry is completed in the follow-up progress-ledger commit.
+
+Next after completion: `M7-W3`, add the separately contracted Java discovery and selection workflow; at the next round start, re-read both migration documents and activate only `M7-W3`.
 
 ## Completed commit index
 
@@ -1560,6 +1596,7 @@ Next after completion: `M7-W2`, implement the standard SwiftUI Settings scene an
 | `ebcccb376` | Added native worlds, servers, screenshots, and logs contracts with Foundation bridge conversion and SwiftUI tables/forms | arm64/universal CMake facade tests 3/3; arm64 Qt Prism target; focused native tests 19/19 bridge and 37/37 Shell; full native tests 94/94; Bundle ID `com.lloydME.Prism`; Debug/Release builds; Objective-C/Objective-C++ syntax; boundary/accessibility/localization/no-drawing scans; `git diff --check` |
 | `ed31c77fb` | Added safe optimistic server edit/reorder presentation with confirmed-snapshot rollback, draft preservation, retry, and concurrent mutation rejection | Focused Shell tests 38/38; full native tests 95/95; Debug/Release builds; Bundle ID `com.lloydME.Prism`; boundary/accessibility/localization/no-drawing/upstream-data scans; `git diff --check` |
 | `a0c6456c1` | Added fixture-only instance-detail permission, missing-item, conflict, invalid-archive, cancellation, and external-change scenario coverage | arm64/universal facade CMake/CTest 3/3; arm64 Qt Prism target; focused native tests 60/60; full native tests 98/98; Debug/Release builds; Bundle ID `com.lloydME.Prism`; Objective-C/Objective-C++ syntax; boundary/accessibility/localization/no-drawing scans; `git diff --check` |
+| `12c6ba49a` | Added the typed native global Settings scene, non-secret facade/bridge round trips, draft rollback, and cancellation-safe directory selection | arm64/universal facade CMake/CTest 2/2; arm64 Qt Prism target; focused native tests 65/65; full native tests 103/103; Debug/Release builds; Bundle ID `com.lloydME.Prism`; Objective-C/Objective-C++ syntax; Settings/menu/accessibility/localization-shape and Qt/ownership/data/no-drawing scans; `git diff --check` |
 
 ## Current architecture findings
 
