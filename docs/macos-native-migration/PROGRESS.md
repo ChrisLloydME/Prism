@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 5, Launch, stop, tasks, and logs
 
-Active work unit: M5-W2
+Active work unit: M5-W3
 
-Next ready work unit: none (M5-W2 active)
+Next ready work unit: M5-W3
 
 ## Safety baseline
 
@@ -1026,9 +1026,29 @@ Result summary: facade tests cover queued/running/cancelling/succeeded/failed/ca
 
 Risk: task ports remain fixture adapters and the default bridge composition intentionally rejects task operations until a later composition unit supplies a real task source. This unit does not claim `LaunchController` ownership, process state, log streaming, Swift task presentation, or real cancellation semantics; M5-W3 maps the DTO contract to native progress presentation. The universal legacy Qt executable link remains environment-limited by the pre-existing arm64-only third-party artifacts recorded in M5-W1, while the arm64 legacy target and universal facade tests pass. No custom-rendering exception was added.
 
-Commit: pending implementation.
+Commit: `e55fd3139`
 
 Next after completion: `M5-W3`, map task state to `ProgressView` or `NSProgressIndicator` semantics.
+
+### M5-W3: Native progress presentation semantics
+
+Status: active
+
+Outcome: activated after M5-W2. Map immutable task and subtask DTOs to standard SwiftUI `ProgressView` or AppKit `NSProgressIndicator` semantics, including determinate, indeterminate, queued, cancelling, terminal, and cancellation-capability states without custom controls or drawing.
+
+Scope: directly required native SwiftUI/AppKit task state, view-model, command, accessibility, localization, and fixture tests only; preserve the M5-W2 Foundation DTO contract, explicit fixture roots, and injected runtime ports. Do not add process ownership, account access, logs, third-party UI, or changes to other platforms.
+
+Required evidence: main-actor task view-model states, determinate/indeterminate progress mapping, stable subtask rendering semantics, cancellation enabled-state and intent routing, terminal success/failure/cancelled presentation, retry/recovery metadata, accessibility labels/values/hints, keyboard/menu behavior, localization-key shape and long strings, no custom drawing, native tests, Debug/Release builds, Bundle ID checks, and `git diff --check`.
+
+HIG decision: use the system `ProgressView`/`NSProgressIndicator`, standard `Button`, `Label`, `List`, and existing command model. Do not recreate system progress indicators, draw progress bars, or expose bridge objects directly to SwiftUI. Follow the existing menu, toolbar, accessibility, and localization contracts.
+
+Architecture: keep the task presentation state in a main-actor Swift view-model that consumes immutable Foundation values and emits explicit cancellation/retry intents. The view-model must not own C++, Objective-C++, processes, accounts, filesystem discovery, or network work; the bridge remains the only composition boundary.
+
+Files changed: not started; activation record only.
+
+Commit: pending implementation.
+
+Next after completion: `M5-W4`, add bounded and privacy-filtered log streaming.
 
 ## Completed commit index
 
@@ -1061,6 +1081,7 @@ Next after completion: `M5-W3`, map task state to `ProgressView` or `NSProgressI
 | `33676df3f` | Added bounded native instance artwork decoding, deterministic LRU caching, invalidation, and SwiftUI content presentation | Focused artwork/Shell tests 17/17; native Debug XCTest 57/57; Debug/Release builds; artwork/localization, boundary, no-drawing, upstream-data, Debug/Release `plutil`, and `git diff --check` validations |
 
 | `fd58b4b40` | Added fixture-controlled launch and stop commands with stable identifiers, explicit outcomes, cancellation, and main-actor bridge delivery | CMake facade tests 2/2; focused native command/bridge tests 15/15; full native tests 59/59; arm64 legacy Prism target; Debug/Release builds; public boundary, command, localization-shape, Bundle ID, and `git diff --check` validations |
+| `e55fd3139` | Added immutable task progress, subtask, terminal-result, and idempotent cancellation contracts across facade and bridge | arm64/universal CMake facade tests 2/2; arm64 legacy Prism target; focused native task/bridge tests 26/26; full native tests 61/61; Debug/Release builds; public boundary, recovery/localization/accessibility, Bundle ID, and `git diff --check` validations |
 
 ## Current architecture findings
 
@@ -1094,6 +1115,7 @@ Next after completion: `M5-W3`, map task state to `ProgressView` or `NSProgressI
 28. M4-W6 gives every shared command a stable accessibility identifier and validates it across menus, toolbar, and context-menu surfaces; sidebar rows use localized values and typed `List(selection:)`/`.tag` semantics so system accessibility roles and keyboard focus remain native rather than manually recreated.
 29. M4-W7 keeps instance artwork behind an explicit file-URL input and a main-actor deterministic LRU store with 32-entry/8 MiB defaults; SwiftUI `Image` owns presentation and accessibility, while bridge icon-key resolution and live row integration remain downstream of this isolated content seam.
 30. M5-W1 adds explicit launch and stop callback ports with stable-ID result outcomes; the Objective-C++ bridge copies Foundation identifiers, serializes facade calls, owns cancellation and main-actor delivery, and the Swift command model preserves a generic-handler compatibility path. The default composition intentionally rejects commands until task/process wiring is introduced.
+31. M5-W2 adds immutable task and subtask values with explicit progress kinds, cancellation eligibility, terminal outcomes, localized diagnostic metadata, rollback status, and idempotent cancellation results. The C++ facade validates the value contract, while Objective-C++ serializes conversion, error/recovery mapping, request-token lifetime, shutdown cancellation, and main-actor delivery; M5-W3 owns native progress presentation.
 
 ## Custom rendering exceptions
 
@@ -1107,4 +1129,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M5-W2`. Do not begin M5-W3 or later task/progress implementation until immutable task and subtask DTOs, cancellation, terminal results, and their bridge/facade tests are verified and committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M5-W3`. M5-W2 is complete in `e55fd3139`; do not begin M5-W4 or later task/log implementation until M5-W3's standard progress presentation, view-model, command, accessibility, localization, and no-custom-drawing evidence is verified and committed.
