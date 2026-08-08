@@ -2607,6 +2607,24 @@ enum PrismInstanceDetailAction: Int, Equatable, Sendable {
     }
 }
 
+enum PrismInstanceDetailMutationPresentationPolicy: Equatable, Sendable {
+    case confirmedBackendState
+    case optimisticServerEdit
+
+    static func policy(
+        for kind: PrismInstanceDetailKind,
+        action: PrismInstanceDetailAction
+    ) -> Self {
+        guard kind == .servers else { return .confirmedBackendState }
+        switch action {
+        case .update, .moveUp, .moveDown:
+            return .optimisticServerEdit
+        default:
+            return .confirmedBackendState
+        }
+    }
+}
+
 enum PrismInstanceDetailMutationOutcome: Int, Equatable, Sendable {
     case succeeded
     case unknownInstance
@@ -2866,6 +2884,46 @@ struct PrismInstanceServer: Identifiable, Equatable, Hashable, Sendable {
         self.canBeEdited = bridgeServer.canBeEdited
         self.canBeDeleted = bridgeServer.canBeDeleted
         self.canBeJoined = bridgeServer.canBeJoined
+    }
+
+    func replacingEditableFields(
+        name: String,
+        address: String,
+        resourcePolicy: PrismInstanceServerResourcePolicy
+    ) -> PrismInstanceServer {
+        Self(
+            id: id,
+            name: name,
+            address: address,
+            resourcePolicy: resourcePolicy,
+            status: status,
+            onlinePlayers: onlinePlayers,
+            canBeEdited: canBeEdited,
+            canBeDeleted: canBeDeleted,
+            canBeJoined: canBeJoined
+        )
+    }
+
+    private init(
+        id: String,
+        name: String,
+        address: String,
+        resourcePolicy: PrismInstanceServerResourcePolicy,
+        status: PrismInstanceServerStatus,
+        onlinePlayers: Int64,
+        canBeEdited: Bool,
+        canBeDeleted: Bool,
+        canBeJoined: Bool
+    ) {
+        self.id = id
+        self.name = name
+        self.address = address
+        self.resourcePolicy = resourcePolicy
+        self.status = status
+        self.onlinePlayers = onlinePlayers
+        self.canBeEdited = canBeEdited
+        self.canBeDeleted = canBeDeleted
+        self.canBeJoined = canBeJoined
     }
 }
 
@@ -3284,6 +3342,7 @@ final class PrismInstanceServersModel: ObservableObject {
     private let onMutate: ((String, PrismInstanceDetailMutationIntent) -> Void)?
     private var activeIdentifier: String?
     private var lastMutationIntent: PrismInstanceDetailMutationIntent?
+    private var confirmedServers: [PrismInstanceServer] = []
 
     init(
         onLoad: ((String) -> Void)? = nil,
@@ -3320,6 +3379,7 @@ final class PrismInstanceServersModel: ObservableObject {
         guard !normalized.isEmpty else { return false }
         activeIdentifier = normalized
         state = .loading(identifier: normalized)
+        confirmedServers = []
         searchText = ""
         selectedServerID = nil
         pendingDeleteServerID = nil
@@ -3335,6 +3395,7 @@ final class PrismInstanceServersModel: ObservableObject {
         guard activeIdentifier != nil else { return false }
         let converted = bridgeServers.compactMap(PrismInstanceServer.init(bridgeServer:))
         guard converted.count == bridgeServers.count, Set(converted.map(\.id)).count == converted.count else { return false }
+        confirmedServers = converted
         state = converted.isEmpty ? .empty : .content(converted)
         selectedServerID = nil
         pendingDeleteServerID = nil
@@ -3349,6 +3410,7 @@ final class PrismInstanceServersModel: ObservableObject {
               activeIdentifier == nil || activeIdentifier == failure.instanceIdentifier else { return false }
         activeIdentifier = failure.instanceIdentifier
         state = .failed(failure)
+        confirmedServers = []
         selectedServerID = nil
         pendingDeleteServerID = nil
         clearDraft()
@@ -3444,6 +3506,9 @@ final class PrismInstanceServersModel: ObservableObject {
             return beginLoading(identifier: activeIdentifier)
         }
         guard let failure = prismInstanceDetailMutationFailure(result: result, instanceIdentifier: activeIdentifier) else { return false }
+        if PrismInstanceDetailMutationPresentationPolicy.policy(for: .servers, action: action) == .optimisticServerEdit {
+            restoreConfirmedServerPresentation()
+        }
         mutationState = .failed(failure)
         return true
     }
@@ -3453,6 +3518,10 @@ final class PrismInstanceServersModel: ObservableObject {
         if case .failed(let failure) = state, failure.isRetryAvailable { return beginLoading(identifier: failure.instanceIdentifier) }
         guard let intent = lastMutationIntent, let activeIdentifier,
               case .failed(let failure) = mutationState, failure.isRetryAvailable else { return false }
+        if PrismInstanceDetailMutationPresentationPolicy.policy(for: intent.kind, action: intent.action) == .optimisticServerEdit,
+           !applyOptimisticPresentation(for: intent) {
+            return false
+        }
         mutationState = .pending(intent)
         onMutate?(activeIdentifier, intent)
         return true
@@ -3468,6 +3537,7 @@ final class PrismInstanceServersModel: ObservableObject {
     func clear() {
         activeIdentifier = nil
         state = .empty
+        confirmedServers = []
         searchText = ""
         selectedServerID = nil
         pendingDeleteServerID = nil
@@ -3484,11 +3554,51 @@ final class PrismInstanceServersModel: ObservableObject {
 
     @discardableResult
     private func sendMutation(_ intent: PrismInstanceDetailMutationIntent) -> Bool {
-        guard let activeIdentifier else { return false }
+        guard let activeIdentifier, case .idle = mutationState else { return false }
+        if PrismInstanceDetailMutationPresentationPolicy.policy(for: intent.kind, action: intent.action) == .optimisticServerEdit,
+           !applyOptimisticPresentation(for: intent) {
+            return false
+        }
         lastMutationIntent = intent
         mutationState = .pending(intent)
         onMutate?(activeIdentifier, intent)
         return true
+    }
+
+    private func applyOptimisticPresentation(for intent: PrismInstanceDetailMutationIntent) -> Bool {
+        guard intent.kind == .servers else { return false }
+        var optimisticServers = confirmedServers
+        switch intent.action {
+        case .update:
+            guard let index = optimisticServers.firstIndex(where: { $0.id == intent.itemIdentifier }),
+                  optimisticServers[index].canBeEdited,
+                  !intent.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !intent.address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+            optimisticServers[index] = optimisticServers[index].replacingEditableFields(
+                name: intent.name,
+                address: intent.address,
+                resourcePolicy: intent.resourcePolicy
+            )
+        case .moveUp:
+            guard let index = optimisticServers.firstIndex(where: { $0.id == intent.itemIdentifier }), index > 0 else { return false }
+            optimisticServers.swapAt(index - 1, index)
+        case .moveDown:
+            guard let index = optimisticServers.firstIndex(where: { $0.id == intent.itemIdentifier }), index + 1 < optimisticServers.count else { return false }
+            optimisticServers.swapAt(index, index + 1)
+        default:
+            return false
+        }
+        state = .content(optimisticServers)
+        return true
+    }
+
+    private func restoreConfirmedServerPresentation() {
+        state = confirmedServers.isEmpty ? .empty : .content(confirmedServers)
+        guard let selectedServerID else { return }
+        if !confirmedServers.contains(where: { $0.id == selectedServerID }) {
+            self.selectedServerID = nil
+            clearDraft()
+        }
     }
 
     private func clearDraft() {

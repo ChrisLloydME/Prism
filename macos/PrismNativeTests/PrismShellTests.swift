@@ -931,6 +931,9 @@ final class PrismShellTests: XCTestCase {
         XCTAssertEqual(serverMutations.last?.1.itemIdentifier, "server.a")
         XCTAssertEqual(serverMutations.last?.1.name, "Alpha Updated")
         XCTAssertEqual(serverMutations.last?.1.resourcePolicy, .never)
+        XCTAssertEqual(serversModel.servers[0].name, "Alpha Updated")
+        XCTAssertEqual(serversModel.servers[0].address, "updated.example:25565")
+        XCTAssertEqual(serversModel.servers[0].resourcePolicy, .never)
         XCTAssertEqual(serversModel.servers.map(\.id), ["server.a", "server.b"])
 
         let updated = try XCTUnwrap(
@@ -953,11 +956,145 @@ final class PrismShellTests: XCTestCase {
         XCTAssertTrue(serversModel.moveDown("server.a"))
         XCTAssertEqual(serverMutations.last?.1.action, .moveDown)
         XCTAssertEqual(serverMutations.last?.1.position, 0)
+        XCTAssertEqual(serversModel.servers.map(\.id), ["server.b", "server.a"])
+        let moved = try XCTUnwrap(
+            PRInstanceDetailMutationResult(
+                kind: .servers,
+                action: .moveDown,
+                outcome: .succeeded,
+                instanceIdentifier: "fixture.one",
+                itemIdentifier: "server.a",
+                localizationKey: "instance.server.moved",
+                diagnosticText: nil,
+                partialChangesRolledBack: false
+            )
+        )
+        XCTAssertTrue(serversModel.apply(mutationResult: moved, instanceIdentifier: "fixture.one"))
+        XCTAssertEqual(serversModel.state, .loading(identifier: "fixture.one"))
+        XCTAssertTrue(serversModel.apply(servers: [serverA, serverB]))
         XCTAssertTrue(serversModel.requestDelete("server.a"))
         XCTAssertTrue(serversModel.confirmDelete())
         XCTAssertEqual(serverMutations.last?.1.action, .delete)
         XCTAssertTrue(serverMutations.last?.1.confirmed == true)
         XCTAssertFalse(serversModel.requestDelete("server.b"))
+    }
+
+    func testInstanceServersModelRollsBackSafeOptimisticEdits() throws {
+        XCTAssertEqual(
+            PrismInstanceDetailMutationPresentationPolicy.policy(for: .servers, action: .update),
+            .optimisticServerEdit
+        )
+        XCTAssertEqual(
+            PrismInstanceDetailMutationPresentationPolicy.policy(for: .servers, action: .moveUp),
+            .optimisticServerEdit
+        )
+        XCTAssertEqual(
+            PrismInstanceDetailMutationPresentationPolicy.policy(for: .servers, action: .moveDown),
+            .optimisticServerEdit
+        )
+        XCTAssertEqual(
+            PrismInstanceDetailMutationPresentationPolicy.policy(for: .servers, action: .delete),
+            .confirmedBackendState
+        )
+        XCTAssertEqual(
+            PrismInstanceDetailMutationPresentationPolicy.policy(for: .worlds, action: .delete),
+            .confirmedBackendState
+        )
+        XCTAssertEqual(
+            PrismInstanceDetailMutationPresentationPolicy.policy(for: .screenshots, action: .rename),
+            .confirmedBackendState
+        )
+
+        var mutations: [PrismInstanceDetailMutationIntent] = []
+        let model = PrismInstanceServersModel(onMutate: { mutations.append($1) })
+        XCTAssertTrue(model.beginLoading(identifier: "fixture.one"))
+        let serverA = try makeInstanceServer(
+            identifier: "server.a",
+            name: "Alpha",
+            address: "alpha.example:25565",
+            resourcePolicy: .always,
+            status: .online,
+            onlinePlayers: 4
+        )
+        let serverB = try makeInstanceServer(
+            identifier: "server.b",
+            name: "Beta",
+            address: "beta.example:25565",
+            status: .offline
+        )
+        XCTAssertTrue(model.apply(servers: [serverA, serverB]))
+        model.selectServer("server.a")
+        model.setDraftName("Alpha Updated")
+        model.setDraftAddress("updated.example:25565")
+        model.setDraftResourcePolicy(.never)
+
+        XCTAssertTrue(model.updateSelected())
+        XCTAssertEqual(model.servers[0].name, "Alpha Updated")
+        XCTAssertEqual(model.servers[0].address, "updated.example:25565")
+        XCTAssertEqual(model.servers[0].resourcePolicy, .never)
+        XCTAssertFalse(model.updateSelected(), "A second edit must not replace the pending optimistic transaction")
+
+        let rejectedUpdate = try XCTUnwrap(
+            PRInstanceDetailMutationResult(
+                kind: .servers,
+                action: .update,
+                outcome: .rejected,
+                instanceIdentifier: "fixture.one",
+                itemIdentifier: "server.a",
+                localizationKey: "instance.server.updateRejected",
+                diagnosticText: "fixture update rejected",
+                partialChangesRolledBack: false
+            )
+        )
+        XCTAssertTrue(model.apply(mutationResult: rejectedUpdate, instanceIdentifier: "fixture.one"))
+        XCTAssertEqual(model.servers.map(\.id), ["server.a", "server.b"])
+        XCTAssertEqual(model.servers[0].name, "Alpha")
+        XCTAssertEqual(model.servers[0].address, "alpha.example:25565")
+        XCTAssertEqual(model.servers[0].resourcePolicy, .always)
+        XCTAssertEqual(model.draftName, "Alpha Updated")
+        XCTAssertEqual(model.draftAddress, "updated.example:25565")
+        XCTAssertEqual(model.draftResourcePolicy, .never)
+        XCTAssertEqual(model.mutationFailure?.localizationKey, "instance.server.updateRejected")
+        XCTAssertFalse(model.mutationFailure?.partialChangesRolledBack == true)
+
+        XCTAssertTrue(model.retry())
+        XCTAssertEqual(model.servers[0].name, "Alpha Updated")
+        XCTAssertEqual(mutations.map(\.action), [.update, .update])
+        let updated = try XCTUnwrap(
+            PRInstanceDetailMutationResult(
+                kind: .servers,
+                action: .update,
+                outcome: .succeeded,
+                instanceIdentifier: "fixture.one",
+                itemIdentifier: "server.a",
+                localizationKey: "instance.server.updated",
+                diagnosticText: nil,
+                partialChangesRolledBack: false
+            )
+        )
+        XCTAssertTrue(model.apply(mutationResult: updated, instanceIdentifier: "fixture.one"))
+        XCTAssertTrue(model.apply(servers: [serverA, serverB]))
+
+        XCTAssertTrue(model.moveDown("server.a"))
+        XCTAssertEqual(model.servers.map(\.id), ["server.b", "server.a"])
+        XCTAssertFalse(model.moveUp("server.a"), "A concurrent reorder must wait for the pending result")
+        let rejectedMove = try XCTUnwrap(
+            PRInstanceDetailMutationResult(
+                kind: .servers,
+                action: .moveDown,
+                outcome: .failed,
+                instanceIdentifier: "fixture.one",
+                itemIdentifier: "server.a",
+                localizationKey: "instance.server.moveFailed",
+                diagnosticText: "fixture reorder failed",
+                partialChangesRolledBack: true
+            )
+        )
+        XCTAssertTrue(model.apply(mutationResult: rejectedMove, instanceIdentifier: "fixture.one"))
+        XCTAssertEqual(model.servers.map(\.id), ["server.a", "server.b"])
+        XCTAssertTrue(model.mutationFailure?.partialChangesRolledBack == true)
+        XCTAssertTrue(model.retry())
+        XCTAssertEqual(model.servers.map(\.id), ["server.b", "server.a"])
     }
 
     func testInstanceScreenshotsAndLogsModelsRouteSystemActionsAndBoundedContent() throws {
