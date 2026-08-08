@@ -837,6 +837,82 @@ typedef NS_ENUM(NSInteger, PRAccountSelectionOutcome) {
 
 @end
 
+typedef NS_ENUM(NSInteger, PRAccountAuthenticationAction) {
+    PRAccountAuthenticationActionLogin = 0,
+    PRAccountAuthenticationActionRefresh,
+};
+
+typedef NS_ENUM(NSInteger, PRAccountAuthenticationPhase) {
+    PRAccountAuthenticationPhasePreparing = 0,
+    PRAccountAuthenticationPhaseAwaitingUser,
+    PRAccountAuthenticationPhaseAuthenticating,
+    PRAccountAuthenticationPhaseSucceeded,
+    PRAccountAuthenticationPhaseFailed,
+    PRAccountAuthenticationPhaseCancelled,
+};
+
+typedef NS_ENUM(NSInteger, PRAccountAuthenticationOutcome) {
+    PRAccountAuthenticationOutcomeInProgress = 0,
+    PRAccountAuthenticationOutcomeSucceeded,
+    PRAccountAuthenticationOutcomeFailed,
+    PRAccountAuthenticationOutcomeCancelled,
+    PRAccountAuthenticationOutcomeRejected,
+};
+
+/// Immutable, non-secret authentication progress. Verification metadata is a
+/// safe URL and instruction state only; user codes, authorization codes,
+/// bearer tokens, refresh tokens, and profiles remain outside Swift.
+@interface PRAccountAuthenticationProgress : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithAccountIdentifier:(NSString *)accountIdentifier
+                                             action:(PRAccountAuthenticationAction)action
+                                              phase:(PRAccountAuthenticationPhase)phase
+                                            outcome:(PRAccountAuthenticationOutcome)outcome
+                                      providerLabel:(NSString *)providerLabel
+                                    verificationURL:(nullable NSString *)verificationURL
+                                    localizationKey:(NSString *)localizationKey
+                                      diagnosticText:(nullable NSString *)diagnosticText
+                                   expiresInSeconds:(NSInteger)expiresInSeconds
+                                         canCancel:(BOOL)canCancel
+                                          retryable:(BOOL)retryable
+                                 requiresUserAction:(BOOL)requiresUserAction NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *accountIdentifier;
+@property(nonatomic, assign, readonly) PRAccountAuthenticationAction action;
+@property(nonatomic, assign, readonly) PRAccountAuthenticationPhase phase;
+@property(nonatomic, assign, readonly) PRAccountAuthenticationOutcome outcome;
+@property(nonatomic, copy, readonly) NSString *providerLabel;
+@property(nonatomic, copy, readonly, nullable) NSString *verificationURL;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) NSInteger expiresInSeconds;
+@property(nonatomic, assign, readonly) BOOL canCancel;
+@property(nonatomic, assign, readonly) BOOL retryable;
+@property(nonatomic, assign, readonly) BOOL requiresUserAction;
+@property(nonatomic, assign, readonly, getter=isTerminal) BOOL terminal;
+
+@end
+
+/// Immutable confirmed authentication outcome carrying only non-secret account
+/// metadata when successful.
+@interface PRAccountAuthenticationResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithAccount:(nullable PRAccountSnapshot *)account
+                                 outcome:(PRAccountAuthenticationOutcome)outcome
+                          localizationKey:(NSString *)localizationKey
+                            diagnosticText:(nullable NSString *)diagnosticText
+                                retryable:(BOOL)retryable NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRAccountSnapshot *account;
+@property(nonatomic, assign, readonly) PRAccountAuthenticationOutcome outcome;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL retryable;
+
+@end
+
 /// Immutable progress state for one task subtask.
 @interface PRTaskSubtaskStatus : NSObject
 

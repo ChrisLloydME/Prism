@@ -495,6 +495,7 @@ struct PrismSettingsView: View {
     @ObservedObject var model: PrismGlobalSettingsModel
     @ObservedObject var javaModel: PrismJavaDiscoveryModel
     @ObservedObject var accountModel: PrismAccountModel
+    @ObservedObject var authenticationModel: PrismAccountAuthenticationModel
     @State private var isDirectoryImporterPresented = false
     @State private var selectedTab: SettingsTab = .appearance
 
@@ -545,7 +546,7 @@ struct PrismSettingsView: View {
                 PrismJavaSettingsView(model: javaModel)
                     .tabItem { Label("Java", systemImage: "cup.and.saucer") }
                     .tag(SettingsTab.java)
-                PrismAccountSettingsView(model: accountModel)
+                PrismAccountSettingsView(model: accountModel, authenticationModel: authenticationModel)
                     .tabItem { Label("Accounts", systemImage: "person.crop.circle") }
                     .tag(SettingsTab.accounts)
             }

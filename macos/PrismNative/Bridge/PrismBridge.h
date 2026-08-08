@@ -83,6 +83,9 @@ typedef void (^PRAccountSnapshotCompletionHandler)(PRAccountSnapshotResult * _Nu
                                                     PRBridgeError * _Nullable error);
 typedef void (^PRAccountSelectionCompletionHandler)(PRAccountSelectionResult * _Nullable result,
                                                      PRBridgeError * _Nullable error);
+typedef void (^PRAccountAuthenticationProgressHandler)(PRAccountAuthenticationProgress *progress);
+typedef void (^PRAccountAuthenticationCompletionHandler)(PRAccountAuthenticationResult * _Nullable result,
+                                                          PRBridgeError * _Nullable error);
 
 /// Owns one bridge observation registration and cancels it when released.
 @interface PRBridgeObservationToken : NSObject
@@ -251,6 +254,14 @@ typedef void (^PRAccountSelectionCompletionHandler)(PRAccountSelectionResult * _
 /// `identifier` is nil. The adapter owns all account state changes.
 - (nullable PRBridgeObservationToken *)selectActiveAccountWithIdentifier:(nullable NSString *)identifier
                                                                   completion:(PRAccountSelectionCompletionHandler)completion;
+
+/// Runs a fixture-controlled login or refresh state machine. Progress may
+/// report a safe device-flow verification URL, but never user codes, tokens,
+/// credentials, profiles, or provider-owned authentication state.
+- (nullable PRBridgeObservationToken *)authenticateAccountWithIdentifier:(NSString *)identifier
+                                                                    action:(PRAccountAuthenticationAction)action
+                                                                  progress:(nullable PRAccountAuthenticationProgressHandler)progress
+                                                                completion:(PRAccountAuthenticationCompletionHandler)completion;
 
 @end
 

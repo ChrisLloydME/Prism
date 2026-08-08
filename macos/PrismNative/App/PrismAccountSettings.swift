@@ -489,6 +489,7 @@ final class PrismAccountModel: ObservableObject {
 
 struct PrismAccountSettingsView: View {
     @ObservedObject var model: PrismAccountModel
+    @ObservedObject var authenticationModel: PrismAccountAuthenticationModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -633,7 +634,107 @@ struct PrismAccountSettingsView: View {
                     .controlSize(.small)
                     .accessibilityIdentifier("prism.settings.accounts.selection-progress")
             }
+
+            authenticationView
         }
+    }
+
+    private var authenticationAccount: PrismAccount? {
+        model.activeAccount ?? model.accounts.first(where: { $0.type == .microsoft })
+    }
+
+    private var authenticationAction: PrismAccountAuthenticationAction {
+        authenticationAccount?.state == .online ? .refresh : .login
+    }
+
+    private var authenticationView: some View {
+        GroupBox("Authentication") {
+            VStack(alignment: .leading, spacing: 8) {
+                if let account = authenticationAccount {
+                    LabeledContent("Account") {
+                        Text(account.displayName)
+                            .lineLimit(1)
+                    }
+                    .accessibilityIdentifier("prism.settings.accounts.authentication-account")
+                } else {
+                    Text("Select a Microsoft account to continue.")
+                        .foregroundStyle(.secondary)
+                }
+
+                switch authenticationModel.state {
+                case .idle:
+                    authenticationActionButton
+                case .starting:
+                    ProgressView("Starting sign-in…")
+                        .accessibilityIdentifier("prism.settings.accounts.authentication-progress")
+                case .running(let progress):
+                    ProgressView(progress.phase.title)
+                        .accessibilityValue(Text(progress.localizationKey))
+                        .accessibilityIdentifier("prism.settings.accounts.authentication-progress")
+                    Text(progress.providerLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if progress.isAwaitingUser, let verificationURL = progress.verificationURL {
+                        LabeledContent("Verification") {
+                            Text(verificationURL)
+                                .textSelection(.enabled)
+                                .foregroundStyle(.secondary)
+                        }
+                        .accessibilityIdentifier("prism.settings.accounts.authentication-verification")
+                        if progress.expiresInSeconds > 0 {
+                            Text("Verification instructions expire in \(progress.expiresInSeconds) seconds.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Button("Cancel") {
+                        _ = authenticationModel.cancel()
+                    }
+                    .disabled(!authenticationModel.isCancellable)
+                    .accessibilityIdentifier("prism.settings.accounts.authentication-cancel")
+                case .succeeded(let account):
+                    Label("Sign-in complete", systemImage: "checkmark.circle")
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("prism.settings.accounts.authentication-succeeded")
+                    if let account {
+                        Text(account.displayName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    authenticationActionButton
+                case .failed(let failure):
+                    Text(failure.diagnosticText ?? failure.localizationKey)
+                        .foregroundStyle(.secondary)
+                        .accessibilityValue(Text(failure.localizationKey))
+                        .accessibilityIdentifier("prism.settings.accounts.authentication-error")
+                    HStack {
+                        Button("Retry") {
+                            _ = authenticationModel.retry()
+                        }
+                        .disabled(!authenticationModel.canRetry)
+                        .accessibilityIdentifier("prism.settings.accounts.authentication-retry")
+                        authenticationActionButton
+                    }
+                case .cancelled:
+                    Text("The sign-in request was cancelled.")
+                        .foregroundStyle(.secondary)
+                    authenticationActionButton
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityIdentifier("prism.settings.accounts.authentication")
+    }
+
+    private var authenticationActionButton: some View {
+        Button(authenticationAction.title) {
+            guard let account = authenticationAccount else {
+                return
+            }
+            _ = authenticationModel.start(accountIdentifier: account.id, action: authenticationAction)
+        }
+        .disabled(authenticationAccount == nil || authenticationModel.isRunning)
+        .accessibilityIdentifier("prism.settings.accounts.authenticate")
     }
 
     private func unavailableView(

@@ -815,6 +815,146 @@ int main()
         && emptyFacade.selectActiveAccount(std::string("fixture-account")).outcome
             == FrontendAccountSelectionOutcome::Rejected;
 
+    std::size_t authenticationCalls = 0;
+    bool authenticationRootMatches = true;
+    std::vector<FrontendAccountAuthenticationProgress> authenticationProgressEvents;
+    auto authenticationDependencies = makeFixtureDependencies();
+    authenticationDependencies.authenticateAccount = [&](const std::filesystem::path& root,
+                                                          const FrontendAccountAuthenticationRequest& request,
+                                                          const FrontendRuntimeDependencies::AccountAuthenticationProgressHandler& progress) {
+        authenticationRootMatches = root == fixtureRoot.lexically_normal();
+        ++authenticationCalls;
+        auto emit = [&](FrontendAccountAuthenticationPhase phase,
+                        FrontendAccountAuthenticationOutcome outcome,
+                        const char* key,
+                        bool canCancel,
+                        bool retryable,
+                        bool requiresUserAction,
+                        const char* verificationURL = "") {
+            FrontendAccountAuthenticationProgress event;
+            event.accountIdentifier = request.accountIdentifier;
+            event.action = request.action;
+            event.phase = phase;
+            event.outcome = outcome;
+            event.providerLabel = "Fixture Provider";
+            event.verificationURL = verificationURL;
+            event.localizationKey = key;
+            event.diagnosticText = "";
+            event.expiresInSeconds = verificationURL[0] == '\0' ? 0 : 900;
+            event.canCancel = canCancel;
+            event.retryable = retryable;
+            event.requiresUserAction = requiresUserAction;
+            progress(event);
+        };
+
+        if (request.action == FrontendAccountAuthenticationAction::Refresh) {
+            emit(FrontendAccountAuthenticationPhase::Preparing,
+                 FrontendAccountAuthenticationOutcome::InProgress,
+                 "accounts.authentication.refreshing",
+                 true,
+                 false,
+                 false);
+            emit(FrontendAccountAuthenticationPhase::Failed,
+                 FrontendAccountAuthenticationOutcome::Failed,
+                 "accounts.authentication.refreshFailed",
+                 false,
+                 true,
+                 false);
+            return FrontendAccountAuthenticationResult{
+                FrontendAccountAuthenticationOutcome::Failed,
+                std::nullopt,
+                "accounts.authentication.refreshFailed",
+                "Fixture refresh can be retried.",
+                true,
+            };
+        }
+
+        emit(FrontendAccountAuthenticationPhase::Preparing,
+             FrontendAccountAuthenticationOutcome::InProgress,
+             "accounts.authentication.preparing",
+             true,
+             false,
+             false);
+        emit(FrontendAccountAuthenticationPhase::AwaitingUser,
+             FrontendAccountAuthenticationOutcome::InProgress,
+             "accounts.authentication.awaitingUser",
+             true,
+             false,
+             true,
+             "https://login.example.invalid/device");
+        emit(FrontendAccountAuthenticationPhase::Authenticating,
+             FrontendAccountAuthenticationOutcome::InProgress,
+             "accounts.authentication.authenticating",
+             true,
+             false,
+             false);
+        emit(FrontendAccountAuthenticationPhase::Succeeded,
+             FrontendAccountAuthenticationOutcome::Succeeded,
+             "accounts.authentication.succeeded",
+             false,
+             false,
+             false);
+        return FrontendAccountAuthenticationResult{
+            FrontendAccountAuthenticationOutcome::Succeeded,
+            fixtureAccount(request.accountIdentifier, "Fixture Microsoft Account"),
+            "accounts.authentication.succeeded",
+            "",
+            false,
+        };
+    };
+    FrontendFacade authenticationFacade(fixtureRoot / "nested" / "..", std::move(authenticationDependencies));
+    FrontendAccountAuthenticationRequest loginRequest;
+    loginRequest.accountIdentifier = "account.fixture.microsoft";
+    loginRequest.action = FrontendAccountAuthenticationAction::Login;
+    const auto loginAuthenticationResult = authenticationFacade.authenticateAccount(
+        loginRequest,
+        [&](const FrontendAccountAuthenticationProgress& event) { authenticationProgressEvents.push_back(event); });
+    FrontendAccountAuthenticationRequest refreshRequest = loginRequest;
+    refreshRequest.action = FrontendAccountAuthenticationAction::Refresh;
+    const auto refreshAuthenticationResult = authenticationFacade.authenticateAccount(refreshRequest);
+    const bool authenticationContract = authenticationProgressEvents.size() == 4
+        && authenticationProgressEvents[1].phase == FrontendAccountAuthenticationPhase::AwaitingUser
+        && authenticationProgressEvents[1].verificationURL == "https://login.example.invalid/device"
+        && authenticationProgressEvents[1].requiresUserAction
+        && loginAuthenticationResult.outcome == FrontendAccountAuthenticationOutcome::Succeeded
+        && loginAuthenticationResult.account.has_value()
+        && loginAuthenticationResult.account->id == "account.fixture.microsoft"
+        && refreshAuthenticationResult.outcome == FrontendAccountAuthenticationOutcome::Failed
+        && refreshAuthenticationResult.retryable && authenticationCalls == 2 && authenticationRootMatches;
+    auto invalidAuthenticationProgressDependencies = makeFixtureDependencies();
+    invalidAuthenticationProgressDependencies.authenticateAccount = [](
+        const std::filesystem::path&,
+        const FrontendAccountAuthenticationRequest& request,
+        const FrontendRuntimeDependencies::AccountAuthenticationProgressHandler& progress) {
+        FrontendAccountAuthenticationProgress event;
+        event.accountIdentifier = request.accountIdentifier;
+        event.action = request.action;
+        event.phase = FrontendAccountAuthenticationPhase::AwaitingUser;
+        event.outcome = FrontendAccountAuthenticationOutcome::InProgress;
+        event.providerLabel = "Fixture Provider";
+        event.verificationURL = "https://login.example.invalid/device";
+        event.localizationKey = "accounts.authentication.awaitingUser";
+        event.expiresInSeconds = 900;
+        event.canCancel = true;
+        event.requiresUserAction = true;
+        progress(event);
+        return FrontendAccountAuthenticationResult{
+            FrontendAccountAuthenticationOutcome::Succeeded,
+            std::nullopt,
+            "accounts.authentication.succeeded",
+            "",
+            false,
+        };
+    };
+    FrontendFacade invalidAuthenticationProgressFacade(fixtureRoot, std::move(invalidAuthenticationProgressDependencies));
+    const bool invalidAuthenticationRejected = throwsInvalidArgument([&invalidAuthenticationProgressFacade] {
+        FrontendAccountAuthenticationRequest request;
+        request.accountIdentifier = "account.fixture.microsoft";
+        (void) invalidAuthenticationProgressFacade.authenticateAccount(request);
+    });
+    const bool missingAuthenticationPortIsSafe = emptyFacade.authenticateAccount(loginRequest).outcome
+        == FrontendAccountAuthenticationOutcome::Rejected;
+
     std::vector<std::string> launchCalls;
     std::vector<std::string> stopCalls;
     bool commandRootMatches = true;
@@ -1222,6 +1362,10 @@ int main()
         && throwsLogicError([&accountFacade] {
                (void) accountFacade.selectActiveAccount(std::string("fixture-account"));
            });
+    const bool rejectedPostShutdownAuthenticationWork = authenticationFacade.shutdown()
+        && throwsLogicError([&authenticationFacade, &loginRequest] {
+               (void) authenticationFacade.authenticateAccount(loginRequest);
+           });
     const bool rejectedPostShutdownComponentsWork = componentFacade.shutdown()
         && throwsLogicError([&componentFacade] {
                (void) componentFacade.instanceComponents("fixture-one");
@@ -1255,6 +1399,8 @@ int main()
                && invalidJavaDiscoveryRejected && invalidJavaSelectionRejected && missingJavaPortsAreSafe
                && rejectedPostShutdownJavaWork && accountContract && invalidAccountSnapshotsRejected
                && invalidAccountSelectionRejected && missingAccountPortsAreSafe && rejectedPostShutdownAccountWork
+               && authenticationContract && invalidAuthenticationRejected && missingAuthenticationPortIsSafe
+               && rejectedPostShutdownAuthenticationWork
                && rejectedEmptyRoot && rejectedRelativeRoot && rejectedIncompleteDependencies
                && lifecycleContract && callbacksRanExactlyOnce && destructorShutdownContract && !error
         ? 0

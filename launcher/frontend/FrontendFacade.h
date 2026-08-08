@@ -457,6 +457,56 @@ struct FrontendAccountSelectionResult final {
     std::string diagnosticText;
 };
 
+enum class FrontendAccountAuthenticationAction : std::uint8_t { Login, Refresh };
+enum class FrontendAccountAuthenticationPhase : std::uint8_t {
+    Preparing,
+    AwaitingUser,
+    Authenticating,
+    Succeeded,
+    Failed,
+    Cancelled,
+};
+enum class FrontendAccountAuthenticationOutcome : std::uint8_t { InProgress, Succeeded, Failed, Cancelled, Rejected };
+
+/// Explicit, non-secret authentication request. The adapter owns all
+/// provider credentials, authorization codes, tokens, profiles, and network
+/// state; this identifier is only a sanitized fixture/runtime key.
+struct FrontendAccountAuthenticationRequest final {
+    std::string accountIdentifier;
+    FrontendAccountAuthenticationAction action = FrontendAccountAuthenticationAction::Login;
+};
+
+/// One ordered authentication progress event. Device-code presentation is
+/// intentionally limited to a safe verification URL and instruction state;
+/// user codes, authorization codes, bearer tokens, and refresh tokens never
+/// cross this contract.
+struct FrontendAccountAuthenticationProgress final {
+    std::string accountIdentifier;
+    FrontendAccountAuthenticationAction action = FrontendAccountAuthenticationAction::Login;
+    FrontendAccountAuthenticationPhase phase = FrontendAccountAuthenticationPhase::Preparing;
+    FrontendAccountAuthenticationOutcome outcome = FrontendAccountAuthenticationOutcome::InProgress;
+    std::string providerLabel;
+    std::string verificationURL;
+    std::string localizationKey;
+    std::string diagnosticText;
+    std::int32_t expiresInSeconds = 0;
+    bool canCancel = true;
+    bool retryable = false;
+    bool requiresUserAction = false;
+
+    bool isTerminal() const noexcept { return outcome != FrontendAccountAuthenticationOutcome::InProgress; }
+};
+
+/// Confirmed authentication result. A successful result carries only the
+/// refreshed non-secret account snapshot, never provider-owned auth material.
+struct FrontendAccountAuthenticationResult final {
+    FrontendAccountAuthenticationOutcome outcome = FrontendAccountAuthenticationOutcome::Rejected;
+    std::optional<FrontendAccountSnapshot> account;
+    std::string localizationKey;
+    std::string diagnosticText;
+    bool retryable = false;
+};
+
 enum class FrontendTaskState : std::uint8_t { Queued, Running, Cancelling, Succeeded, Failed, Cancelled };
 
 enum class FrontendTaskProgressKind : std::uint8_t { None, Indeterminate, Determinate };
@@ -576,6 +626,9 @@ struct FrontendRuntimeDependencies final {
     using AccountSnapshotLoader = std::function<FrontendAccountSnapshotResult(const std::filesystem::path&)>;
     using AccountSelectionUpdater = std::function<FrontendAccountSelectionResult(
         const std::filesystem::path&, const std::optional<std::string>&)>;
+    using AccountAuthenticationProgressHandler = std::function<void(const FrontendAccountAuthenticationProgress&)>;
+    using AccountAuthenticationRunner = std::function<FrontendAccountAuthenticationResult(
+        const std::filesystem::path&, const FrontendAccountAuthenticationRequest&, const AccountAuthenticationProgressHandler&)>;
     using TaskSnapshotLoader = std::function<std::optional<FrontendTaskSnapshot>(const std::filesystem::path&, const std::string&)>;
     using TaskCancellation = std::function<FrontendTaskCancellationResult(const std::filesystem::path&, const std::string&)>;
     using LogEntryHandler = std::function<void(FrontendLogEntry)>;
@@ -608,6 +661,7 @@ struct FrontendRuntimeDependencies final {
     JavaSelectionUpdater selectJavaInstallation;
     AccountSnapshotLoader loadAccountSnapshots;
     AccountSelectionUpdater selectActiveAccount;
+    AccountAuthenticationRunner authenticateAccount;
     TaskSnapshotLoader loadTaskSnapshot;
     TaskCancellation cancelTask;
     TaskLogStreamer streamTaskLogs;
@@ -671,6 +725,9 @@ class FrontendFacade final {
     FrontendJavaSelectionResult selectJavaInstallation(const std::string& installationIdentifier) const;
     FrontendAccountSnapshotResult accountSnapshots() const;
     FrontendAccountSelectionResult selectActiveAccount(const std::optional<std::string>& accountIdentifier) const;
+    FrontendAccountAuthenticationResult authenticateAccount(
+        const FrontendAccountAuthenticationRequest& request,
+        const FrontendRuntimeDependencies::AccountAuthenticationProgressHandler& progressHandler = {}) const;
     std::optional<FrontendTaskSnapshot> taskSnapshot(const std::string& taskIdentifier) const;
     FrontendTaskCancellationResult cancelTask(const std::string& taskIdentifier) const;
     std::optional<FrontendLogSnapshot> taskLogSnapshot(const std::string& taskIdentifier) const;

@@ -237,6 +237,43 @@ bool isKnownAccountSelectionOutcome(PRAccountSelectionOutcome outcome)
     return false;
 }
 
+bool isKnownAccountAuthenticationAction(PRAccountAuthenticationAction action)
+{
+    switch (action) {
+        case PRAccountAuthenticationActionLogin:
+        case PRAccountAuthenticationActionRefresh:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownAccountAuthenticationPhase(PRAccountAuthenticationPhase phase)
+{
+    switch (phase) {
+        case PRAccountAuthenticationPhasePreparing:
+        case PRAccountAuthenticationPhaseAwaitingUser:
+        case PRAccountAuthenticationPhaseAuthenticating:
+        case PRAccountAuthenticationPhaseSucceeded:
+        case PRAccountAuthenticationPhaseFailed:
+        case PRAccountAuthenticationPhaseCancelled:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownAccountAuthenticationOutcome(PRAccountAuthenticationOutcome outcome)
+{
+    switch (outcome) {
+        case PRAccountAuthenticationOutcomeInProgress:
+        case PRAccountAuthenticationOutcomeSucceeded:
+        case PRAccountAuthenticationOutcomeFailed:
+        case PRAccountAuthenticationOutcomeCancelled:
+        case PRAccountAuthenticationOutcomeRejected:
+            return true;
+    }
+    return false;
+}
+
 std::string stableIdentifierFromFoundation(NSString *identifier)
 {
     if (![identifier isKindOfClass:NSString.class]) {
@@ -1493,6 +1530,94 @@ PRAccountSelectionResult *accountSelectionResultFromFacadeResult(const FrontendA
     return converted;
 }
 
+PRAccountAuthenticationAction accountAuthenticationActionFromFacadeResult(FrontendAccountAuthenticationAction action)
+{
+    switch (action) {
+        case FrontendAccountAuthenticationAction::Login:
+            return PRAccountAuthenticationActionLogin;
+        case FrontendAccountAuthenticationAction::Refresh:
+            return PRAccountAuthenticationActionRefresh;
+    }
+    throw std::invalid_argument("Facade returned an unknown account authentication action");
+}
+
+PRAccountAuthenticationPhase accountAuthenticationPhaseFromFacadeResult(FrontendAccountAuthenticationPhase phase)
+{
+    switch (phase) {
+        case FrontendAccountAuthenticationPhase::Preparing:
+            return PRAccountAuthenticationPhasePreparing;
+        case FrontendAccountAuthenticationPhase::AwaitingUser:
+            return PRAccountAuthenticationPhaseAwaitingUser;
+        case FrontendAccountAuthenticationPhase::Authenticating:
+            return PRAccountAuthenticationPhaseAuthenticating;
+        case FrontendAccountAuthenticationPhase::Succeeded:
+            return PRAccountAuthenticationPhaseSucceeded;
+        case FrontendAccountAuthenticationPhase::Failed:
+            return PRAccountAuthenticationPhaseFailed;
+        case FrontendAccountAuthenticationPhase::Cancelled:
+            return PRAccountAuthenticationPhaseCancelled;
+    }
+    throw std::invalid_argument("Facade returned an unknown account authentication phase");
+}
+
+PRAccountAuthenticationOutcome accountAuthenticationOutcomeFromFacadeResult(
+    FrontendAccountAuthenticationOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendAccountAuthenticationOutcome::InProgress:
+            return PRAccountAuthenticationOutcomeInProgress;
+        case FrontendAccountAuthenticationOutcome::Succeeded:
+            return PRAccountAuthenticationOutcomeSucceeded;
+        case FrontendAccountAuthenticationOutcome::Failed:
+            return PRAccountAuthenticationOutcomeFailed;
+        case FrontendAccountAuthenticationOutcome::Cancelled:
+            return PRAccountAuthenticationOutcomeCancelled;
+        case FrontendAccountAuthenticationOutcome::Rejected:
+            return PRAccountAuthenticationOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown account authentication outcome");
+}
+
+PRAccountAuthenticationProgress *accountAuthenticationProgressFromFacadeProgress(
+    const FrontendAccountAuthenticationProgress& progress)
+{
+    PRAccountAuthenticationProgress *converted = [[PRAccountAuthenticationProgress alloc]
+        initWithAccountIdentifier:foundationStringFromUTF8(progress.accountIdentifier)
+                            action:accountAuthenticationActionFromFacadeResult(progress.action)
+                             phase:accountAuthenticationPhaseFromFacadeResult(progress.phase)
+                           outcome:accountAuthenticationOutcomeFromFacadeResult(progress.outcome)
+                     providerLabel:foundationStringFromUTF8(progress.providerLabel)
+                   verificationURL:foundationStringFromUTF8(progress.verificationURL)
+                   localizationKey:foundationStringFromUTF8AllowEmpty(progress.localizationKey)
+                     diagnosticText:foundationStringFromUTF8(progress.diagnosticText)
+                  expiresInSeconds:progress.expiresInSeconds
+                        canCancel:progress.canCancel
+                         retryable:progress.retryable
+                requiresUserAction:progress.requiresUserAction];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned invalid account authentication progress");
+    }
+    return converted;
+}
+
+PRAccountAuthenticationResult *accountAuthenticationResultFromFacadeResult(
+    const FrontendAccountAuthenticationResult& result)
+{
+    PRAccountSnapshot *account = result.account.has_value()
+        ? accountSnapshotFromFacadeSnapshot(*result.account)
+        : nil;
+    PRAccountAuthenticationResult *converted = [[PRAccountAuthenticationResult alloc]
+        initWithAccount:account
+                 outcome:accountAuthenticationOutcomeFromFacadeResult(result.outcome)
+          localizationKey:foundationStringFromUTF8AllowEmpty(result.localizationKey)
+            diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+                retryable:result.retryable];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned invalid account authentication result");
+    }
+    return converted;
+}
+
 PRInstanceNotesUpdateOutcome notesUpdateOutcomeFromFacadeResult(FrontendInstanceNotesUpdateOutcome outcome)
 {
     switch (outcome) {
@@ -2526,6 +2651,36 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@interface PRBridgeAccountAuthenticationDelivery : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithProgress:(nullable PRAccountAuthenticationProgress *)progress
+                            result:(nullable PRAccountAuthenticationResult *)result
+                             error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRAccountAuthenticationProgress *progress;
+@property(nonatomic, strong, readonly, nullable) PRAccountAuthenticationResult *result;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeAccountAuthenticationDelivery
+
+- (instancetype)initWithProgress:(PRAccountAuthenticationProgress *)progress
+                            result:(PRAccountAuthenticationResult *)result
+                             error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _progress = progress;
+        _result = result;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
 @interface PRBridgeTaskStatusResult : NSObject
 
 - (instancetype)init NS_UNAVAILABLE;
@@ -2680,6 +2835,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *javaSelectionRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *accountSnapshotRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *accountSelectionRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *accountAuthenticationRequestStates;
 @property(nonatomic, strong) NSLock *observationLock;
 
 - (nullable instancetype)initWithDataRootURL:(NSURL *)dataRootURL
@@ -2713,6 +2869,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 - (void)removeJavaSelectionRequest:(PRBridgeObservationState *)request;
 - (void)removeAccountSnapshotRequest:(PRBridgeObservationState *)request;
 - (void)removeAccountSelectionRequest:(PRBridgeObservationState *)request;
+- (void)removeAccountAuthenticationRequest:(PRBridgeObservationState *)request;
 - (nullable PRBridgeObservationToken *)loadTaskStatusWithIdentifier:(NSString *)identifier
                                                             completion:(PRTaskStatusCompletionHandler)completion;
 - (nullable PRBridgeObservationToken *)performTaskCancellationWithIdentifier:(NSString *)identifier
@@ -3066,6 +3223,34 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, assign, readwrite) PRAccountSelectionOutcome outcome;
 @property(nonatomic, copy, readwrite) NSString *localizationKey;
 @property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+
+@end
+
+@interface PRAccountAuthenticationProgress ()
+
+@property(nonatomic, copy, readwrite) NSString *accountIdentifier;
+@property(nonatomic, assign, readwrite) PRAccountAuthenticationAction action;
+@property(nonatomic, assign, readwrite) PRAccountAuthenticationPhase phase;
+@property(nonatomic, assign, readwrite) PRAccountAuthenticationOutcome outcome;
+@property(nonatomic, copy, readwrite) NSString *providerLabel;
+@property(nonatomic, copy, readwrite, nullable) NSString *verificationURL;
+@property(nonatomic, copy, readwrite) NSString *localizationKey;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readwrite) NSInteger expiresInSeconds;
+@property(nonatomic, assign, readwrite) BOOL canCancel;
+@property(nonatomic, assign, readwrite) BOOL retryable;
+@property(nonatomic, assign, readwrite) BOOL requiresUserAction;
+@property(nonatomic, assign, readwrite, getter=isTerminal) BOOL terminal;
+
+@end
+
+@interface PRAccountAuthenticationResult ()
+
+@property(nonatomic, strong, readwrite, nullable) PRAccountSnapshot *account;
+@property(nonatomic, assign, readwrite) PRAccountAuthenticationOutcome outcome;
+@property(nonatomic, copy, readwrite) NSString *localizationKey;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readwrite) BOOL retryable;
 
 @end
 
@@ -4130,6 +4315,130 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@implementation PRAccountAuthenticationProgress
+
+- (instancetype)initWithAccountIdentifier:(NSString *)accountIdentifier
+                                    action:(PRAccountAuthenticationAction)action
+                                     phase:(PRAccountAuthenticationPhase)phase
+                                   outcome:(PRAccountAuthenticationOutcome)outcome
+                             providerLabel:(NSString *)providerLabel
+                           verificationURL:(NSString *)verificationURL
+                           localizationKey:(NSString *)localizationKey
+                             diagnosticText:(NSString *)diagnosticText
+                          expiresInSeconds:(NSInteger)expiresInSeconds
+                                canCancel:(BOOL)canCancel
+                                 retryable:(BOOL)retryable
+                        requiresUserAction:(BOOL)requiresUserAction
+{
+    if (!isNonEmptyString(accountIdentifier) || !isKnownAccountAuthenticationAction(action)
+        || !isKnownAccountAuthenticationPhase(phase) || !isKnownAccountAuthenticationOutcome(outcome)
+        || !isNonEmptyString(providerLabel) || !isNonEmptyString(localizationKey) || expiresInSeconds < 0) {
+        return nil;
+    }
+    if (verificationURL && ![verificationURL isKindOfClass:NSString.class]) {
+        return nil;
+    }
+    if (diagnosticText && ![diagnosticText isKindOfClass:NSString.class]) {
+        return nil;
+    }
+
+    const BOOL awaitingUser = phase == PRAccountAuthenticationPhaseAwaitingUser;
+    if (awaitingUser) {
+        if (outcome != PRAccountAuthenticationOutcomeInProgress || !requiresUserAction
+            || !isNonEmptyString(verificationURL) || !canCancel) {
+            return nil;
+        }
+    } else if (requiresUserAction || verificationURL.length > 0) {
+        return nil;
+    }
+
+    switch (phase) {
+        case PRAccountAuthenticationPhasePreparing:
+        case PRAccountAuthenticationPhaseAuthenticating:
+            if (outcome != PRAccountAuthenticationOutcomeInProgress) {
+                return nil;
+            }
+            break;
+        case PRAccountAuthenticationPhaseSucceeded:
+            if (outcome != PRAccountAuthenticationOutcomeSucceeded || canCancel || retryable) {
+                return nil;
+            }
+            break;
+        case PRAccountAuthenticationPhaseFailed:
+            if (outcome != PRAccountAuthenticationOutcomeFailed || canCancel) {
+                return nil;
+            }
+            break;
+        case PRAccountAuthenticationPhaseCancelled:
+            if (outcome != PRAccountAuthenticationOutcomeCancelled || canCancel || retryable) {
+                return nil;
+            }
+            break;
+        case PRAccountAuthenticationPhaseAwaitingUser:
+            break;
+    }
+
+    self = [super init];
+    if (self) {
+        self.accountIdentifier = [accountIdentifier copy];
+        self.action = action;
+        self.phase = phase;
+        self.outcome = outcome;
+        self.providerLabel = [providerLabel copy];
+        self.verificationURL = [verificationURL copy];
+        self.localizationKey = [localizationKey copy];
+        self.diagnosticText = [diagnosticText copy];
+        self.expiresInSeconds = expiresInSeconds;
+        self.canCancel = canCancel;
+        self.retryable = retryable;
+        self.requiresUserAction = requiresUserAction;
+        self.terminal = outcome != PRAccountAuthenticationOutcomeInProgress;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRAccountAuthenticationResult
+
+- (instancetype)initWithAccount:(PRAccountSnapshot *)account
+                          outcome:(PRAccountAuthenticationOutcome)outcome
+                   localizationKey:(NSString *)localizationKey
+                     diagnosticText:(NSString *)diagnosticText
+                         retryable:(BOOL)retryable
+{
+    if (!isKnownAccountAuthenticationOutcome(outcome) || outcome == PRAccountAuthenticationOutcomeInProgress
+        || !isNonEmptyString(localizationKey)) {
+        return nil;
+    }
+    if (account && ![account isKindOfClass:PRAccountSnapshot.class]) {
+        return nil;
+    }
+    if (account && account.identifier.length == 0) {
+        return nil;
+    }
+    if (outcome == PRAccountAuthenticationOutcomeSucceeded
+        && (!account || account.type != PRAccountTypeMicrosoft || account.state != PRAccountStateOnline
+            || account.isBusy || !account.canBeSelected)) {
+        return nil;
+    }
+    if (diagnosticText && ![diagnosticText isKindOfClass:NSString.class]) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.account = account;
+        self.outcome = outcome;
+        self.localizationKey = [localizationKey copy];
+        self.diagnosticText = [diagnosticText copy];
+        self.retryable = retryable;
+    }
+    return self;
+}
+
+@end
+
 @implementation PRTaskSubtaskStatus
 
 - (instancetype)initWithIdentifier:(NSString *)identifier
@@ -4480,6 +4789,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.javaSelectionRequestStates = [NSMutableArray array];
         self.accountSnapshotRequestStates = [NSMutableArray array];
         self.accountSelectionRequestStates = [NSMutableArray array];
+        self.accountAuthenticationRequestStates = [NSMutableArray array];
         self.observationLock = [[NSLock alloc] init];
         _lifecycle = std::make_unique<NativeFacadeLifecycle>();
         _facade = std::move(facade);
@@ -6770,6 +7080,122 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     return [[PRBridgeObservationToken alloc] initWithState:request];
 }
 
+- (PRBridgeObservationToken *)authenticateAccountWithIdentifier:(NSString *)identifier
+                                                           action:(PRAccountAuthenticationAction)action
+                                                         progress:(PRAccountAuthenticationProgressHandler)progress
+                                                       completion:(PRAccountAuthenticationCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+    if (!isKnownAccountAuthenticationAction(action)) {
+        return nil;
+    }
+
+    NSString *identifierCopy = [identifier copy];
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeAccountAuthenticationDelivery *delivery = (PRBridgeAccountAuthenticationDelivery *)value;
+        if (delivery.progress && progress) {
+            progress(delivery.progress);
+        }
+        if (delivery.result || delivery.error) {
+            [weakRequest cancel];
+            completion(delivery.result, delivery.error);
+        }
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeAccountAuthenticationRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.accountAuthenticationRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRAccountAuthenticationResult *result = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    FrontendAccountAuthenticationRequest authenticationRequest;
+                    authenticationRequest.accountIdentifier = stableIdentifierFromFoundation(identifierCopy);
+                    switch (action) {
+                        case PRAccountAuthenticationActionLogin:
+                            authenticationRequest.action = FrontendAccountAuthenticationAction::Login;
+                            break;
+                        case PRAccountAuthenticationActionRefresh:
+                            authenticationRequest.action = FrontendAccountAuthenticationAction::Refresh;
+                            break;
+                    }
+
+                    const FrontendAccountAuthenticationResult authenticationResult =
+                        bridge->_facade->authenticateAccount(
+                            authenticationRequest,
+                            [&](const FrontendAccountAuthenticationProgress& authenticationProgress) {
+                                if (state.isCancelled) {
+                                    return;
+                                }
+                                PRAccountAuthenticationProgress *convertedProgress =
+                                    accountAuthenticationProgressFromFacadeProgress(authenticationProgress);
+                                [state deliverOnMainActor:[[PRBridgeAccountAuthenticationDelivery alloc]
+                                    initWithProgress:convertedProgress
+                                               result:nil
+                                                error:nil]];
+                            });
+                    result = accountAuthenticationResultFromFacadeResult(authenticationResult);
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid account authentication"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Account authentication cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Account authentication unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown account authentication failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeAccountAuthenticationDelivery alloc]
+                initWithProgress:nil
+                           result:result
+                            error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
 - (void)removeInstanceObservation:(PRBridgeObservationState *)observation
 {
     [self.observationLock lock];
@@ -7030,6 +7456,16 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.observationLock unlock];
 }
 
+- (void)removeAccountAuthenticationRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.accountAuthenticationRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.accountAuthenticationRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
 - (void)cancelAllObservations
 {
     [self.observationLock lock];
@@ -7060,6 +7496,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [observations addObjectsFromArray:self.javaSelectionRequestStates];
     [observations addObjectsFromArray:self.accountSnapshotRequestStates];
     [observations addObjectsFromArray:self.accountSelectionRequestStates];
+    [observations addObjectsFromArray:self.accountAuthenticationRequestStates];
     [self.instanceObservationStates removeAllObjects];
     [self.instanceChangeObservationStates removeAllObjects];
     [self.taskObservationStates removeAllObjects];
@@ -7086,6 +7523,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.javaSelectionRequestStates removeAllObjects];
     [self.accountSnapshotRequestStates removeAllObjects];
     [self.accountSelectionRequestStates removeAllObjects];
+    [self.accountAuthenticationRequestStates removeAllObjects];
     [self.observationLock unlock];
 
     for (PRBridgeObservationState *observation in observations) {

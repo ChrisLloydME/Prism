@@ -1396,6 +1396,182 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     [self waitForExpectations:@[ completion ] timeout:0.2];
 }
 
+- (void)testFacadeAuthenticationProgressAndResultConvertSyntheticProviderOnMainActor
+{
+    auto authenticationRootMatches = std::make_shared<std::atomic<bool>>(true);
+    auto authenticationAction = std::make_shared<std::atomic<int>>(-1);
+    const std::filesystem::path fixtureRoot = std::filesystem::path(self.fixtureRootURL.path.UTF8String).lexically_normal();
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.authenticateAccount = [authenticationRootMatches, authenticationAction, fixtureRoot](
+                                           const std::filesystem::path& root,
+                                           const FrontendAccountAuthenticationRequest& request,
+                                           const FrontendRuntimeDependencies::AccountAuthenticationProgressHandler& progress) {
+        *authenticationRootMatches = root == fixtureRoot;
+        *authenticationAction = static_cast<int>(request.action);
+        auto emit = [&](FrontendAccountAuthenticationPhase phase,
+                        FrontendAccountAuthenticationOutcome outcome,
+                        const char* key,
+                        bool canCancel,
+                        bool retryable,
+                        bool requiresUserAction,
+                        const char* verificationURL = "") {
+            FrontendAccountAuthenticationProgress event;
+            event.accountIdentifier = request.accountIdentifier;
+            event.action = request.action;
+            event.phase = phase;
+            event.outcome = outcome;
+            event.providerLabel = "Fixture Provider";
+            event.verificationURL = verificationURL;
+            event.localizationKey = key;
+            event.expiresInSeconds = verificationURL[0] == '\0' ? 0 : 900;
+            event.canCancel = canCancel;
+            event.retryable = retryable;
+            event.requiresUserAction = requiresUserAction;
+            progress(event);
+        };
+        emit(FrontendAccountAuthenticationPhase::Preparing,
+             FrontendAccountAuthenticationOutcome::InProgress,
+             "accounts.authentication.preparing",
+             true,
+             false,
+             false);
+        emit(FrontendAccountAuthenticationPhase::AwaitingUser,
+             FrontendAccountAuthenticationOutcome::InProgress,
+             "accounts.authentication.awaitingUser",
+             true,
+             false,
+             true,
+             "https://login.example.invalid/device");
+        emit(FrontendAccountAuthenticationPhase::Authenticating,
+             FrontendAccountAuthenticationOutcome::InProgress,
+             "accounts.authentication.authenticating",
+             true,
+             false,
+             false);
+        emit(FrontendAccountAuthenticationPhase::Succeeded,
+             FrontendAccountAuthenticationOutcome::Succeeded,
+             "accounts.authentication.succeeded",
+             false,
+             false,
+             false);
+        return FrontendAccountAuthenticationResult{
+            FrontendAccountAuthenticationOutcome::Succeeded,
+            fixtureAccount(request.accountIdentifier, "Fixture Microsoft Account"),
+            "accounts.authentication.succeeded",
+            "",
+            false,
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    XCTestExpectation *progressExpectation = [self expectationWithDescription:@"Authentication progress delivered"];
+    XCTestExpectation *completionExpectation = [self expectationWithDescription:@"Authentication completed"];
+    __block NSMutableArray<PRAccountAuthenticationProgress *> *receivedProgress = [NSMutableArray array];
+    __block PRAccountAuthenticationResult *receivedResult = nil;
+    __block PRBridgeError *receivedError = nil;
+    __block BOOL progressRanOnMainThread = YES;
+    __block BOOL completionRanOnMainThread = NO;
+    PRBridgeObservationToken *token = [bridge authenticateAccountWithIdentifier:@" account.fixture.microsoft "
+                                                                                action:PRAccountAuthenticationActionLogin
+                                                                              progress:^(PRAccountAuthenticationProgress *progress) {
+        progressRanOnMainThread = progressRanOnMainThread && [NSThread isMainThread];
+        [receivedProgress addObject:progress];
+        if (receivedProgress.count == 4) {
+            [progressExpectation fulfill];
+        }
+    }
+                                                                            completion:^(PRAccountAuthenticationResult *result,
+                                                                                         PRBridgeError *error) {
+        completionRanOnMainThread = [NSThread isMainThread];
+        receivedResult = result;
+        receivedError = error;
+        [completionExpectation fulfill];
+    }];
+    XCTAssertNotNil(token);
+    [self waitForExpectations:@[ progressExpectation, completionExpectation ] timeout:2.0];
+    XCTAssertTrue(progressRanOnMainThread);
+    XCTAssertTrue(completionRanOnMainThread);
+    XCTAssertNil(receivedError);
+    XCTAssertTrue(token.isCancelled);
+    XCTAssertEqual(receivedProgress.count, (NSUInteger)4);
+    XCTAssertEqual(receivedProgress[0].phase, PRAccountAuthenticationPhasePreparing);
+    XCTAssertEqual(receivedProgress[1].phase, PRAccountAuthenticationPhaseAwaitingUser);
+    XCTAssertEqualObjects(receivedProgress[1].verificationURL, @"https://login.example.invalid/device");
+    XCTAssertTrue(receivedProgress[1].requiresUserAction);
+    XCTAssertEqual(receivedProgress[1].expiresInSeconds, (NSInteger)900);
+    XCTAssertNil(receivedProgress[1].diagnosticText);
+    XCTAssertEqual(receivedResult.outcome, PRAccountAuthenticationOutcomeSucceeded);
+    XCTAssertEqualObjects(receivedResult.account.identifier, @"account.fixture.microsoft");
+    XCTAssertEqual(receivedResult.account.type, PRAccountTypeMicrosoft);
+    XCTAssertTrue(authenticationRootMatches->load());
+    XCTAssertEqual(authenticationAction->load(), static_cast<int>(FrontendAccountAuthenticationAction::Login));
+}
+
+- (void)testFacadeAuthenticationCancellationSuppressesQueuedProgressAndCompletion
+{
+    dispatch_semaphore_t runnerEntered = dispatch_semaphore_create(0);
+    dispatch_semaphore_t releaseRunner = dispatch_semaphore_create(0);
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.authenticateAccount = [runnerEntered, releaseRunner](
+                                           const std::filesystem::path&,
+                                           const FrontendAccountAuthenticationRequest& request,
+                                           const FrontendRuntimeDependencies::AccountAuthenticationProgressHandler& progress) {
+        FrontendAccountAuthenticationProgress preparing;
+        preparing.accountIdentifier = request.accountIdentifier;
+        preparing.action = request.action;
+        preparing.phase = FrontendAccountAuthenticationPhase::Preparing;
+        preparing.outcome = FrontendAccountAuthenticationOutcome::InProgress;
+        preparing.providerLabel = "Fixture Provider";
+        preparing.localizationKey = "accounts.authentication.preparing";
+        preparing.canCancel = true;
+        progress(preparing);
+        dispatch_semaphore_signal(runnerEntered);
+        dispatch_semaphore_wait(releaseRunner, DISPATCH_TIME_FOREVER);
+        FrontendAccountAuthenticationProgress cancelled;
+        cancelled.accountIdentifier = request.accountIdentifier;
+        cancelled.action = request.action;
+        cancelled.phase = FrontendAccountAuthenticationPhase::Cancelled;
+        cancelled.outcome = FrontendAccountAuthenticationOutcome::Cancelled;
+        cancelled.providerLabel = "Fixture Provider";
+        cancelled.localizationKey = "accounts.authentication.cancelled";
+        progress(cancelled);
+        return FrontendAccountAuthenticationResult{
+            FrontendAccountAuthenticationOutcome::Cancelled,
+            std::nullopt,
+            "accounts.authentication.cancelled",
+            "Fixture authentication cancelled.",
+            false,
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+    XCTestExpectation *progressExpectation = [self expectationWithDescription:@"Cancelled authentication progress"];
+    progressExpectation.inverted = YES;
+    XCTestExpectation *completionExpectation = [self expectationWithDescription:@"Cancelled authentication completion"];
+    completionExpectation.inverted = YES;
+    PRBridgeObservationToken *token = [bridge authenticateAccountWithIdentifier:@"account.fixture.microsoft"
+                                                                                action:PRAccountAuthenticationActionLogin
+                                                                              progress:^(__unused PRAccountAuthenticationProgress *progress) {
+        [progressExpectation fulfill];
+    }
+                                                                            completion:^(__unused PRAccountAuthenticationResult *result,
+                                                                                         __unused PRBridgeError *error) {
+        [completionExpectation fulfill];
+    }];
+    XCTAssertNotNil(token);
+    XCTAssertEqual(dispatch_semaphore_wait(runnerEntered, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)), 0);
+    XCTAssertTrue([token cancel]);
+    dispatch_semaphore_signal(releaseRunner);
+    [self waitForExpectations:@[ progressExpectation, completionExpectation ] timeout:0.2];
+}
+
 - (void)testFacadeCommandsConvertFoundationIdentifiersAndPreserveFixtureOutcomes
 {
     auto launchCalls = std::make_shared<std::vector<std::string>>();

@@ -587,6 +587,124 @@ void validateAccountSelectionResult(
     }
 }
 
+bool isKnownAccountAuthenticationAction(FrontendAccountAuthenticationAction action) noexcept
+{
+    switch (action) {
+        case FrontendAccountAuthenticationAction::Login:
+        case FrontendAccountAuthenticationAction::Refresh:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownAccountAuthenticationPhase(FrontendAccountAuthenticationPhase phase) noexcept
+{
+    switch (phase) {
+        case FrontendAccountAuthenticationPhase::Preparing:
+        case FrontendAccountAuthenticationPhase::AwaitingUser:
+        case FrontendAccountAuthenticationPhase::Authenticating:
+        case FrontendAccountAuthenticationPhase::Succeeded:
+        case FrontendAccountAuthenticationPhase::Failed:
+        case FrontendAccountAuthenticationPhase::Cancelled:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownAccountAuthenticationOutcome(FrontendAccountAuthenticationOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendAccountAuthenticationOutcome::InProgress:
+        case FrontendAccountAuthenticationOutcome::Succeeded:
+        case FrontendAccountAuthenticationOutcome::Failed:
+        case FrontendAccountAuthenticationOutcome::Cancelled:
+        case FrontendAccountAuthenticationOutcome::Rejected:
+            return true;
+    }
+    return false;
+}
+
+void validateAccountAuthenticationRequest(const FrontendAccountAuthenticationRequest& request)
+{
+    if (request.accountIdentifier.empty() || !isKnownAccountAuthenticationAction(request.action)) {
+        throw std::invalid_argument("Account authentication requires a stable identifier and known action");
+    }
+}
+
+void validateAccountAuthenticationProgress(
+    const FrontendAccountAuthenticationProgress& progress,
+    const FrontendAccountAuthenticationRequest& request)
+{
+    if (progress.accountIdentifier != request.accountIdentifier || progress.action != request.action
+        || !isKnownAccountAuthenticationPhase(progress.phase) || !isKnownAccountAuthenticationOutcome(progress.outcome)
+        || progress.providerLabel.empty() || progress.localizationKey.empty() || progress.expiresInSeconds < 0) {
+        throw std::invalid_argument("Account authentication progress has invalid identity or metadata");
+    }
+
+    const bool awaitingUser = progress.phase == FrontendAccountAuthenticationPhase::AwaitingUser;
+    if (awaitingUser) {
+        if (progress.outcome != FrontendAccountAuthenticationOutcome::InProgress || !progress.requiresUserAction
+            || progress.verificationURL.empty() || !progress.canCancel) {
+            throw std::invalid_argument("Device-code progress requires a cancellable user-action state");
+        }
+    } else if (progress.requiresUserAction || !progress.verificationURL.empty()) {
+        throw std::invalid_argument("Verification metadata is only valid while awaiting user action");
+    }
+
+    switch (progress.phase) {
+        case FrontendAccountAuthenticationPhase::Preparing:
+        case FrontendAccountAuthenticationPhase::Authenticating:
+            if (progress.outcome != FrontendAccountAuthenticationOutcome::InProgress) {
+                throw std::invalid_argument("Non-terminal authentication phases require an in-progress outcome");
+            }
+            break;
+        case FrontendAccountAuthenticationPhase::Succeeded:
+            if (progress.outcome != FrontendAccountAuthenticationOutcome::Succeeded || progress.canCancel
+                || progress.retryable) {
+                throw std::invalid_argument("Successful authentication progress has invalid terminal flags");
+            }
+            break;
+        case FrontendAccountAuthenticationPhase::Failed:
+            if (progress.outcome != FrontendAccountAuthenticationOutcome::Failed || progress.canCancel) {
+                throw std::invalid_argument("Failed authentication progress has invalid terminal flags");
+            }
+            break;
+        case FrontendAccountAuthenticationPhase::Cancelled:
+            if (progress.outcome != FrontendAccountAuthenticationOutcome::Cancelled || progress.canCancel
+                || progress.retryable) {
+                throw std::invalid_argument("Cancelled authentication progress has invalid terminal flags");
+            }
+            break;
+        case FrontendAccountAuthenticationPhase::AwaitingUser:
+            break;
+    }
+}
+
+void validateAccountAuthenticationResult(
+    const FrontendAccountAuthenticationResult& result,
+    const FrontendAccountAuthenticationRequest& request)
+{
+    if (!isKnownAccountAuthenticationOutcome(result.outcome) || result.outcome == FrontendAccountAuthenticationOutcome::InProgress
+        || result.localizationKey.empty()) {
+        throw std::invalid_argument("Account authentication result requires a terminal outcome and localization key");
+    }
+
+    if (result.account.has_value()) {
+        validateAccountSnapshot(*result.account);
+        if (result.account->id != request.accountIdentifier) {
+            throw std::invalid_argument("Account authentication result must identify the requested account");
+        }
+    }
+
+    if (result.outcome == FrontendAccountAuthenticationOutcome::Succeeded) {
+        if (!result.account.has_value() || result.account->type != FrontendAccountType::Microsoft
+            || result.account->state != FrontendAccountState::Online || result.account->isBusy
+            || !result.account->canBeSelected) {
+            throw std::invalid_argument("Successful account authentication requires an online selectable account");
+        }
+    }
+}
+
 void validateInstanceChanges(const std::vector<FrontendInstanceChange>& changes)
 {
     for (const auto& change : changes) {
@@ -1333,6 +1451,51 @@ FrontendAccountSelectionResult executeAccountSelection(
     return result;
 }
 
+FrontendAccountAuthenticationResult executeAccountAuthentication(
+    const FrontendRuntimeDependencies::AccountAuthenticationRunner& runner,
+    const std::filesystem::path& dataRoot,
+    const FrontendAccountAuthenticationRequest& request,
+    const FrontendRuntimeDependencies::AccountAuthenticationProgressHandler& progressHandler)
+{
+    validateAccountAuthenticationRequest(request);
+    if (!runner) {
+        return FrontendAccountAuthenticationResult{
+            FrontendAccountAuthenticationOutcome::Rejected,
+            std::nullopt,
+            "accounts.authentication.unavailable",
+            "Account authentication is unavailable.",
+            true,
+        };
+    }
+
+    bool terminalProgressSeen = false;
+    FrontendAccountAuthenticationOutcome terminalOutcome = FrontendAccountAuthenticationOutcome::InProgress;
+    const auto progress = [&](const FrontendAccountAuthenticationProgress& event) {
+        if (terminalProgressSeen) {
+            throw std::invalid_argument("Account authentication cannot report progress after a terminal event");
+        }
+        validateAccountAuthenticationProgress(event, request);
+        if (event.isTerminal()) {
+            terminalProgressSeen = true;
+            terminalOutcome = event.outcome;
+        }
+        if (progressHandler) {
+            progressHandler(event);
+        }
+    };
+
+    auto result = runner(dataRoot, request, progress);
+    validateAccountAuthenticationResult(result, request);
+    if (result.outcome == FrontendAccountAuthenticationOutcome::Rejected) {
+        if (terminalProgressSeen) {
+            throw std::invalid_argument("Rejected account authentication cannot report a terminal progress event");
+        }
+    } else if (!terminalProgressSeen || terminalOutcome != result.outcome) {
+        throw std::invalid_argument("Account authentication result must match its terminal progress event");
+    }
+    return result;
+}
+
 std::optional<FrontendTaskSnapshot> executeTaskSnapshot(
     const FrontendRuntimeDependencies::TaskSnapshotLoader& loader,
     const std::filesystem::path& dataRoot,
@@ -1580,6 +1743,14 @@ FrontendAccountSelectionResult FrontendFacade::selectActiveAccount(
 {
     ensureRunning(m_lifecycleState);
     return executeAccountSelection(m_runtimeDependencies.selectActiveAccount, m_dataRoot, accountIdentifier);
+}
+
+FrontendAccountAuthenticationResult FrontendFacade::authenticateAccount(
+    const FrontendAccountAuthenticationRequest& request,
+    const FrontendRuntimeDependencies::AccountAuthenticationProgressHandler& progressHandler) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeAccountAuthentication(m_runtimeDependencies.authenticateAccount, m_dataRoot, request, progressHandler);
 }
 
 std::optional<FrontendTaskSnapshot> FrontendFacade::taskSnapshot(const std::string& taskIdentifier) const

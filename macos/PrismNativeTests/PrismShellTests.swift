@@ -2297,6 +2297,7 @@ final class PrismShellTests: XCTestCase {
         XCTAssertTrue(appSource.contains("Settings {"))
         XCTAssertTrue(appSource.contains("PrismSettingsView("))
         XCTAssertTrue(appSource.contains("accountModel: accountModel"))
+        XCTAssertTrue(appSource.contains("authenticationModel: authenticationModel"))
         for forbiddenToken in [
             "QWidget", "QDialog", "Qt", "Unmanaged", "UnsafeMutable", "UnsafeRaw", "Canvas(",
             "draw(", "Path(", "CGContext", "NSBezierPath", "[String: Any]", "Keychain", "Process("
@@ -2331,6 +2332,9 @@ final class PrismShellTests: XCTestCase {
             "List(selection:",
             "Loading account snapshots…",
             "No Active Account",
+            "authenticationView",
+            "PrismAccountAuthenticationModel",
+            "ProgressView(",
             "ContentUnavailableView",
             "accessibilityIdentifier(\"prism.settings.accounts",
             "PrismAccount.fixture()"
@@ -2343,6 +2347,27 @@ final class PrismShellTests: XCTestCase {
             "Keychain", "refresh_token"
         ] {
             XCTAssertFalse(accountSource.contains(forbiddenToken), "Forbidden Account Settings boundary: \(forbiddenToken)")
+        }
+
+        let authenticationSource = try authenticationSource()
+        for requiredToken in [
+            "@MainActor",
+            "PrismAccountAuthenticationState",
+            "verificationURL",
+            "cancel()",
+            "retry()",
+            "generation",
+            "PRAccountAuthenticationProgress",
+            "PRAccountAuthenticationResult"
+        ] {
+            XCTAssertTrue(authenticationSource.contains(requiredToken), "Missing Authentication contract: \(requiredToken)")
+        }
+        for forbiddenToken in [
+            "QWidget", "QDialog", "Qt", "Unmanaged", "UnsafeMutable", "UnsafeRaw", "Canvas(",
+            "draw(", "Path(", "CGContext", "NSBezierPath", "FileManager", "URLSession", "Process(",
+            "Keychain", "refresh_token", "access_token", "authorizationCode", "device_code"
+        ] {
+            XCTAssertFalse(authenticationSource.contains(forbiddenToken), "Forbidden Authentication boundary: \(forbiddenToken)")
         }
     }
 
@@ -2564,6 +2589,165 @@ final class PrismShellTests: XCTestCase {
         XCTAssertEqual(model.state, .cancelled)
     }
 
+    func testAccountAuthenticationModelTracksProgressCancellationRecoveryAndStaleResults() throws {
+        var requests: [(String, PrismAccountAuthenticationAction, Int)] = []
+        var cancellationCount = 0
+        let model = PrismAccountAuthenticationModel(
+            onAuthenticate: { identifier, action, generation in
+                requests.append((identifier, action, generation))
+            },
+            onCancel: { cancellationCount += 1 }
+        )
+
+        XCTAssertTrue(model.start(accountIdentifier: " account.fixture.microsoft ", action: .login))
+        let loginGeneration = try XCTUnwrap(requests.first?.2)
+        let preparing = try XCTUnwrap(
+            PRAccountAuthenticationProgress(
+                accountIdentifier: "account.fixture.microsoft",
+                action: .login,
+                phase: .preparing,
+                outcome: .inProgress,
+                providerLabel: "Fixture Provider",
+                verificationURL: nil,
+                localizationKey: "accounts.authentication.preparing",
+                diagnosticText: nil,
+                expiresInSeconds: 0,
+                canCancel: true,
+                retryable: false,
+                requiresUserAction: false
+            )
+        )
+        XCTAssertTrue(model.apply(progress: preparing, generation: loginGeneration))
+        XCTAssertTrue(model.isRunning)
+        let awaitingUser = try XCTUnwrap(
+            PRAccountAuthenticationProgress(
+                accountIdentifier: "account.fixture.microsoft",
+                action: .login,
+                phase: .awaitingUser,
+                outcome: .inProgress,
+                providerLabel: "Fixture Provider",
+                verificationURL: "https://login.example.invalid/device",
+                localizationKey: "accounts.authentication.awaitingUser",
+                diagnosticText: nil,
+                expiresInSeconds: 900,
+                canCancel: true,
+                retryable: false,
+                requiresUserAction: true
+            )
+        )
+        XCTAssertTrue(model.apply(progress: awaitingUser, generation: loginGeneration))
+        XCTAssertTrue(model.currentProgress?.isAwaitingUser == true)
+        XCTAssertEqual(model.currentProgress?.verificationURL, "https://login.example.invalid/device")
+
+        let authenticating = try XCTUnwrap(
+            PRAccountAuthenticationProgress(
+                accountIdentifier: "account.fixture.microsoft",
+                action: .login,
+                phase: .authenticating,
+                outcome: .inProgress,
+                providerLabel: "Fixture Provider",
+                verificationURL: nil,
+                localizationKey: "accounts.authentication.authenticating",
+                diagnosticText: nil,
+                expiresInSeconds: 0,
+                canCancel: true,
+                retryable: false,
+                requiresUserAction: false
+            )
+        )
+        XCTAssertTrue(model.apply(progress: authenticating, generation: loginGeneration))
+        let succeededProgress = try XCTUnwrap(
+            PRAccountAuthenticationProgress(
+                accountIdentifier: "account.fixture.microsoft",
+                action: .login,
+                phase: .succeeded,
+                outcome: .succeeded,
+                providerLabel: "Fixture Provider",
+                verificationURL: nil,
+                localizationKey: "accounts.authentication.succeeded",
+                diagnosticText: nil,
+                expiresInSeconds: 0,
+                canCancel: false,
+                retryable: false,
+                requiresUserAction: false
+            )
+        )
+        XCTAssertTrue(model.apply(progress: succeededProgress, generation: loginGeneration))
+        let authenticatedAccount = try XCTUnwrap(
+            PRAccountSnapshot(
+                identifier: "account.fixture.microsoft",
+                displayName: "Fixture Microsoft Account",
+                type: .microsoft,
+                state: .online,
+                ownsMinecraft: true,
+                isBusy: false,
+                canBeSelected: true,
+                diagnosticText: nil
+            )
+        )
+        let succeededResult = try XCTUnwrap(
+            PRAccountAuthenticationResult(
+                account: authenticatedAccount,
+                outcome: .succeeded,
+                localizationKey: "accounts.authentication.succeeded",
+                diagnosticText: nil,
+                retryable: false
+            )
+        )
+        XCTAssertTrue(model.apply(result: succeededResult, generation: loginGeneration))
+        if case .succeeded(let account) = model.state {
+            XCTAssertEqual(account?.id, "account.fixture.microsoft")
+        } else {
+            XCTFail("Expected a confirmed authentication result")
+        }
+
+        XCTAssertTrue(model.start(accountIdentifier: "account.fixture.microsoft", action: .refresh))
+        let refreshGeneration = try XCTUnwrap(requests.last?.2)
+        XCTAssertTrue(model.cancel())
+        XCTAssertEqual(cancellationCount, 1)
+        XCTAssertEqual(model.state, .cancelled)
+        XCTAssertFalse(model.apply(result: succeededResult, generation: refreshGeneration))
+
+        XCTAssertTrue(model.start(accountIdentifier: "account.fixture.microsoft", action: .refresh))
+        let failedGeneration = try XCTUnwrap(requests.last?.2)
+        let failedProgress = try XCTUnwrap(
+            PRAccountAuthenticationProgress(
+                accountIdentifier: "account.fixture.microsoft",
+                action: .refresh,
+                phase: .failed,
+                outcome: .failed,
+                providerLabel: "Fixture Provider",
+                verificationURL: nil,
+                localizationKey: "accounts.authentication.refreshFailed",
+                diagnosticText: "Fixture refresh can be retried.",
+                expiresInSeconds: 0,
+                canCancel: false,
+                retryable: true,
+                requiresUserAction: false
+            )
+        )
+        XCTAssertTrue(model.apply(progress: failedProgress, generation: failedGeneration))
+        XCTAssertEqual(model.authenticationFailure?.localizationKey, "accounts.authentication.refreshFailed")
+        XCTAssertTrue(model.canRetry)
+        let failedResult = try XCTUnwrap(
+            PRAccountAuthenticationResult(
+                account: nil,
+                outcome: .failed,
+                localizationKey: "accounts.authentication.refreshFailed",
+                diagnosticText: "Fixture refresh can be retried.",
+                retryable: true
+            )
+        )
+        XCTAssertTrue(model.apply(result: failedResult, generation: failedGeneration))
+        XCTAssertTrue(model.retry())
+        XCTAssertEqual(requests.last?.1, .refresh)
+
+        let unavailableModel = PrismAccountAuthenticationModel()
+        XCTAssertFalse(unavailableModel.start(accountIdentifier: "account.fixture.microsoft"))
+        XCTAssertEqual(unavailableModel.authenticationFailure?.localizationKey, "accounts.authentication.unavailable")
+        XCTAssertTrue(unavailableModel.canRetry)
+    }
+
     private func makeGlobalSettings(instanceDirectoryURL: URL, catOpacity: Int) throws -> PRGlobalSettings {
         try XCTUnwrap(
             PRGlobalSettings(
@@ -2651,6 +2835,15 @@ final class PrismShellTests: XCTestCase {
             .deletingLastPathComponent()
         let sourceURL = sourceRoot
             .appendingPathComponent("PrismNative/App/PrismAccountSettings.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private func authenticationSource() throws -> String {
+        let sourceRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = sourceRoot
+            .appendingPathComponent("PrismNative/App/PrismAccountAuthentication.swift")
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 
