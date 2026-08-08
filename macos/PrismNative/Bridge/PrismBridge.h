@@ -86,6 +86,9 @@ typedef void (^PRAccountSelectionCompletionHandler)(PRAccountSelectionResult * _
 typedef void (^PRAccountAuthenticationProgressHandler)(PRAccountAuthenticationProgress *progress);
 typedef void (^PRAccountAuthenticationCompletionHandler)(PRAccountAuthenticationResult * _Nullable result,
                                                           PRBridgeError * _Nullable error);
+typedef void (^PRVanillaCreationProgressHandler)(PRTaskStatus *progress);
+typedef void (^PRVanillaCreationCompletionHandler)(PRVanillaCreationResult * _Nullable result,
+                                                     PRBridgeError * _Nullable error);
 typedef void (^PROfflineLaunchIdentityLoadCompletionHandler)(PROfflineLaunchIdentityLoadResult * _Nullable result,
                                                               PRBridgeError * _Nullable error);
 typedef void (^PROfflineLaunchIdentityUpdateCompletionHandler)(PROfflineLaunchIdentityUpdateResult * _Nullable result,
@@ -216,6 +219,14 @@ typedef void (^PROfflineLaunchIdentityUpdateCompletionHandler)(PROfflineLaunchId
 - (nullable PRBridgeObservationToken *)updateInstanceNotesWithIdentifier:(NSString *)identifier
                                                                     notes:(NSString *)notes
                                                                 completion:(PRInstanceNotesUpdateCompletionHandler)completion;
+
+/// Runs the fixture-controlled vanilla creation contract. Progress uses the
+/// existing immutable task DTO; cancellation of the returned token is
+/// observable by the adapter and suppresses late Foundation delivery. Real
+/// staging, downloads, and final instance commits remain adapter-owned.
+- (nullable PRBridgeObservationToken *)createVanillaInstanceWithRequest:(PRVanillaCreationRequest *)request
+                                                                 progress:(nullable PRVanillaCreationProgressHandler)progress
+                                                               completion:(PRVanillaCreationCompletionHandler)completion;
 
 /// Loads immutable, non-secret instance settings for a standard native Form.
 - (nullable PRBridgeObservationToken *)loadInstanceSettingsWithIdentifier:(NSString *)identifier

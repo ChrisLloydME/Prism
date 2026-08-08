@@ -601,6 +601,33 @@ struct FrontendTaskSnapshot final {
     bool hasStableIdentifier() const noexcept { return !id.empty(); }
 };
 
+enum class FrontendVanillaCreationOutcome : std::uint8_t { Succeeded, Failed, Cancelled, Rejected };
+
+/// Explicit, non-UI input for the vanilla instance creation adapter. Version
+/// descriptors and loader identifiers are metadata values; staging paths,
+/// settings ownership, Qt tasks, downloads, and instance commits stay inside
+/// the injected backend runner.
+struct FrontendVanillaCreationRequest final {
+    std::string versionDescriptor;
+    std::string versionName;
+    std::optional<std::string> loaderIdentifier;
+    std::optional<std::string> loaderVersionDescriptor;
+    std::string name;
+    std::string groupId;
+    std::string iconKey = "default";
+};
+
+/// Confirmed result for one fixture-controlled vanilla creation request. A
+/// successful result carries only the immutable summary of the committed
+/// instance; paths and backend task ownership never cross this value type.
+struct FrontendVanillaCreationResult final {
+    FrontendVanillaCreationOutcome outcome = FrontendVanillaCreationOutcome::Rejected;
+    std::optional<FrontendInstanceSnapshot> instance;
+    std::string localizationKey;
+    std::string diagnosticText;
+    bool retryable = false;
+};
+
 inline constexpr std::size_t kFrontendLogMaxEntries = 512;
 inline constexpr std::size_t kFrontendLogMaxBytes = 256 * 1024;
 
@@ -679,6 +706,13 @@ struct FrontendRuntimeDependencies final {
     using AccountAuthenticationProgressHandler = std::function<void(const FrontendAccountAuthenticationProgress&)>;
     using AccountAuthenticationRunner = std::function<FrontendAccountAuthenticationResult(
         const std::filesystem::path&, const FrontendAccountAuthenticationRequest&, const AccountAuthenticationProgressHandler&)>;
+    using VanillaCreationProgressHandler = std::function<void(const FrontendTaskSnapshot&)>;
+    using VanillaCreationCancellationCheck = std::function<bool()>;
+    using VanillaCreationRunner = std::function<FrontendVanillaCreationResult(
+        const std::filesystem::path&,
+        const FrontendVanillaCreationRequest&,
+        const VanillaCreationProgressHandler&,
+        const VanillaCreationCancellationCheck&)>;
     using OfflineLaunchIdentityLoader = std::function<FrontendOfflineLaunchIdentityLoadResult(
         const std::filesystem::path&, const FrontendOfflineLaunchIdentityRequest&)>;
     using OfflineLaunchIdentityUpdater = std::function<FrontendOfflineLaunchIdentityUpdateResult(
@@ -716,6 +750,7 @@ struct FrontendRuntimeDependencies final {
     AccountSnapshotLoader loadAccountSnapshots;
     AccountSelectionUpdater selectActiveAccount;
     AccountAuthenticationRunner authenticateAccount;
+    VanillaCreationRunner createVanillaInstance;
     OfflineLaunchIdentityLoader loadOfflineLaunchIdentity;
     OfflineLaunchIdentityUpdater updateOfflineLaunchIdentity;
     TaskSnapshotLoader loadTaskSnapshot;
@@ -784,6 +819,10 @@ class FrontendFacade final {
     FrontendAccountAuthenticationResult authenticateAccount(
         const FrontendAccountAuthenticationRequest& request,
         const FrontendRuntimeDependencies::AccountAuthenticationProgressHandler& progressHandler = {}) const;
+    FrontendVanillaCreationResult createVanillaInstance(
+        const FrontendVanillaCreationRequest& request,
+        const FrontendRuntimeDependencies::VanillaCreationProgressHandler& progressHandler = {},
+        const FrontendRuntimeDependencies::VanillaCreationCancellationCheck& cancellationCheck = {}) const;
     FrontendOfflineLaunchIdentityLoadResult loadOfflineLaunchIdentity(
         const FrontendOfflineLaunchIdentityRequest& request) const;
     FrontendOfflineLaunchIdentityUpdateResult updateOfflineLaunchIdentity(

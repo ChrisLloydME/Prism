@@ -5,6 +5,7 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @class PRTaskLogEntry;
+@class PRTaskStatus;
 
 typedef NS_ENUM(NSInteger, PRTaskState) {
     PRTaskStateQueued = 0,
@@ -70,6 +71,56 @@ typedef NS_ENUM(NSInteger, PRInstanceNotesUpdateOutcome) {
 @property(nonatomic, copy, readonly) NSString *name;
 @property(nonatomic, copy, readonly, nullable) NSString *iconKey;
 @property(nonatomic, copy, readonly, nullable) NSString *groupID;
+
+@end
+
+typedef NS_ENUM(NSInteger, PRVanillaCreationOutcome) {
+    PRVanillaCreationOutcomeSucceeded = 0,
+    PRVanillaCreationOutcomeFailed,
+    PRVanillaCreationOutcomeCancelled,
+    PRVanillaCreationOutcomeRejected,
+};
+
+/// Foundation-only input for a vanilla instance creation request. The
+/// adapter owns staging paths, settings, downloads, and final commits.
+@interface PRVanillaCreationRequest : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithVersionDescriptor:(NSString *)versionDescriptor
+                                         versionName:(NSString *)versionName
+                                   loaderIdentifier:(nullable NSString *)loaderIdentifier
+                              loaderVersionDescriptor:(nullable NSString *)loaderVersionDescriptor
+                                                 name:(NSString *)name
+                                             groupID:(nullable NSString *)groupID
+                                             iconKey:(NSString *)iconKey NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *versionDescriptor;
+@property(nonatomic, copy, readonly) NSString *versionName;
+@property(nonatomic, copy, readonly, nullable) NSString *loaderIdentifier;
+@property(nonatomic, copy, readonly, nullable) NSString *loaderVersionDescriptor;
+@property(nonatomic, copy, readonly) NSString *name;
+@property(nonatomic, copy, readonly, nullable) NSString *groupID;
+@property(nonatomic, copy, readonly) NSString *iconKey;
+
+@end
+
+/// Immutable confirmed result for one vanilla creation task. Only the
+/// resulting instance summary crosses the bridge; staging and task ownership
+/// remain in the injected facade adapter.
+@interface PRVanillaCreationResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithInstance:(nullable PRInstanceSummary *)instance
+                                  outcome:(PRVanillaCreationOutcome)outcome
+                           localizationKey:(NSString *)localizationKey
+                             diagnosticText:(nullable NSString *)diagnosticText
+                                 retryable:(BOOL)retryable NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRInstanceSummary *instance;
+@property(nonatomic, assign, readonly) PRVanillaCreationOutcome outcome;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL retryable;
 
 @end
 

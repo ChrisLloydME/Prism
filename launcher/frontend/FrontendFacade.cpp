@@ -971,6 +971,52 @@ void validateTaskSnapshot(const FrontendTaskSnapshot& snapshot)
     }
 }
 
+bool isKnownVanillaCreationOutcome(FrontendVanillaCreationOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendVanillaCreationOutcome::Succeeded:
+        case FrontendVanillaCreationOutcome::Failed:
+        case FrontendVanillaCreationOutcome::Cancelled:
+        case FrontendVanillaCreationOutcome::Rejected:
+            return true;
+    }
+    return false;
+}
+
+void validateVanillaCreationRequest(const FrontendVanillaCreationRequest& request)
+{
+    if (request.versionDescriptor.empty() || request.versionName.empty() || request.name.empty()
+        || request.iconKey.empty()) {
+        throw std::invalid_argument("Vanilla creation requires version metadata, a name, and an icon key");
+    }
+
+    const bool hasLoader = request.loaderIdentifier.has_value() || request.loaderVersionDescriptor.has_value();
+    if (hasLoader
+        && (!request.loaderIdentifier.has_value() || !request.loaderVersionDescriptor.has_value()
+            || request.loaderIdentifier->empty() || request.loaderVersionDescriptor->empty())) {
+        throw std::invalid_argument("Vanilla loader selection requires an identifier and version descriptor");
+    }
+}
+
+void validateVanillaCreationResult(
+    const FrontendVanillaCreationResult& result,
+    const FrontendVanillaCreationRequest& request)
+{
+    if (!isKnownVanillaCreationOutcome(result.outcome) || result.localizationKey.empty()) {
+        throw std::invalid_argument("Vanilla creation results require a known outcome and localization key");
+    }
+
+    if (result.outcome == FrontendVanillaCreationOutcome::Succeeded) {
+        if (!result.instance.has_value() || !result.instance->hasStableIdentifier()
+            || result.instance->name.empty() || result.instance->name != request.name
+            || result.instance->groupId != request.groupId || result.instance->iconKey != request.iconKey) {
+            throw std::invalid_argument("Successful vanilla creation must confirm the requested instance values");
+        }
+    } else if (result.instance.has_value()) {
+        throw std::invalid_argument("Non-successful vanilla creation cannot carry an instance summary");
+    }
+}
+
 std::string truncateUTF8(std::string value, std::size_t maxBytes)
 {
     if (value.size() <= maxBytes) {
@@ -1707,6 +1753,63 @@ FrontendTaskCancellationResult executeTaskCancellation(
     return result;
 }
 
+FrontendVanillaCreationResult executeVanillaCreation(
+    const FrontendRuntimeDependencies::VanillaCreationRunner& runner,
+    const std::filesystem::path& dataRoot,
+    const FrontendVanillaCreationRequest& request,
+    const FrontendRuntimeDependencies::VanillaCreationProgressHandler& progressHandler,
+    const FrontendRuntimeDependencies::VanillaCreationCancellationCheck& cancellationCheck)
+{
+    validateVanillaCreationRequest(request);
+    if (!runner) {
+        return FrontendVanillaCreationResult{
+            FrontendVanillaCreationOutcome::Rejected,
+            std::nullopt,
+            "instances.creation.vanilla.unavailable",
+            "Vanilla instance creation is unavailable.",
+            true,
+        };
+    }
+
+    bool terminalProgressSeen = false;
+    FrontendTaskState terminalState = FrontendTaskState::Queued;
+    const auto progress = [&](const FrontendTaskSnapshot& snapshot) {
+        validateTaskSnapshot(snapshot);
+        if (snapshot.title.empty()) {
+            throw std::invalid_argument("Vanilla creation progress requires a task title");
+        }
+        if (terminalProgressSeen) {
+            throw std::invalid_argument("Vanilla creation cannot report progress after a terminal event");
+        }
+        if (isTerminalTaskState(snapshot.state)) {
+            terminalProgressSeen = true;
+            terminalState = snapshot.state;
+        }
+        if (progressHandler) {
+            progressHandler(snapshot);
+        }
+    };
+
+    auto result = runner(dataRoot, request, progress, cancellationCheck);
+    validateVanillaCreationResult(result, request);
+    if (result.outcome == FrontendVanillaCreationOutcome::Rejected) {
+        if (terminalProgressSeen) {
+            throw std::invalid_argument("Rejected vanilla creation cannot report a terminal progress event");
+        }
+        return result;
+    }
+
+    const bool matchingTerminalState = (result.outcome == FrontendVanillaCreationOutcome::Succeeded
+                                         && terminalState == FrontendTaskState::Succeeded)
+        || (result.outcome == FrontendVanillaCreationOutcome::Failed && terminalState == FrontendTaskState::Failed)
+        || (result.outcome == FrontendVanillaCreationOutcome::Cancelled
+            && terminalState == FrontendTaskState::Cancelled);
+    if (!terminalProgressSeen || !matchingTerminalState) {
+        throw std::invalid_argument("Vanilla creation result must match its terminal progress event");
+    }
+    return result;
+}
+
 }  // namespace
 
 FrontendFacade::FrontendFacade(std::filesystem::path dataRoot, FrontendRuntimeDependencies runtimeDependencies)
@@ -1924,6 +2027,16 @@ FrontendAccountAuthenticationResult FrontendFacade::authenticateAccount(
 {
     ensureRunning(m_lifecycleState);
     return executeAccountAuthentication(m_runtimeDependencies.authenticateAccount, m_dataRoot, request, progressHandler);
+}
+
+FrontendVanillaCreationResult FrontendFacade::createVanillaInstance(
+    const FrontendVanillaCreationRequest& request,
+    const FrontendRuntimeDependencies::VanillaCreationProgressHandler& progressHandler,
+    const FrontendRuntimeDependencies::VanillaCreationCancellationCheck& cancellationCheck) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeVanillaCreation(
+        m_runtimeDependencies.createVanillaInstance, m_dataRoot, request, progressHandler, cancellationCheck);
 }
 
 FrontendOfflineLaunchIdentityLoadResult FrontendFacade::loadOfflineLaunchIdentity(

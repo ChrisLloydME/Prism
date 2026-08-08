@@ -1066,6 +1066,97 @@ int main()
         && emptyFacade.updateOfflineLaunchIdentity(validOfflineIdentityUpdate).outcome
             == FrontendOfflineLaunchIdentityUpdateOutcome::Rejected;
 
+    FrontendVanillaCreationRequest vanillaRequest;
+    vanillaRequest.versionDescriptor = "1.21.1";
+    vanillaRequest.versionName = "1.21.1 Release";
+    vanillaRequest.loaderIdentifier = "net.fabricmc.fabric-loader";
+    vanillaRequest.loaderVersionDescriptor = "0.16.10";
+    vanillaRequest.name = "Fixture Vanilla";
+    vanillaRequest.groupId = "fixture-group";
+    vanillaRequest.iconKey = "default";
+    std::size_t vanillaCreationCalls = 0;
+    std::size_t vanillaProgressEvents = 0;
+    bool vanillaRootMatches = true;
+    bool vanillaCancellationCheckObserved = false;
+    auto vanillaDependencies = makeFixtureDependencies();
+    vanillaDependencies.createVanillaInstance = [&](
+                                                 const std::filesystem::path& root,
+                                                 const FrontendVanillaCreationRequest& request,
+                                                 const FrontendRuntimeDependencies::VanillaCreationProgressHandler& progress,
+                                                 const FrontendRuntimeDependencies::VanillaCreationCancellationCheck& isCancelled) {
+        vanillaRootMatches = vanillaRootMatches && root == fixtureRoot.lexically_normal();
+        ++vanillaCreationCalls;
+        if (request.versionDescriptor != "1.21.1" || !request.loaderIdentifier.has_value()
+            || *request.loaderIdentifier != "net.fabricmc.fabric-loader"
+            || !request.loaderVersionDescriptor.has_value() || *request.loaderVersionDescriptor != "0.16.10") {
+            return FrontendVanillaCreationResult{
+                FrontendVanillaCreationOutcome::Rejected,
+                std::nullopt,
+                "instances.creation.vanilla.invalidRequest",
+                "Fixture request did not preserve loader metadata.",
+                false,
+            };
+        }
+
+        progress(FrontendTaskSnapshot{ "creation.vanilla", "Create Vanilla", FrontendTaskState::Queued,
+                                       FrontendTaskProgressKind::None, 0.0, true, {}, std::nullopt });
+        ++vanillaProgressEvents;
+        progress(FrontendTaskSnapshot{ "creation.vanilla", "Create Vanilla", FrontendTaskState::Running,
+                                       FrontendTaskProgressKind::Determinate, 0.5, true, {}, std::nullopt });
+        ++vanillaProgressEvents;
+        if (isCancelled && isCancelled()) {
+            vanillaCancellationCheckObserved = true;
+            const FrontendTaskTerminalResult terminal{
+                FrontendTaskTerminalOutcome::Cancelled, "instances.creation.vanilla.cancelled", {}, "Fixture cancelled", false };
+            progress(FrontendTaskSnapshot{ "creation.vanilla", "Create Vanilla", FrontendTaskState::Cancelled,
+                                           FrontendTaskProgressKind::Determinate, 0.5, false, {}, terminal });
+            ++vanillaProgressEvents;
+            return FrontendVanillaCreationResult{
+                FrontendVanillaCreationOutcome::Cancelled,
+                std::nullopt,
+                "instances.creation.vanilla.cancelled",
+                "Fixture cancelled",
+                false,
+            };
+        }
+
+        const FrontendTaskTerminalResult terminal{
+            FrontendTaskTerminalOutcome::Succeeded, "instances.creation.vanilla.created", {}, "", false };
+        progress(FrontendTaskSnapshot{ "creation.vanilla", "Create Vanilla", FrontendTaskState::Succeeded,
+                                       FrontendTaskProgressKind::Determinate, 1.0, false, {}, terminal });
+        ++vanillaProgressEvents;
+        return FrontendVanillaCreationResult{
+            FrontendVanillaCreationOutcome::Succeeded,
+            FrontendInstanceSnapshot{ "fixture.vanilla", request.name, request.iconKey, request.groupId },
+            "instances.creation.vanilla.created",
+            "",
+            false,
+        };
+    };
+    FrontendFacade vanillaFacade(fixtureRoot / "nested" / "..", std::move(vanillaDependencies));
+    const auto createdVanilla = vanillaFacade.createVanillaInstance(vanillaRequest);
+    const auto cancelledVanilla = vanillaFacade.createVanillaInstance(
+        vanillaRequest, {}, [] { return true; });
+    const bool vanillaCreationContract = createdVanilla.outcome == FrontendVanillaCreationOutcome::Succeeded
+        && createdVanilla.instance.has_value() && createdVanilla.instance->id == "fixture.vanilla"
+        && createdVanilla.instance->name == "Fixture Vanilla"
+        && cancelledVanilla.outcome == FrontendVanillaCreationOutcome::Cancelled
+        && !cancelledVanilla.instance.has_value() && vanillaCreationCalls == 2 && vanillaProgressEvents == 6
+        && vanillaRootMatches && vanillaCancellationCheckObserved;
+    const bool rejectedInvalidVanillaRequest = throwsInvalidArgument([&vanillaFacade] {
+        FrontendVanillaCreationRequest invalid;
+        invalid.versionDescriptor = "1.21.1";
+        invalid.versionName = "1.21.1 Release";
+        invalid.iconKey = "default";
+        (void) vanillaFacade.createVanillaInstance(invalid);
+    });
+    const bool missingVanillaCreationPortIsSafe = emptyFacade.createVanillaInstance(vanillaRequest).outcome
+        == FrontendVanillaCreationOutcome::Rejected;
+    const bool rejectedPostShutdownVanillaCreation = vanillaFacade.shutdown()
+        && throwsLogicError([&vanillaFacade, &vanillaRequest] {
+               (void) vanillaFacade.createVanillaInstance(vanillaRequest);
+           });
+
     std::vector<std::string> launchCalls;
     std::vector<std::string> stopCalls;
     bool commandRootMatches = true;

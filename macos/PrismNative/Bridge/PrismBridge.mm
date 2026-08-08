@@ -1749,6 +1749,36 @@ PROfflineLaunchIdentityUpdateResult *offlineLaunchIdentityUpdateResultFromFacade
     return converted;
 }
 
+PRVanillaCreationOutcome vanillaCreationOutcomeFromFacadeResult(FrontendVanillaCreationOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendVanillaCreationOutcome::Succeeded:
+            return PRVanillaCreationOutcomeSucceeded;
+        case FrontendVanillaCreationOutcome::Failed:
+            return PRVanillaCreationOutcomeFailed;
+        case FrontendVanillaCreationOutcome::Cancelled:
+            return PRVanillaCreationOutcomeCancelled;
+        case FrontendVanillaCreationOutcome::Rejected:
+            return PRVanillaCreationOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown vanilla creation outcome");
+}
+
+PRVanillaCreationResult *vanillaCreationResultFromFacadeResult(const FrontendVanillaCreationResult& result)
+{
+    PRInstanceSummary *instance = result.instance.has_value() ? summaryFromFacadeSnapshot(*result.instance) : nil;
+    PRVanillaCreationResult *converted = [[PRVanillaCreationResult alloc]
+        initWithInstance:instance
+                  outcome:vanillaCreationOutcomeFromFacadeResult(result.outcome)
+           localizationKey:foundationStringFromUTF8AllowEmpty(result.localizationKey)
+             diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+                 retryable:result.retryable];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid vanilla creation result");
+    }
+    return converted;
+}
+
 PRInstanceNotesUpdateOutcome notesUpdateOutcomeFromFacadeResult(FrontendInstanceNotesUpdateOutcome outcome)
 {
     switch (outcome) {
@@ -2812,6 +2842,36 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@interface PRBridgeVanillaCreationDelivery : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithProgress:(nullable PRTaskStatus *)progress
+                           result:(nullable PRVanillaCreationResult *)result
+                            error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRTaskStatus *progress;
+@property(nonatomic, strong, readonly, nullable) PRVanillaCreationResult *result;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeVanillaCreationDelivery
+
+- (instancetype)initWithProgress:(PRTaskStatus *)progress
+                           result:(PRVanillaCreationResult *)result
+                            error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _progress = progress;
+        _result = result;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
 @interface PRBridgeOfflineLaunchIdentityLoadDelivery : NSObject
 
 - (instancetype)init NS_UNAVAILABLE;
@@ -3017,6 +3077,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *accountSnapshotRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *accountSelectionRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *accountAuthenticationRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *vanillaCreationRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *offlineIdentityLoadRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *offlineIdentityUpdateRequestStates;
 @property(nonatomic, strong) NSLock *observationLock;
@@ -3053,6 +3114,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 - (void)removeAccountSnapshotRequest:(PRBridgeObservationState *)request;
 - (void)removeAccountSelectionRequest:(PRBridgeObservationState *)request;
 - (void)removeAccountAuthenticationRequest:(PRBridgeObservationState *)request;
+- (void)removeVanillaCreationRequest:(PRBridgeObservationState *)request;
 - (void)removeOfflineIdentityLoadRequest:(PRBridgeObservationState *)request;
 - (void)removeOfflineIdentityUpdateRequest:(PRBridgeObservationState *)request;
 - (nullable PRBridgeObservationToken *)loadTaskStatusWithIdentifier:(NSString *)identifier
@@ -3078,6 +3140,28 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, copy, readwrite) NSString *name;
 @property(nonatomic, copy, readwrite, nullable) NSString *iconKey;
 @property(nonatomic, copy, readwrite, nullable) NSString *groupID;
+
+@end
+
+@interface PRVanillaCreationRequest ()
+
+@property(nonatomic, copy, readwrite) NSString *versionDescriptor;
+@property(nonatomic, copy, readwrite) NSString *versionName;
+@property(nonatomic, copy, readwrite, nullable) NSString *loaderIdentifier;
+@property(nonatomic, copy, readwrite, nullable) NSString *loaderVersionDescriptor;
+@property(nonatomic, copy, readwrite) NSString *name;
+@property(nonatomic, copy, readwrite, nullable) NSString *groupID;
+@property(nonatomic, copy, readwrite) NSString *iconKey;
+
+@end
+
+@interface PRVanillaCreationResult ()
+
+@property(nonatomic, strong, readwrite, nullable) PRInstanceSummary *instance;
+@property(nonatomic, assign, readwrite) PRVanillaCreationOutcome outcome;
+@property(nonatomic, copy, readwrite) NSString *localizationKey;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readwrite) BOOL retryable;
 
 @end
 
@@ -3607,6 +3691,74 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.name = [name copy];
         self.iconKey = nullableStringCopy(iconKey);
         self.groupID = nullableStringCopy(groupID);
+    }
+    return self;
+}
+
+@end
+
+@implementation PRVanillaCreationRequest
+
+- (instancetype)initWithVersionDescriptor:(NSString *)versionDescriptor
+                               versionName:(NSString *)versionName
+                         loaderIdentifier:(NSString *)loaderIdentifier
+                    loaderVersionDescriptor:(NSString *)loaderVersionDescriptor
+                                       name:(NSString *)name
+                                   groupID:(NSString *)groupID
+                                   iconKey:(NSString *)iconKey
+{
+    if (!isNonEmptyString(versionDescriptor) || !isNonEmptyString(versionName) || !isNonEmptyString(name)
+        || !isNonEmptyString(iconKey) || (loaderIdentifier && !isNonEmptyString(loaderIdentifier))
+        || (loaderVersionDescriptor && !isNonEmptyString(loaderVersionDescriptor))
+        || ((loaderIdentifier == nil) != (loaderVersionDescriptor == nil))) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.versionDescriptor = [versionDescriptor copy];
+        self.versionName = [versionName copy];
+        self.loaderIdentifier = [loaderIdentifier copy];
+        self.loaderVersionDescriptor = [loaderVersionDescriptor copy];
+        self.name = [name copy];
+        self.groupID = nullableStringCopy(groupID);
+        self.iconKey = [iconKey copy];
+    }
+    return self;
+}
+
+@end
+
+@implementation PRVanillaCreationResult
+
+- (instancetype)initWithInstance:(PRInstanceSummary *)instance
+                          outcome:(PRVanillaCreationOutcome)outcome
+                   localizationKey:(NSString *)localizationKey
+                     diagnosticText:(NSString *)diagnosticText
+                         retryable:(BOOL)retryable
+{
+    switch (outcome) {
+        case PRVanillaCreationOutcomeSucceeded:
+        case PRVanillaCreationOutcomeFailed:
+        case PRVanillaCreationOutcomeCancelled:
+        case PRVanillaCreationOutcomeRejected:
+            break;
+        default:
+            return nil;
+    }
+    if (!isNonEmptyString(localizationKey) || (instance && ![instance isKindOfClass:PRInstanceSummary.class])
+        || (outcome == PRVanillaCreationOutcomeSucceeded && !instance)
+        || (outcome != PRVanillaCreationOutcomeSucceeded && instance)) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.instance = instance;
+        self.outcome = outcome;
+        self.localizationKey = [localizationKey copy];
+        self.diagnosticText = [diagnosticText copy];
+        self.retryable = retryable;
     }
     return self;
 }
@@ -5085,6 +5237,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.accountSnapshotRequestStates = [NSMutableArray array];
         self.accountSelectionRequestStates = [NSMutableArray array];
         self.accountAuthenticationRequestStates = [NSMutableArray array];
+        self.vanillaCreationRequestStates = [NSMutableArray array];
         self.offlineIdentityLoadRequestStates = [NSMutableArray array];
         self.offlineIdentityUpdateRequestStates = [NSMutableArray array];
         self.observationLock = [[NSLock alloc] init];
@@ -7493,6 +7646,117 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     return [[PRBridgeObservationToken alloc] initWithState:request];
 }
 
+- (PRBridgeObservationToken *)createVanillaInstanceWithRequest:(PRVanillaCreationRequest *)request
+                                                       progress:(PRVanillaCreationProgressHandler)progress
+                                                     completion:(PRVanillaCreationCompletionHandler)completion
+{
+    if (!request || !completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    PRVanillaCreationRequest *requestCopy = request;
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *observation = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeVanillaCreationDelivery *delivery = (PRBridgeVanillaCreationDelivery *)value;
+        if (delivery.progress && progress) {
+            progress(delivery.progress);
+        }
+        if (delivery.result || delivery.error) {
+            [weakRequest cancel];
+            completion(delivery.result, delivery.error);
+        }
+    }];
+    weakRequest = observation;
+    observation.removalHandler = ^{
+        [weakBridge removeVanillaCreationRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [observation cancel];
+        return nil;
+    }
+    [self.vanillaCreationRequestStates addObject:observation];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRVanillaCreationResult *result = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    FrontendVanillaCreationRequest creationRequest;
+                    creationRequest.versionDescriptor = utf8TextFromFoundation(requestCopy.versionDescriptor);
+                    creationRequest.versionName = utf8TextFromFoundation(requestCopy.versionName);
+                    if (requestCopy.loaderIdentifier) {
+                        creationRequest.loaderIdentifier = stableIdentifierFromFoundation(requestCopy.loaderIdentifier);
+                        creationRequest.loaderVersionDescriptor =
+                            utf8TextFromFoundation(requestCopy.loaderVersionDescriptor);
+                    }
+                    creationRequest.name = utf8TextFromFoundation(requestCopy.name);
+                    creationRequest.groupId = requestCopy.groupID ? utf8TextFromFoundation(requestCopy.groupID) : "";
+                    creationRequest.iconKey = stableIdentifierFromFoundation(requestCopy.iconKey);
+                    const FrontendVanillaCreationResult creationResult = bridge->_facade->createVanillaInstance(
+                        creationRequest,
+                        [&](const FrontendTaskSnapshot& snapshot) {
+                            if (state.isCancelled) {
+                                return;
+                            }
+                            PRTaskStatus *convertedStatus = taskStatusFromFacadeSnapshot(snapshot);
+                            [state deliverOnMainActor:[[PRBridgeVanillaCreationDelivery alloc]
+                                initWithProgress:convertedStatus
+                                           result:nil
+                                            error:nil]];
+                        },
+                        [&] { return state.isCancelled; });
+                    result = vanillaCreationResultFromFacadeResult(creationResult);
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid vanilla creation request"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Vanilla creation cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Vanilla creation unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown vanilla creation failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeVanillaCreationDelivery alloc]
+                initWithProgress:nil
+                           result:result
+                            error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:observation];
+}
+
 - (PRBridgeObservationToken *)loadOfflineLaunchIdentityWithMode:(PROfflineLaunchIdentityMode)mode
                                                 accountIdentifier:(NSString *)accountIdentifier
                                                      fallbackName:(NSString *)fallbackName
@@ -7969,6 +8233,16 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.observationLock unlock];
 }
 
+- (void)removeVanillaCreationRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.vanillaCreationRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.vanillaCreationRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
 - (void)removeOfflineIdentityLoadRequest:(PRBridgeObservationState *)request
 {
     [self.observationLock lock];
@@ -8020,6 +8294,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [observations addObjectsFromArray:self.accountSnapshotRequestStates];
     [observations addObjectsFromArray:self.accountSelectionRequestStates];
     [observations addObjectsFromArray:self.accountAuthenticationRequestStates];
+    [observations addObjectsFromArray:self.vanillaCreationRequestStates];
     [observations addObjectsFromArray:self.offlineIdentityLoadRequestStates];
     [observations addObjectsFromArray:self.offlineIdentityUpdateRequestStates];
     [self.instanceObservationStates removeAllObjects];
@@ -8049,6 +8324,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.accountSnapshotRequestStates removeAllObjects];
     [self.accountSelectionRequestStates removeAllObjects];
     [self.accountAuthenticationRequestStates removeAllObjects];
+    [self.vanillaCreationRequestStates removeAllObjects];
     [self.offlineIdentityLoadRequestStates removeAllObjects];
     [self.offlineIdentityUpdateRequestStates removeAllObjects];
     [self.observationLock unlock];

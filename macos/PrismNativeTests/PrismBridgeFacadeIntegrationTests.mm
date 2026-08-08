@@ -2977,4 +2977,130 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     XCTAssertEqual(completionCount, (NSUInteger)0);
 }
 
+- (void)testVanillaCreationConvertsFoundationRequestProgressAndResult
+{
+    auto rootMatches = std::make_shared<std::atomic<bool>>(true);
+    auto receivedRequest = std::make_shared<FrontendVanillaCreationRequest>();
+    auto progressCalls = std::make_shared<std::atomic<std::size_t>>(0);
+    const std::string fixtureRoot = self.fixtureRootURL.path.UTF8String;
+
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.createVanillaInstance = [rootMatches, receivedRequest, progressCalls, fixtureRoot](
+                                             const std::filesystem::path& root,
+                                             const FrontendVanillaCreationRequest& request,
+                                             const FrontendRuntimeDependencies::VanillaCreationProgressHandler& progress,
+                                             const FrontendRuntimeDependencies::VanillaCreationCancellationCheck& isCancelled) {
+        *rootMatches = root == std::filesystem::path(fixtureRoot).lexically_normal();
+        *receivedRequest = request;
+        progress(FrontendTaskSnapshot{ "creation.vanilla", "Create Vanilla", FrontendTaskState::Queued,
+                                       FrontendTaskProgressKind::None, 0.0, true, {}, std::nullopt });
+        ++*progressCalls;
+        progress(FrontendTaskSnapshot{ "creation.vanilla", "Create Vanilla", FrontendTaskState::Running,
+                                       FrontendTaskProgressKind::Determinate, 0.5, true, {}, std::nullopt });
+        ++*progressCalls;
+        if (isCancelled && isCancelled()) {
+            const FrontendTaskTerminalResult terminal{
+                FrontendTaskTerminalOutcome::Cancelled,
+                "instances.creation.vanilla.cancelled",
+                {},
+                "Fixture cancellation",
+                false,
+            };
+            progress(FrontendTaskSnapshot{ "creation.vanilla", "Create Vanilla", FrontendTaskState::Cancelled,
+                                           FrontendTaskProgressKind::Determinate, 0.5, false, {}, terminal });
+            ++*progressCalls;
+            return FrontendVanillaCreationResult{
+                FrontendVanillaCreationOutcome::Cancelled,
+                std::nullopt,
+                "instances.creation.vanilla.cancelled",
+                "Fixture cancellation",
+                false,
+            };
+        }
+
+        const FrontendTaskTerminalResult terminal{
+            FrontendTaskTerminalOutcome::Succeeded,
+            "instances.creation.vanilla.created",
+            {},
+            "",
+            false,
+        };
+        progress(FrontendTaskSnapshot{ "creation.vanilla", "Create Vanilla", FrontendTaskState::Succeeded,
+                                       FrontendTaskProgressKind::Determinate, 1.0, false, {}, terminal });
+        ++*progressCalls;
+        return FrontendVanillaCreationResult{
+            FrontendVanillaCreationOutcome::Succeeded,
+            FrontendInstanceSnapshot{ "fixture.vanilla", request.name, request.iconKey, request.groupId },
+            "instances.creation.vanilla.created",
+            "",
+            false,
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    PRVanillaCreationRequest *request =
+        [[PRVanillaCreationRequest alloc] initWithVersionDescriptor:@"1.21.1"
+                                                          versionName:@"1.21.1"
+                                                    loaderIdentifier:@"net.fabricmc.fabric-loader"
+                                               loaderVersionDescriptor:@"0.16.10"
+                                                                  name:@"Fixture Vanilla"
+                                                              groupID:@"fixture-group"
+                                                              iconKey:@"default"];
+    XCTAssertNotNil(request);
+
+    XCTestExpectation *completion = [self expectationWithDescription:@"Vanilla creation completed"];
+    __block NSMutableArray<PRTaskStatus *> *receivedProgress = [NSMutableArray array];
+    __block PRVanillaCreationResult *receivedResult = nil;
+    __block PRBridgeError *receivedError = nil;
+    __block BOOL progressRanOnMainThread = YES;
+    __block BOOL completionRanOnMainThread = NO;
+    PRBridgeObservationToken *token = [bridge
+        createVanillaInstanceWithRequest:request
+                                 progress:^(PRTaskStatus *status) {
+        progressRanOnMainThread = progressRanOnMainThread && [NSThread isMainThread];
+        [receivedProgress addObject:status];
+    }
+                               completion:^(PRVanillaCreationResult *result, PRBridgeError *error) {
+        completionRanOnMainThread = [NSThread isMainThread];
+        receivedResult = result;
+        receivedError = error;
+        [completion fulfill];
+    }];
+
+    XCTAssertNotNil(token);
+    [self waitForExpectations:@[ completion ] timeout:2.0];
+    XCTAssertTrue(progressRanOnMainThread);
+    XCTAssertTrue(completionRanOnMainThread);
+    XCTAssertNil(receivedError);
+    XCTAssertTrue(token.isCancelled);
+    XCTAssertEqual(progressCalls->load(), (size_t)3);
+    XCTAssertEqual(receivedProgress.count, (NSUInteger)3);
+    XCTAssertEqual(receivedProgress[0].state, PRTaskStateQueued);
+    XCTAssertEqual(receivedProgress[1].state, PRTaskStateRunning);
+    XCTAssertEqual(receivedProgress[1].progressFraction, 0.5);
+    XCTAssertEqual(receivedProgress[2].state, PRTaskStateSucceeded);
+    XCTAssertEqualObjects(receivedProgress[2].terminalResult.localizationKey,
+                          @"instances.creation.vanilla.created");
+    XCTAssertTrue(rootMatches->load());
+    XCTAssertEqual(receivedRequest->versionDescriptor, "1.21.1");
+    XCTAssertEqual(receivedRequest->versionName, "1.21.1");
+    XCTAssertTrue(receivedRequest->loaderIdentifier.has_value());
+    XCTAssertEqual(*receivedRequest->loaderIdentifier, "net.fabricmc.fabric-loader");
+    XCTAssertTrue(receivedRequest->loaderVersionDescriptor.has_value());
+    XCTAssertEqual(*receivedRequest->loaderVersionDescriptor, "0.16.10");
+    XCTAssertEqual(receivedRequest->name, "Fixture Vanilla");
+    XCTAssertEqual(receivedRequest->groupId, "fixture-group");
+    XCTAssertEqual(receivedRequest->iconKey, "default");
+    XCTAssertEqual(receivedResult.outcome, PRVanillaCreationOutcomeSucceeded);
+    XCTAssertEqualObjects(receivedResult.localizationKey, @"instances.creation.vanilla.created");
+    XCTAssertEqualObjects(receivedResult.instance.identifier, @"fixture.vanilla");
+    XCTAssertEqualObjects(receivedResult.instance.name, @"Fixture Vanilla");
+    XCTAssertEqualObjects(receivedResult.instance.groupID, @"fixture-group");
+    XCTAssertEqualObjects(receivedResult.instance.iconKey, @"default");
+}
+
 @end
