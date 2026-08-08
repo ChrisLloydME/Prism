@@ -384,6 +384,182 @@ FrontendRuntimeDependencies baseFixtureDependencies()
                    == std::vector<std::string>{ "task.running", "task.running", "unknown-task", "task.failed" }));
 }
 
+- (void)testTaskScenarioMatrixCoversTerminalOutcomesCancellationAndRetryEligibility
+{
+    auto taskRootMatches = std::make_shared<std::atomic<bool>>(true);
+    auto cancellationCalls = std::make_shared<std::vector<std::string>>();
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.loadTaskSnapshot = [taskRootMatches, fixtureRoot = self.fixtureRootURL.path.UTF8String](
+                                       const std::filesystem::path& root,
+                                       const std::string& identifier) -> std::optional<FrontendTaskSnapshot> {
+        *taskRootMatches = *taskRootMatches && root == std::filesystem::path(fixtureRoot).lexically_normal();
+        if (identifier == "task.success") {
+            return FrontendTaskSnapshot{
+                identifier,
+                "Succeeded Fixture Task",
+                FrontendTaskState::Succeeded,
+                FrontendTaskProgressKind::Determinate,
+                1.0,
+                false,
+                {},
+                FrontendTaskTerminalResult{ FrontendTaskTerminalOutcome::Succeeded,
+                                            "task.succeeded",
+                                            { { "taskIdentifier", identifier } },
+                                            "",
+                                            false },
+            };
+        }
+        if (identifier == "task.failed") {
+            return FrontendTaskSnapshot{
+                identifier,
+                "Failed Fixture Task",
+                FrontendTaskState::Failed,
+                FrontendTaskProgressKind::Determinate,
+                1.0,
+                false,
+                {},
+                FrontendTaskTerminalResult{ FrontendTaskTerminalOutcome::Failed,
+                                            "task.failed",
+                                            { { "taskIdentifier", identifier } },
+                                            "fixture failure",
+                                            true },
+            };
+        }
+        if (identifier == "task.cancelled") {
+            return FrontendTaskSnapshot{
+                identifier,
+                "Cancelled Fixture Task",
+                FrontendTaskState::Cancelled,
+                FrontendTaskProgressKind::Indeterminate,
+                0.0,
+                false,
+                {},
+                FrontendTaskTerminalResult{ FrontendTaskTerminalOutcome::Cancelled,
+                                            "task.cancelled",
+                                            { { "taskIdentifier", identifier } },
+                                            "fixture cancellation",
+                                            false },
+            };
+        }
+        if (identifier == "task.running") {
+            return FrontendTaskSnapshot{ identifier,
+                                         "Running Fixture Task",
+                                         FrontendTaskState::Running,
+                                         FrontendTaskProgressKind::Indeterminate,
+                                         0.0,
+                                         true,
+                                         {},
+                                         std::nullopt };
+        }
+        return std::nullopt;
+    };
+    dependencies.cancelTask = [taskRootMatches, cancellationCalls, fixtureRoot = self.fixtureRootURL.path.UTF8String](
+                                  const std::filesystem::path& root,
+                                  const std::string& identifier) {
+        *taskRootMatches = *taskRootMatches && root == std::filesystem::path(fixtureRoot).lexically_normal();
+        cancellationCalls->push_back(identifier);
+        if (identifier == "task.running") {
+            return FrontendTaskCancellationResult::Requested;
+        }
+        if (identifier == "task.success") {
+            return FrontendTaskCancellationResult::AlreadyTerminal;
+        }
+        if (identifier == "task.failed") {
+            return FrontendTaskCancellationResult::Rejected;
+        }
+        return FrontendTaskCancellationResult::UnknownTask;
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    NSArray<NSString *> *taskIdentifiers = @[ @"task.success", @"task.failed", @"task.cancelled", @"unknown-task" ];
+    NSMutableDictionary<NSString *, PRTaskStatus *> *statuses = [NSMutableDictionary dictionary];
+    NSMutableDictionary<NSString *, PRBridgeError *> *errors = [NSMutableDictionary dictionary];
+    NSMutableArray<PRBridgeObservationToken *> *statusTokens = [NSMutableArray arrayWithCapacity:taskIdentifiers.count];
+    XCTestExpectation *statusCompletions = [self expectationWithDescription:@"Task scenario matrix loaded"];
+    statusCompletions.expectedFulfillmentCount = taskIdentifiers.count;
+    for (NSString *identifier in taskIdentifiers) {
+        NSString *identifierCopy = [identifier copy];
+        PRBridgeObservationToken *token = [bridge loadTaskStatusWithIdentifier:identifierCopy
+                                                                       completion:^(PRTaskStatus *status,
+                                                                                    PRBridgeError *error) {
+            XCTAssertTrue([NSThread isMainThread]);
+            if (status) {
+                statuses[identifierCopy] = status;
+            }
+            if (error) {
+                errors[identifierCopy] = error;
+            }
+            [statusCompletions fulfill];
+        }];
+        XCTAssertNotNil(token);
+        if (token) {
+            [statusTokens addObject:token];
+        }
+    }
+    [self waitForExpectations:@[ statusCompletions ] timeout:2.0];
+
+    PRTaskStatus *succeededStatus = statuses[@"task.success"];
+    XCTAssertEqual(succeededStatus.state, PRTaskStateSucceeded);
+    XCTAssertEqual(succeededStatus.progressKind, PRTaskProgressKindDeterminate);
+    XCTAssertEqual(succeededStatus.progressFraction, 1.0);
+    XCTAssertEqual(succeededStatus.terminalResult.outcome, PRTaskTerminalOutcomeSucceeded);
+    XCTAssertFalse(succeededStatus.cancellationAllowed);
+
+    PRTaskStatus *failedStatus = statuses[@"task.failed"];
+    XCTAssertEqual(failedStatus.state, PRTaskStateFailed);
+    XCTAssertEqual(failedStatus.terminalResult.outcome, PRTaskTerminalOutcomeFailed);
+    XCTAssertEqualObjects(failedStatus.terminalResult.diagnosticText, @"fixture failure");
+    XCTAssertTrue(failedStatus.terminalResult.partialChangesRolledBack);
+
+    PRTaskStatus *cancelledStatus = statuses[@"task.cancelled"];
+    XCTAssertEqual(cancelledStatus.state, PRTaskStateCancelled);
+    XCTAssertEqual(cancelledStatus.terminalResult.outcome, PRTaskTerminalOutcomeCancelled);
+    XCTAssertEqualObjects(cancelledStatus.terminalResult.localizationKey, @"task.cancelled");
+    XCTAssertFalse(cancelledStatus.cancellationAllowed);
+
+    XCTAssertNil(statuses[@"unknown-task"]);
+    XCTAssertEqual(errors[@"unknown-task"].code, PRBridgeErrorCodeDataUnavailable);
+    XCTAssertEqual(errors[@"unknown-task"].recoveryKind, PRBridgeErrorRecoveryKindRetry);
+    XCTAssertEqualObjects(errors[@"unknown-task"].substitutionValues,
+                          (@{ @"taskIdentifier": @"unknown-task" }));
+
+    void (^runCancellation)(NSString *, PRTaskCancellationOutcome) = ^(NSString *identifier,
+                                                                         PRTaskCancellationOutcome expectedOutcome) {
+        XCTestExpectation *completion = [self expectationWithDescription:@"Task scenario cancellation completed"];
+        __block PRTaskCancellationResult *receivedResult = nil;
+        __block PRBridgeError *receivedError = nil;
+        PRBridgeObservationToken *token = [bridge cancelTaskWithIdentifier:identifier
+                                                                   completion:^(PRTaskCancellationResult *result,
+                                                                                PRBridgeError *error) {
+            XCTAssertTrue([NSThread isMainThread]);
+            receivedResult = result;
+            receivedError = error;
+            [completion fulfill];
+        }];
+        XCTAssertNotNil(token);
+        [self waitForExpectations:@[ completion ] timeout:2.0];
+        XCTAssertNil(receivedError);
+        XCTAssertEqual(receivedResult.outcome, expectedOutcome);
+        XCTAssertEqualObjects(
+            receivedResult.identifier,
+            [identifier stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]
+        );
+    };
+
+    runCancellation(@" task.running ", PRTaskCancellationOutcomeRequested);
+    runCancellation(@"task.success", PRTaskCancellationOutcomeAlreadyTerminal);
+    runCancellation(@"task.failed", PRTaskCancellationOutcomeRejected);
+    runCancellation(@"unknown-task", PRTaskCancellationOutcomeUnknownTask);
+
+    XCTAssertTrue(taskRootMatches->load());
+    XCTAssertTrue((*cancellationCalls
+                   == std::vector<std::string>{ "task.running", "task.success", "task.failed", "unknown-task" }));
+}
+
 - (void)testFacadeChangesAreConvertedAndPublishedInOrder
 {
     FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
@@ -513,6 +689,77 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     XCTAssertNil(unknownSnapshot);
     XCTAssertEqual(unknownError.code, PRBridgeErrorCodeDataUnavailable);
     XCTAssertEqual(unknownError.recoveryKind, PRBridgeErrorRecoveryKindRetry);
+}
+
+- (void)testTaskLogScenarioMatrixCoversOversizedLineTruncationAndRetry
+{
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.streamTaskLogs = [](const std::filesystem::path&,
+                                     const std::string& identifier,
+                                     const FrontendRuntimeDependencies::LogEntryHandler& handler) {
+        if (identifier == "task.long-log") {
+            handler(FrontendLogEntry{ 42, std::string(kFrontendLogMaxBytes + 32, 'x'), false });
+            return true;
+        }
+        return false;
+    };
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    XCTestExpectation *completions = [self expectationWithDescription:@"Task log scenario matrix completed"];
+    completions.expectedFulfillmentCount = 2;
+    __block PRTaskLogSnapshot *longLogSnapshot = nil;
+    __block PRTaskLogSnapshot *unknownLogSnapshot = nil;
+    __block PRBridgeError *unknownLogError = nil;
+    NSMutableArray<PRBridgeObservationToken *> *tokens = [NSMutableArray arrayWithCapacity:2];
+    PRBridgeObservationToken *longLogToken = [bridge loadTaskLogWithIdentifier:@"task.long-log"
+                                                                    completion:^(PRTaskLogSnapshot *snapshot,
+                                                                                 PRBridgeError *error) {
+        XCTAssertTrue([NSThread isMainThread]);
+        longLogSnapshot = snapshot;
+        XCTAssertNil(error);
+        [completions fulfill];
+    }];
+    PRBridgeObservationToken *unknownLogToken = [bridge loadTaskLogWithIdentifier:@"unknown-log"
+                                                                       completion:^(PRTaskLogSnapshot *snapshot,
+                                                                                    PRBridgeError *error) {
+        XCTAssertTrue([NSThread isMainThread]);
+        unknownLogSnapshot = snapshot;
+        unknownLogError = error;
+        [completions fulfill];
+    }];
+    XCTAssertNotNil(longLogToken);
+    XCTAssertNotNil(unknownLogToken);
+    if (longLogToken) {
+        [tokens addObject:longLogToken];
+    }
+    if (unknownLogToken) {
+        [tokens addObject:unknownLogToken];
+    }
+    // The fixture intentionally exercises the facade's 256 KiB single-line
+    // truncation path; keep the test budget above the measured C++ regex pass.
+    [self waitForExpectations:@[ completions ] timeout:5.0];
+
+    XCTAssertNotNil(longLogSnapshot);
+    XCTAssertEqual(longLogSnapshot.entries.count, (NSUInteger)1);
+    PRTaskLogEntry *entry = longLogSnapshot.entries.firstObject;
+    XCTAssertNotNil(entry);
+    if (entry) {
+        XCTAssertEqual(entry.sequence, (uint64_t)42);
+        XCTAssertTrue(entry.truncated);
+        XCTAssertEqual(
+            [entry.text lengthOfBytesUsingEncoding:NSUTF8StringEncoding],
+            (NSUInteger)kFrontendLogMaxBytes
+        );
+    }
+    XCTAssertTrue(longLogSnapshot.truncated);
+    XCTAssertEqual(longLogSnapshot.totalByteCount, (uint64_t)kFrontendLogMaxBytes);
+
+    XCTAssertNil(unknownLogSnapshot);
+    XCTAssertEqual(unknownLogError.code, PRBridgeErrorCodeDataUnavailable);
+    XCTAssertEqual(unknownLogError.recoveryKind, PRBridgeErrorRecoveryKindRetry);
 }
 
 - (void)testCancellingQueuedFacadeLogRequestSuppressesCompletion
