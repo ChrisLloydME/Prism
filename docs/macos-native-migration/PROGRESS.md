@@ -1239,7 +1239,7 @@ Result summary: settings values round-trip through a temporary fixture root with
 
 Risk: the settings adapter is still an injected fixture/runtime port. Account selection and environment-variable values require their own security/identity contract; Java discovery, file browse, compatibility test, and download belong to M7; world selection currently accepts a stable name rather than owning the legacy world list; Linux-only performance options remain outside the macOS form. No custom-rendering exception was added.
 
-Commit: pending implementation commit; the follow-up documentation commit will record the final implementation hash.
+Commit: `467bb275e04a087e00a4dd85365273bdcf130185`.
 
 Next after completion: `M6-W3`, implement the version and component list with system `Table` or `List`.
 
@@ -1280,6 +1280,7 @@ Next after completion: `M6-W3`, implement the version and component list with sy
 | `f5ce26fc3` | Replaced the bounded task-log ScrollView/Text surface with a standard selectable and searchable AppKit NSTextView/NSScrollView view | Focused Shell tests 23/23; full native tests 70/70; Debug/Release builds; AppKit/accessibility source inspection; Qt/ownership/drawing scans; Debug/Release `plutil`; `git diff --check` |
 | `54f74badc` | Added bridge integration scenario coverage for terminal task outcomes, launch rejection, cancellation, retry eligibility, shutdown, and log truncation | arm64/universal CMake facade tests 2/2; arm64 Qt Prism target; focused bridge tests 11/11; full native tests 72/72; Debug/Release builds; Objective-C/Objective-C++ syntax; boundary and no-drawing scans; Debug/Release `plutil`; `git diff --check` |
 | `d3f319c49` | Added native instance metadata and confirmed notes editing across the QWidget-free facade, Objective-C++ bridge, and SwiftUI detail form | arm64/universal CMake facade tests 2/2; arm64 Qt Prism target; focused native tests 38/38; full native tests 76/76; Bundle ID `com.lloydME.Prism`; Debug/Release builds; Objective-C/Objective-C++ syntax; boundary/accessibility/no-drawing scans; `git diff --check` |
+| `467bb275e` | Added the confirmed non-secret native instance settings Form and draft-preserving update contract | arm64/universal CMake facade tests 2/2; arm64 Qt Prism target; focused native tests 41/41; full native tests 79/79; Bundle ID `com.lloydME.Prism`; Debug/Release builds; Objective-C/Objective-C++ syntax; boundary/accessibility/localization/no-drawing scans; `git diff --check` |
 
 ## Current architecture findings
 
