@@ -41,6 +41,35 @@ void validateInstanceDetailsSnapshot(const FrontendInstanceDetailsSnapshot& snap
     }
 }
 
+bool isKnownInstanceJoinTarget(FrontendInstanceJoinTarget target) noexcept
+{
+    switch (target) {
+        case FrontendInstanceJoinTarget::None:
+        case FrontendInstanceJoinTarget::Server:
+        case FrontendInstanceJoinTarget::World:
+            return true;
+    }
+    return false;
+}
+
+void validateInstanceSettingsSnapshot(const FrontendInstanceSettingsSnapshot& settings)
+{
+    if (!settings.hasStableIdentifier() || !isKnownInstanceJoinTarget(settings.joinTarget)
+        || settings.windowWidth < 1 || settings.windowWidth > 65536 || settings.windowHeight < 1
+        || settings.windowHeight > 65536 || settings.minMemoryMiB < 8 || settings.minMemoryMiB > 1048576
+        || settings.maxMemoryMiB < 8 || settings.maxMemoryMiB > 1048576 || settings.minMemoryMiB > settings.maxMemoryMiB
+        || settings.permGenMiB < 4 || settings.permGenMiB > 1048576) {
+        throw std::invalid_argument("Instance settings require valid dimensions, memory, and join values");
+    }
+
+    std::set<std::string> loaders;
+    for (const auto& loader : settings.modDownloadLoaders) {
+        if (loader.empty() || !loaders.insert(loader).second) {
+            throw std::invalid_argument("Instance settings require unique non-empty mod loaders");
+        }
+    }
+}
+
 void validateInstanceChanges(const std::vector<FrontendInstanceChange>& changes)
 {
     for (const auto& change : changes) {
@@ -395,6 +424,65 @@ FrontendInstanceNotesUpdateResult executeInstanceNotesUpdate(
     return result;
 }
 
+std::optional<FrontendInstanceSettingsSnapshot> executeInstanceSettings(
+    const FrontendRuntimeDependencies::InstanceSettingsLoader& loader,
+    const std::filesystem::path& dataRoot,
+    const std::string& instanceIdentifier)
+{
+    if (instanceIdentifier.empty()) {
+        throw std::invalid_argument("Instance settings require a stable identifier");
+    }
+    if (!loader) {
+        return std::nullopt;
+    }
+
+    auto settings = loader(dataRoot, instanceIdentifier);
+    if (settings.has_value()) {
+        validateInstanceSettingsSnapshot(*settings);
+        if (settings->id != instanceIdentifier) {
+            throw std::invalid_argument("Instance settings identifier must match the requested instance");
+        }
+    }
+    return settings;
+}
+
+FrontendInstanceSettingsUpdateResult executeInstanceSettingsUpdate(
+    const FrontendRuntimeDependencies::InstanceSettingsUpdater& updater,
+    const std::filesystem::path& dataRoot,
+    const std::string& instanceIdentifier,
+    const FrontendInstanceSettingsSnapshot& settings)
+{
+    if (instanceIdentifier.empty() || !settings.hasStableIdentifier() || settings.id != instanceIdentifier) {
+        throw std::invalid_argument("Instance settings updates require matching stable identifiers");
+    }
+    validateInstanceSettingsSnapshot(settings);
+    if (!updater) {
+        return {};
+    }
+
+    auto result = updater(dataRoot, instanceIdentifier, settings);
+    switch (result.outcome) {
+        case FrontendInstanceSettingsUpdateOutcome::Succeeded:
+            if (!result.settings.has_value()) {
+                throw std::invalid_argument("Successful instance settings updates require confirmed settings");
+            }
+            validateInstanceSettingsSnapshot(*result.settings);
+            if (result.settings->id != instanceIdentifier) {
+                throw std::invalid_argument("Confirmed instance settings identifier must match the request");
+            }
+            break;
+        case FrontendInstanceSettingsUpdateOutcome::UnknownInstance:
+        case FrontendInstanceSettingsUpdateOutcome::Rejected:
+            if (result.settings.has_value()) {
+                validateInstanceSettingsSnapshot(*result.settings);
+            }
+            break;
+        default:
+            throw std::invalid_argument("Instance settings update returned an unknown outcome");
+    }
+    return result;
+}
+
 std::optional<FrontendTaskSnapshot> executeTaskSnapshot(
     const FrontendRuntimeDependencies::TaskSnapshotLoader& loader,
     const std::filesystem::path& dataRoot,
@@ -524,6 +612,20 @@ FrontendInstanceNotesUpdateResult FrontendFacade::updateInstanceNotes(
 {
     ensureRunning(m_lifecycleState);
     return executeInstanceNotesUpdate(m_runtimeDependencies.updateInstanceNotes, m_dataRoot, instanceIdentifier, notes);
+}
+
+std::optional<FrontendInstanceSettingsSnapshot> FrontendFacade::instanceSettings(const std::string& instanceIdentifier) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeInstanceSettings(m_runtimeDependencies.loadInstanceSettings, m_dataRoot, instanceIdentifier);
+}
+
+FrontendInstanceSettingsUpdateResult FrontendFacade::updateInstanceSettings(
+    const std::string& instanceIdentifier, const FrontendInstanceSettingsSnapshot& settings) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeInstanceSettingsUpdate(
+        m_runtimeDependencies.updateInstanceSettings, m_dataRoot, instanceIdentifier, settings);
 }
 
 std::optional<FrontendTaskSnapshot> FrontendFacade::taskSnapshot(const std::string& taskIdentifier) const

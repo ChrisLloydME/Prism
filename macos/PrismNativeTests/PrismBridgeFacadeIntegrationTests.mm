@@ -31,6 +31,52 @@ FrontendInstanceSnapshot fixtureSnapshot(const char *identifier,
     return FrontendInstanceSnapshot{identifier, name, iconKey, groupID};
 }
 
+FrontendInstanceSettingsSnapshot fixtureSettings(const std::string& identifier)
+{
+    FrontendInstanceSettingsSnapshot settings;
+    settings.id = identifier;
+    settings.windowOverrideEnabled = true;
+    settings.launchMaximized = true;
+    settings.windowWidth = 1280;
+    settings.windowHeight = 720;
+    settings.closeAfterLaunch = true;
+    settings.consoleOverrideEnabled = true;
+    settings.showConsole = true;
+    settings.showConsoleOnError = true;
+    settings.globalDataPacksEnabled = true;
+    settings.globalDataPacksPath = "datapacks";
+    settings.gameTimeOverrideEnabled = true;
+    settings.showGameTime = true;
+    settings.recordGameTime = true;
+    settings.countGameTime = true;
+    settings.joinServerOnLaunch = true;
+    settings.joinTarget = FrontendInstanceJoinTarget::Server;
+    settings.joinServerAddress = "fixture.example:25565";
+    settings.overrideModDownloadLoaders = true;
+    settings.modDownloadLoaders = { "Fabric", "Quilt" };
+    settings.javaLocationOverrideEnabled = true;
+    settings.javaPath = "/fixture/bin/java";
+    settings.ignoreJavaCompatibility = true;
+    settings.memoryOverrideEnabled = true;
+    settings.minMemoryMiB = 512;
+    settings.maxMemoryMiB = 4096;
+    settings.permGenMiB = 128;
+    settings.lowMemoryWarning = true;
+    settings.javaArgumentsOverrideEnabled = true;
+    settings.jvmArguments = "-Dfixture=true";
+    settings.commandOverrideEnabled = true;
+    settings.preLaunchCommand = "prepare-fixture";
+    settings.wrapperCommand = "wrapper-fixture";
+    settings.postExitCommand = "cleanup-fixture";
+    settings.legacySettingsOverrideEnabled = true;
+    settings.nativeWorkaroundsOverrideEnabled = true;
+    settings.useNativeGLFW = true;
+    settings.customGLFWPath = "/fixture/libglfw.dylib";
+    settings.useNativeOpenAL = true;
+    settings.customOpenALPath = "/fixture/libopenal.dylib";
+    return settings;
+}
+
 FrontendRuntimeDependencies baseFixtureDependencies()
 {
     FrontendRuntimeDependencies dependencies;
@@ -308,6 +354,127 @@ FrontendRuntimeDependencies baseFixtureDependencies()
                    (std::vector<std::string>{ "fixture.one:Updated\nfixture notes ",
                                                "unknown-instance:Ignored notes",
                                                "rejected-instance:Rejected notes" }));
+}
+
+- (void)testFacadeSettingsAreConvertedAndConfirmedOnMainActor
+{
+    auto loadedRootMatches = std::make_shared<std::atomic<bool>>(true);
+    auto updateRootMatches = std::make_shared<std::atomic<bool>>(true);
+    auto updateCalls = std::make_shared<std::vector<std::string>>();
+    const std::string fixtureRoot = self.fixtureRootURL.path.UTF8String;
+
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.loadInstanceSettings = [loadedRootMatches, fixtureRoot](
+                                            const std::filesystem::path& root,
+                                            const std::string& identifier)
+        -> std::optional<FrontendInstanceSettingsSnapshot> {
+        *loadedRootMatches = root == std::filesystem::path(fixtureRoot).lexically_normal();
+        if (identifier != "fixture.one") {
+            return std::nullopt;
+        }
+        return fixtureSettings(identifier);
+    };
+    dependencies.updateInstanceSettings = [updateRootMatches, updateCalls, fixtureRoot](
+                                              const std::filesystem::path& root,
+                                              const std::string& identifier,
+                                              const FrontendInstanceSettingsSnapshot& requested) {
+        *updateRootMatches = root == std::filesystem::path(fixtureRoot).lexically_normal();
+        updateCalls->push_back(identifier + ":" + std::to_string(requested.windowWidth));
+        if (identifier != "fixture.one") {
+            return FrontendInstanceSettingsUpdateResult{
+                FrontendInstanceSettingsUpdateOutcome::UnknownInstance,
+                std::nullopt,
+            };
+        }
+        auto confirmed = requested;
+        confirmed.windowWidth = 1440;
+        return FrontendInstanceSettingsUpdateResult{
+            FrontendInstanceSettingsUpdateOutcome::Succeeded,
+            std::move(confirmed),
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    XCTestExpectation *loadCompletion = [self expectationWithDescription:@"Facade settings loaded"];
+    __block PRInstanceSettings *receivedSettings = nil;
+    __block PRBridgeError *receivedLoadError = nil;
+    __block BOOL loadRanOnMainThread = NO;
+    PRBridgeObservationToken *loadToken = [bridge loadInstanceSettingsWithIdentifier:@" fixture.one "
+                                                                                completion:^(PRInstanceSettings *settings,
+                                                                                              PRBridgeError *error) {
+        loadRanOnMainThread = [NSThread isMainThread];
+        receivedSettings = settings;
+        receivedLoadError = error;
+        [loadCompletion fulfill];
+    }];
+    XCTAssertNotNil(loadToken);
+    [self waitForExpectations:@[ loadCompletion ] timeout:2.0];
+    XCTAssertTrue(loadRanOnMainThread);
+    XCTAssertNil(receivedLoadError);
+    XCTAssertTrue(loadToken.isCancelled);
+    XCTAssertEqualObjects(receivedSettings.identifier, @"fixture.one");
+    XCTAssertTrue(receivedSettings.windowOverrideEnabled);
+    XCTAssertEqual(receivedSettings.windowWidth, (NSInteger)1280);
+    XCTAssertEqual(receivedSettings.windowHeight, (NSInteger)720);
+    XCTAssertTrue(receivedSettings.globalDataPacksEnabled);
+    XCTAssertEqualObjects(receivedSettings.globalDataPacksPath, @"datapacks");
+    XCTAssertEqual(receivedSettings.joinTarget, PRInstanceJoinTargetServer);
+    XCTAssertEqualObjects(receivedSettings.joinServerAddress, @"fixture.example:25565");
+    XCTAssertEqualObjects(receivedSettings.modDownloadLoaders, (@[ @"Fabric", @"Quilt" ]));
+    XCTAssertEqualObjects(receivedSettings.javaPath, @"/fixture/bin/java");
+    XCTAssertEqual(receivedSettings.minMemoryMiB, (NSInteger)512);
+    XCTAssertEqual(receivedSettings.maxMemoryMiB, (NSInteger)4096);
+    XCTAssertEqualObjects(receivedSettings.jvmArguments, @"-Dfixture=true");
+    XCTAssertEqualObjects(receivedSettings.preLaunchCommand, @"prepare-fixture");
+    XCTAssertTrue(receivedSettings.useNativeGLFW);
+    XCTAssertTrue(receivedSettings.useNativeOpenAL);
+
+    XCTestExpectation *updateCompletion = [self expectationWithDescription:@"Facade settings update completed"];
+    __block PRInstanceSettingsUpdateResult *receivedUpdate = nil;
+    __block PRBridgeError *receivedUpdateError = nil;
+    __block BOOL updateRanOnMainThread = NO;
+    PRBridgeObservationToken *updateToken =
+        [bridge updateInstanceSettingsWithIdentifier:@"fixture.one"
+                                            settings:receivedSettings
+                                          completion:^(PRInstanceSettingsUpdateResult *result,
+                                                       PRBridgeError *error) {
+        updateRanOnMainThread = [NSThread isMainThread];
+        receivedUpdate = result;
+        receivedUpdateError = error;
+        [updateCompletion fulfill];
+    }];
+    XCTAssertNotNil(updateToken);
+    [self waitForExpectations:@[ updateCompletion ] timeout:2.0];
+    XCTAssertTrue(updateRanOnMainThread);
+    XCTAssertNil(receivedUpdateError);
+    XCTAssertTrue(updateToken.isCancelled);
+    XCTAssertEqual(receivedUpdate.outcome, PRInstanceSettingsUpdateOutcomeSucceeded);
+    XCTAssertEqualObjects(receivedUpdate.identifier, @"fixture.one");
+    XCTAssertNotNil(receivedUpdate.settings);
+    XCTAssertEqual(receivedUpdate.settings.windowWidth, (NSInteger)1440);
+    XCTAssertTrue(*updateCalls == std::vector<std::string>{ "fixture.one:1280" });
+
+    XCTestExpectation *missingCompletion = [self expectationWithDescription:@"Missing facade settings completed"];
+    __block PRInstanceSettings *missingSettings = nil;
+    __block PRBridgeError *missingError = nil;
+    PRBridgeObservationToken *missingToken = [bridge loadInstanceSettingsWithIdentifier:@"unknown-instance"
+                                                                                completion:^(PRInstanceSettings *settings,
+                                                                                              PRBridgeError *error) {
+        missingSettings = settings;
+        missingError = error;
+        [missingCompletion fulfill];
+    }];
+    XCTAssertNotNil(missingToken);
+    [self waitForExpectations:@[ missingCompletion ] timeout:2.0];
+    XCTAssertNil(missingSettings);
+    XCTAssertEqual(missingError.code, PRBridgeErrorCodeDataUnavailable);
+    XCTAssertEqual(missingError.recoveryKind, PRBridgeErrorRecoveryKindRetry);
+    XCTAssertTrue(loadedRootMatches->load());
+    XCTAssertTrue(updateRootMatches->load());
 }
 
 - (void)testFacadeCommandsConvertFoundationIdentifiersAndPreserveFixtureOutcomes

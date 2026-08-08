@@ -4,6 +4,7 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var shellModel = PrismShellModel()
     @StateObject private var instanceDetailsModel = PrismInstanceDetailsModel()
+    @StateObject private var instanceSettingsModel = PrismInstanceSettingsModel()
     @StateObject private var logModel = PrismTaskLogPresentationModel()
     @ObservedObject private var commandModel: PrismCommandModel
     @ObservedObject private var taskModel: PrismTaskPresentationModel
@@ -58,7 +59,7 @@ struct ContentView: View {
                     PrismTaskLogFailureView(failure: logFailure, onRetry: { _ = logModel.retry() })
                 }
                 if instanceDetailsModel.showsDetail {
-                    PrismInstanceDetailsView(model: instanceDetailsModel)
+                    PrismInstanceDetailsView(model: instanceDetailsModel, settingsModel: instanceSettingsModel)
                 } else {
                     PrismShellDetailView(
                         state: shellModel.detailState,
@@ -365,6 +366,7 @@ private extension PrismInstanceDetailsModel {
 @MainActor
 private struct PrismInstanceDetailsView: View {
     @ObservedObject var model: PrismInstanceDetailsModel
+    @ObservedObject var settingsModel: PrismInstanceSettingsModel
 
     var body: some View {
         switch model.state {
@@ -421,6 +423,14 @@ private struct PrismInstanceDetailsView: View {
                             .textSelection(.enabled)
                             .accessibilityIdentifier("prism.instance-details.identifier")
                     }
+                    NavigationLink {
+                        PrismInstanceSettingsView(model: settingsModel)
+                    } label: {
+                        Label("Instance Settings", systemImage: "gearshape")
+                    }
+                    .accessibilityLabel(Text("Open Instance Settings"))
+                    .help(Text("Edit standard settings for this instance."))
+                    .accessibilityIdentifier("prism.instance-details.settings-link")
                 }
 
                 Section("Notes") {
@@ -477,6 +487,302 @@ private struct PrismInstanceDetailsView: View {
             .navigationTitle(details.name)
             .accessibilityIdentifier("prism.instance-details.form")
         }
+    }
+}
+
+@MainActor
+struct PrismInstanceSettingsView: View {
+    @ObservedObject var model: PrismInstanceSettingsModel
+
+    private static let modLoaderOptions = [
+        "NeoForge",
+        "Forge",
+        "Fabric",
+        "Quilt",
+        "LiteLoader",
+        "Babric",
+        "BTA",
+        "LegacyFabric",
+        "Ornithe",
+        "Rift",
+    ]
+
+    var body: some View {
+        switch model.state {
+        case .loading:
+            ProgressView("Loading Instance Settings")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityLabel(Text("Loading Instance Settings"))
+                .accessibilityIdentifier("prism.instance-settings.loading-state")
+        case .empty:
+            ContentUnavailableView(
+                "No Instance Settings",
+                systemImage: "gearshape",
+                description: Text("Select an instance to load its settings.")
+            )
+            .accessibilityIdentifier("prism.instance-settings.empty-state")
+        case .failed(let failure):
+            ContentUnavailableView {
+                Label(LocalizedStringKey(failure.localizationKey), systemImage: "exclamationmark.triangle")
+            } description: {
+                Text(LocalizedStringKey(failure.localizationKey))
+            } actions: {
+                if failure.isRetryAvailable {
+                    Button {
+                        _ = model.retry()
+                    } label: {
+                        Text(LocalizedStringKey(failure.recoveryAction.titleKey))
+                    }
+                    .accessibilityLabel(Text(LocalizedStringKey(failure.recoveryAction.accessibilityLabelKey)))
+                    .help(Text(LocalizedStringKey(failure.recoveryAction.helpKey)))
+                }
+            }
+            .accessibilityIdentifier("prism.instance-settings.failed-state")
+        case .content:
+            settingsForm
+        }
+    }
+
+    @ViewBuilder
+    private var settingsForm: some View {
+        Form {
+            Section("Game Window") {
+                Toggle("Override global window settings", isOn: boolBinding(\.windowOverrideEnabled))
+                    .help(Text("Use these window settings for this instance."))
+                Toggle("Start Minecraft maximized", isOn: boolBinding(\.launchMaximized))
+                    .disabled(!isEnabled(\.windowOverrideEnabled))
+                Stepper(value: intBinding(\.windowWidth, defaultValue: 854), in: 1...65_536) {
+                    LabeledContent("Window Width") {
+                        Text("\(model.draft?.windowWidth ?? 854) px")
+                    }
+                }
+                .disabled(!isEnabled(\.windowOverrideEnabled))
+                Stepper(value: intBinding(\.windowHeight, defaultValue: 480), in: 1...65_536) {
+                    LabeledContent("Window Height") {
+                        Text("\(model.draft?.windowHeight ?? 480) px")
+                    }
+                }
+                .disabled(!isEnabled(\.windowOverrideEnabled))
+                Toggle("Hide the launcher when the game opens", isOn: boolBinding(\.closeAfterLaunch))
+                    .disabled(!isEnabled(\.windowOverrideEnabled))
+                Toggle("Quit the launcher when the game closes", isOn: boolBinding(\.quitAfterGameStop))
+                    .disabled(!isEnabled(\.windowOverrideEnabled))
+            }
+
+            Section("Console Window") {
+                Toggle("Override global console settings", isOn: boolBinding(\.consoleOverrideEnabled))
+                    .help(Text("Use these console settings for this instance."))
+                Toggle("Show the console when the game launches", isOn: boolBinding(\.showConsole))
+                    .disabled(!isEnabled(\.consoleOverrideEnabled))
+                Toggle("Show the console when the game fails", isOn: boolBinding(\.showConsoleOnError))
+                    .disabled(!isEnabled(\.consoleOverrideEnabled))
+                Toggle("Hide the console when the game quits", isOn: boolBinding(\.autoCloseConsole))
+                    .disabled(!isEnabled(\.consoleOverrideEnabled))
+            }
+
+            Section("Global Data Packs") {
+                Toggle("Enable global data packs", isOn: boolBinding(\.globalDataPacksEnabled))
+                TextField("Folder Path", text: stringBinding(\.globalDataPacksPath))
+                    .disabled(!isEnabled(\.globalDataPacksEnabled))
+                    .accessibilityLabel(Text("Global Data Packs Folder Path"))
+            }
+
+            Section("Game Time") {
+                Toggle("Override global game-time settings", isOn: boolBinding(\.gameTimeOverrideEnabled))
+                Toggle("Show time spent playing instances", isOn: boolBinding(\.showGameTime))
+                    .disabled(!isEnabled(\.gameTimeOverrideEnabled))
+                Toggle("Record time spent playing instances", isOn: boolBinding(\.recordGameTime))
+                    .disabled(!isEnabled(\.gameTimeOverrideEnabled))
+                Toggle("Count this instance in total time", isOn: boolBinding(\.countGameTime))
+                    .disabled(!isEnabled(\.gameTimeOverrideEnabled))
+            }
+
+            Section("Auto-Join") {
+                Toggle("Join a destination when the game launches", isOn: boolBinding(\.joinServerOnLaunch))
+                Picker("Destination", selection: joinTargetBinding) {
+                    ForEach(PrismInstanceJoinTarget.allCases, id: \.self) { target in
+                        Text(LocalizedStringKey(target.titleKey)).tag(target)
+                    }
+                }
+                .disabled(!isEnabled(\.joinServerOnLaunch))
+                switch model.draft?.joinTarget {
+                case .some(.server):
+                    TextField("Server Address", text: stringBinding(\.joinServerAddress))
+                        .disabled(!isEnabled(\.joinServerOnLaunch))
+                case .some(.world):
+                    TextField("Singleplayer World", text: stringBinding(\.joinWorld))
+                        .disabled(!isEnabled(\.joinServerOnLaunch))
+                case .some(.none), nil:
+                    EmptyView()
+                }
+            }
+
+            Section("Mod Download Loaders") {
+                Toggle("Override supported loaders", isOn: boolBinding(\.overrideModDownloadLoaders))
+                ForEach(Self.modLoaderOptions, id: \.self) { loader in
+                    Toggle(loader, isOn: loaderBinding(loader))
+                        .disabled(!isEnabled(\.overrideModDownloadLoaders))
+                }
+            }
+
+            Section("Java") {
+                Toggle("Override Java installation", isOn: boolBinding(\.javaLocationOverrideEnabled))
+                TextField("Java Executable", text: stringBinding(\.javaPath))
+                    .disabled(!isEnabled(\.javaLocationOverrideEnabled))
+                Toggle("Skip Java compatibility checks", isOn: boolBinding(\.ignoreJavaCompatibility))
+                    .disabled(!isEnabled(\.javaLocationOverrideEnabled))
+
+                Toggle("Override memory settings", isOn: boolBinding(\.memoryOverrideEnabled))
+                Stepper(value: intBinding(\.minMemoryMiB, defaultValue: 512), in: 8...1_048_576, step: 128) {
+                    LabeledContent("Minimum Memory") {
+                        Text("\(model.draft?.minMemoryMiB ?? 512) MiB")
+                    }
+                }
+                .disabled(!isEnabled(\.memoryOverrideEnabled))
+                Stepper(value: intBinding(\.maxMemoryMiB, defaultValue: 1024), in: 8...1_048_576, step: 128) {
+                    LabeledContent("Maximum Memory") {
+                        Text("\(model.draft?.maxMemoryMiB ?? 1024) MiB")
+                    }
+                }
+                .disabled(!isEnabled(\.memoryOverrideEnabled))
+                Stepper(value: intBinding(\.permGenMiB, defaultValue: 128), in: 4...1_048_576, step: 8) {
+                    LabeledContent("PermGen Memory") {
+                        Text("\(model.draft?.permGenMiB ?? 128) MiB")
+                    }
+                }
+                .disabled(!isEnabled(\.memoryOverrideEnabled))
+                Toggle("Warn when memory is unavailable", isOn: boolBinding(\.lowMemoryWarning))
+                    .disabled(!isEnabled(\.memoryOverrideEnabled))
+
+                Toggle("Override Java arguments", isOn: boolBinding(\.javaArgumentsOverrideEnabled))
+                TextEditor(text: stringBinding(\.jvmArguments))
+                    .frame(minHeight: 80)
+                    .disabled(!isEnabled(\.javaArgumentsOverrideEnabled))
+                    .accessibilityLabel(Text("Java Arguments"))
+                    .accessibilityValue(Text("Arguments passed to the Java virtual machine."))
+            }
+
+            Section("Custom Commands") {
+                Toggle("Override custom commands", isOn: boolBinding(\.commandOverrideEnabled))
+                TextField("Pre-Launch Command", text: stringBinding(\.preLaunchCommand))
+                    .disabled(!isEnabled(\.commandOverrideEnabled))
+                TextField("Wrapper Command", text: stringBinding(\.wrapperCommand))
+                    .disabled(!isEnabled(\.commandOverrideEnabled))
+                TextField("Post-Exit Command", text: stringBinding(\.postExitCommand))
+                    .disabled(!isEnabled(\.commandOverrideEnabled))
+            }
+
+            Section("Tweaks") {
+                Toggle("Override legacy settings", isOn: boolBinding(\.legacySettingsOverrideEnabled))
+                Toggle("Enable online fixes (experimental)", isOn: boolBinding(\.onlineFixes))
+                    .disabled(!isEnabled(\.legacySettingsOverrideEnabled))
+            }
+
+            Section("Native Libraries") {
+                Toggle("Override native library settings", isOn: boolBinding(\.nativeWorkaroundsOverrideEnabled))
+                Toggle("Use the system GLFW installation", isOn: boolBinding(\.useNativeGLFW))
+                    .disabled(!isEnabled(\.nativeWorkaroundsOverrideEnabled))
+                TextField("GLFW Library Path", text: stringBinding(\.customGLFWPath))
+                    .disabled(!isEnabled(\.nativeWorkaroundsOverrideEnabled))
+                Toggle("Use the system OpenAL installation", isOn: boolBinding(\.useNativeOpenAL))
+                    .disabled(!isEnabled(\.nativeWorkaroundsOverrideEnabled))
+                TextField("OpenAL Library Path", text: stringBinding(\.customOpenALPath))
+                    .disabled(!isEnabled(\.nativeWorkaroundsOverrideEnabled))
+            }
+
+            Section {
+                HStack {
+                    if model.saveState == .saving {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel(Text("Saving Instance Settings"))
+                    }
+                    Spacer()
+                    Button("Save Settings") {
+                        _ = model.save()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!model.isSaveAvailable)
+                    .accessibilityLabel(Text("Save Instance Settings"))
+                    .help(Text("Save the edited settings for this instance."))
+                    .accessibilityIdentifier("prism.instance-settings.save")
+                }
+
+                if let failure = model.saveFailure {
+                    Label {
+                        Text(LocalizedStringKey(failure.localizationKey))
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle")
+                    }
+                    .accessibilityValue(Text(failure.diagnosticText ?? "Instance settings could not be saved."))
+                    .accessibilityIdentifier("prism.instance-settings.error")
+                    if failure.isRetryAvailable {
+                        Button {
+                            _ = model.retrySave()
+                        } label: {
+                            Text(LocalizedStringKey(failure.recoveryAction.titleKey))
+                        }
+                        .accessibilityLabel(Text(LocalizedStringKey(failure.recoveryAction.accessibilityLabelKey)))
+                        .help(Text(LocalizedStringKey(failure.recoveryAction.helpKey)))
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Instance Settings")
+        .accessibilityIdentifier("prism.instance-settings.form")
+    }
+
+    private var joinTargetBinding: Binding<PrismInstanceJoinTarget> {
+        Binding(
+            get: { model.draft?.joinTarget ?? .none },
+            set: { target in model.updateDraft { $0.joinTarget = target } }
+        )
+    }
+
+    private func boolBinding(_ keyPath: WritableKeyPath<PrismInstanceSettings, Bool>) -> Binding<Bool> {
+        Binding(
+            get: { model.draft?[keyPath: keyPath] ?? false },
+            set: { value in model.updateDraft { $0[keyPath: keyPath] = value } }
+        )
+    }
+
+    private func intBinding(
+        _ keyPath: WritableKeyPath<PrismInstanceSettings, Int>,
+        defaultValue: Int
+    ) -> Binding<Int> {
+        Binding(
+            get: { model.draft?[keyPath: keyPath] ?? defaultValue },
+            set: { value in model.updateDraft { $0[keyPath: keyPath] = value } }
+        )
+    }
+
+    private func stringBinding(_ keyPath: WritableKeyPath<PrismInstanceSettings, String>) -> Binding<String> {
+        Binding(
+            get: { model.draft?[keyPath: keyPath] ?? "" },
+            set: { value in model.updateDraft { $0[keyPath: keyPath] = value } }
+        )
+    }
+
+    private func loaderBinding(_ loader: String) -> Binding<Bool> {
+        Binding(
+            get: { model.draft?.modDownloadLoaders.contains(loader) == true },
+            set: { enabled in
+                model.updateDraft { draft in
+                    if enabled {
+                        if !draft.modDownloadLoaders.contains(loader) {
+                            draft.modDownloadLoaders.append(loader)
+                        }
+                    } else {
+                        draft.modDownloadLoaders.removeAll { $0 == loader }
+                    }
+                }
+            }
+        )
+    }
+
+    private func isEnabled(_ keyPath: KeyPath<PrismInstanceSettings, Bool>) -> Bool {
+        model.draft?[keyPath: keyPath] == true
     }
 }
 

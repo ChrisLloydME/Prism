@@ -106,6 +106,28 @@ bool isKnownInstanceNotesUpdateOutcome(PRInstanceNotesUpdateOutcome outcome)
     return false;
 }
 
+bool isKnownInstanceJoinTarget(PRInstanceJoinTarget target)
+{
+    switch (target) {
+        case PRInstanceJoinTargetNone:
+        case PRInstanceJoinTargetServer:
+        case PRInstanceJoinTargetWorld:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownInstanceSettingsUpdateOutcome(PRInstanceSettingsUpdateOutcome outcome)
+{
+    switch (outcome) {
+        case PRInstanceSettingsUpdateOutcomeSucceeded:
+        case PRInstanceSettingsUpdateOutcomeUnknownInstance:
+        case PRInstanceSettingsUpdateOutcomeRejected:
+            return true;
+    }
+    return false;
+}
+
 std::string stableIdentifierFromFoundation(NSString *identifier)
 {
     if (![identifier isKindOfClass:NSString.class]) {
@@ -245,6 +267,163 @@ PRInstanceDetails *detailsFromFacadeSnapshot(const FrontendInstanceDetailsSnapsh
         throw std::invalid_argument("Facade returned invalid instance details");
     }
     return details;
+}
+
+PRInstanceJoinTarget joinTargetFromFacadeTarget(FrontendInstanceJoinTarget target)
+{
+    switch (target) {
+        case FrontendInstanceJoinTarget::None:
+            return PRInstanceJoinTargetNone;
+        case FrontendInstanceJoinTarget::Server:
+            return PRInstanceJoinTargetServer;
+        case FrontendInstanceJoinTarget::World:
+            return PRInstanceJoinTargetWorld;
+    }
+    throw std::invalid_argument("Facade returned an unknown instance join target");
+}
+
+FrontendInstanceJoinTarget joinTargetFromFoundationTarget(PRInstanceJoinTarget target)
+{
+    switch (target) {
+        case PRInstanceJoinTargetNone:
+            return FrontendInstanceJoinTarget::None;
+        case PRInstanceJoinTargetServer:
+            return FrontendInstanceJoinTarget::Server;
+        case PRInstanceJoinTargetWorld:
+            return FrontendInstanceJoinTarget::World;
+    }
+    throw std::invalid_argument("Native settings returned an unknown instance join target");
+}
+
+PRInstanceSettings *settingsFromFacadeSnapshot(const FrontendInstanceSettingsSnapshot& snapshot)
+{
+    NSMutableArray<NSString *> *loaders = [NSMutableArray arrayWithCapacity:snapshot.modDownloadLoaders.size()];
+    for (const std::string& loader : snapshot.modDownloadLoaders) {
+        NSString *loaderString = foundationStringFromUTF8(loader);
+        if (!loaderString) {
+            throw std::invalid_argument("Facade returned an invalid mod loader");
+        }
+        [loaders addObject:loaderString];
+    }
+
+    PRInstanceSettings *settings = [[PRInstanceSettings alloc]
+        initWithIdentifier:foundationStringFromUTF8(snapshot.id)
+        windowOverrideEnabled:snapshot.windowOverrideEnabled
+        launchMaximized:snapshot.launchMaximized
+        windowWidth:snapshot.windowWidth
+        windowHeight:snapshot.windowHeight
+        closeAfterLaunch:snapshot.closeAfterLaunch
+        quitAfterGameStop:snapshot.quitAfterGameStop
+        consoleOverrideEnabled:snapshot.consoleOverrideEnabled
+        showConsole:snapshot.showConsole
+        showConsoleOnError:snapshot.showConsoleOnError
+        autoCloseConsole:snapshot.autoCloseConsole
+        globalDataPacksEnabled:snapshot.globalDataPacksEnabled
+        globalDataPacksPath:foundationStringFromUTF8AllowEmpty(snapshot.globalDataPacksPath)
+        gameTimeOverrideEnabled:snapshot.gameTimeOverrideEnabled
+        showGameTime:snapshot.showGameTime
+        recordGameTime:snapshot.recordGameTime
+        countGameTime:snapshot.countGameTime
+        joinServerOnLaunch:snapshot.joinServerOnLaunch
+        joinTarget:joinTargetFromFacadeTarget(snapshot.joinTarget)
+        joinServerAddress:foundationStringFromUTF8AllowEmpty(snapshot.joinServerAddress)
+        joinWorld:foundationStringFromUTF8AllowEmpty(snapshot.joinWorld)
+        overrideModDownloadLoaders:snapshot.overrideModDownloadLoaders
+        modDownloadLoaders:loaders
+        javaLocationOverrideEnabled:snapshot.javaLocationOverrideEnabled
+        javaPath:foundationStringFromUTF8AllowEmpty(snapshot.javaPath)
+        ignoreJavaCompatibility:snapshot.ignoreJavaCompatibility
+        memoryOverrideEnabled:snapshot.memoryOverrideEnabled
+        minMemoryMiB:snapshot.minMemoryMiB
+        maxMemoryMiB:snapshot.maxMemoryMiB
+        permGenMiB:snapshot.permGenMiB
+        lowMemoryWarning:snapshot.lowMemoryWarning
+        javaArgumentsOverrideEnabled:snapshot.javaArgumentsOverrideEnabled
+        jvmArguments:foundationStringFromUTF8AllowEmpty(snapshot.jvmArguments)
+        commandOverrideEnabled:snapshot.commandOverrideEnabled
+        preLaunchCommand:foundationStringFromUTF8AllowEmpty(snapshot.preLaunchCommand)
+        wrapperCommand:foundationStringFromUTF8AllowEmpty(snapshot.wrapperCommand)
+        postExitCommand:foundationStringFromUTF8AllowEmpty(snapshot.postExitCommand)
+        legacySettingsOverrideEnabled:snapshot.legacySettingsOverrideEnabled
+        onlineFixes:snapshot.onlineFixes
+        nativeWorkaroundsOverrideEnabled:snapshot.nativeWorkaroundsOverrideEnabled
+        useNativeGLFW:snapshot.useNativeGLFW
+        customGLFWPath:foundationStringFromUTF8AllowEmpty(snapshot.customGLFWPath)
+        useNativeOpenAL:snapshot.useNativeOpenAL
+        customOpenALPath:foundationStringFromUTF8AllowEmpty(snapshot.customOpenALPath)];
+    if (!settings) {
+        throw std::invalid_argument("Facade returned invalid instance settings");
+    }
+    return settings;
+}
+
+FrontendInstanceSettingsSnapshot settingsFromFoundationObject(PRInstanceSettings *settings)
+{
+    if (!settings) {
+        throw std::invalid_argument("Instance settings require a value");
+    }
+
+    FrontendInstanceSettingsSnapshot converted;
+    converted.id = stableIdentifierFromFoundation(settings.identifier);
+    converted.windowOverrideEnabled = settings.windowOverrideEnabled;
+    converted.launchMaximized = settings.launchMaximized;
+    converted.windowWidth = static_cast<int>(settings.windowWidth);
+    converted.windowHeight = static_cast<int>(settings.windowHeight);
+    converted.closeAfterLaunch = settings.closeAfterLaunch;
+    converted.quitAfterGameStop = settings.quitAfterGameStop;
+    converted.consoleOverrideEnabled = settings.consoleOverrideEnabled;
+    converted.showConsole = settings.showConsole;
+    converted.showConsoleOnError = settings.showConsoleOnError;
+    converted.autoCloseConsole = settings.autoCloseConsole;
+    converted.globalDataPacksEnabled = settings.globalDataPacksEnabled;
+    converted.globalDataPacksPath = utf8TextFromFoundation(settings.globalDataPacksPath);
+    converted.gameTimeOverrideEnabled = settings.gameTimeOverrideEnabled;
+    converted.showGameTime = settings.showGameTime;
+    converted.recordGameTime = settings.recordGameTime;
+    converted.countGameTime = settings.countGameTime;
+    converted.joinServerOnLaunch = settings.joinServerOnLaunch;
+    converted.joinTarget = joinTargetFromFoundationTarget(settings.joinTarget);
+    converted.joinServerAddress = utf8TextFromFoundation(settings.joinServerAddress);
+    converted.joinWorld = utf8TextFromFoundation(settings.joinWorld);
+    converted.overrideModDownloadLoaders = settings.overrideModDownloadLoaders;
+    for (id loader in settings.modDownloadLoaders) {
+        converted.modDownloadLoaders.push_back(utf8TextFromFoundation((NSString *)loader));
+    }
+    converted.javaLocationOverrideEnabled = settings.javaLocationOverrideEnabled;
+    converted.javaPath = utf8TextFromFoundation(settings.javaPath);
+    converted.ignoreJavaCompatibility = settings.ignoreJavaCompatibility;
+    converted.memoryOverrideEnabled = settings.memoryOverrideEnabled;
+    converted.minMemoryMiB = static_cast<int>(settings.minMemoryMiB);
+    converted.maxMemoryMiB = static_cast<int>(settings.maxMemoryMiB);
+    converted.permGenMiB = static_cast<int>(settings.permGenMiB);
+    converted.lowMemoryWarning = settings.lowMemoryWarning;
+    converted.javaArgumentsOverrideEnabled = settings.javaArgumentsOverrideEnabled;
+    converted.jvmArguments = utf8TextFromFoundation(settings.jvmArguments);
+    converted.commandOverrideEnabled = settings.commandOverrideEnabled;
+    converted.preLaunchCommand = utf8TextFromFoundation(settings.preLaunchCommand);
+    converted.wrapperCommand = utf8TextFromFoundation(settings.wrapperCommand);
+    converted.postExitCommand = utf8TextFromFoundation(settings.postExitCommand);
+    converted.legacySettingsOverrideEnabled = settings.legacySettingsOverrideEnabled;
+    converted.onlineFixes = settings.onlineFixes;
+    converted.nativeWorkaroundsOverrideEnabled = settings.nativeWorkaroundsOverrideEnabled;
+    converted.useNativeGLFW = settings.useNativeGLFW;
+    converted.customGLFWPath = utf8TextFromFoundation(settings.customGLFWPath);
+    converted.useNativeOpenAL = settings.useNativeOpenAL;
+    converted.customOpenALPath = utf8TextFromFoundation(settings.customOpenALPath);
+    return converted;
+}
+
+PRInstanceSettingsUpdateOutcome settingsUpdateOutcomeFromFacadeResult(FrontendInstanceSettingsUpdateOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendInstanceSettingsUpdateOutcome::Succeeded:
+            return PRInstanceSettingsUpdateOutcomeSucceeded;
+        case FrontendInstanceSettingsUpdateOutcome::UnknownInstance:
+            return PRInstanceSettingsUpdateOutcomeUnknownInstance;
+        case FrontendInstanceSettingsUpdateOutcome::Rejected:
+            return PRInstanceSettingsUpdateOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown instance settings update outcome");
 }
 
 PRInstanceNotesUpdateOutcome notesUpdateOutcomeFromFacadeResult(FrontendInstanceNotesUpdateOutcome outcome)
@@ -855,6 +1034,56 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@interface PRBridgeSettingsResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithSettings:(nullable PRInstanceSettings *)settings
+                            error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRInstanceSettings *settings;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeSettingsResult
+
+- (instancetype)initWithSettings:(PRInstanceSettings *)settings error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _settings = settings;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
+@interface PRBridgeSettingsUpdateResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithResult:(nullable PRInstanceSettingsUpdateResult *)result
+                           error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRInstanceSettingsUpdateResult *result;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeSettingsUpdateResult
+
+- (instancetype)initWithResult:(PRInstanceSettingsUpdateResult *)result error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _result = result;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
 @interface PRBridgeTaskStatusResult : NSObject
 
 - (instancetype)init NS_UNAVAILABLE;
@@ -994,6 +1223,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *taskCancellationRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *commandRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *notesUpdateRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *settingsRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *settingsUpdateRequestStates;
 @property(nonatomic, strong) NSLock *observationLock;
 
 - (nullable instancetype)initWithDataRootURL:(NSURL *)dataRootURL
@@ -1012,6 +1243,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 - (void)removeTaskCancellationRequest:(PRBridgeObservationState *)request;
 - (void)removeCommandRequest:(PRBridgeObservationState *)request;
 - (void)removeNotesUpdateRequest:(PRBridgeObservationState *)request;
+- (void)removeSettingsRequest:(PRBridgeObservationState *)request;
+- (void)removeSettingsUpdateRequest:(PRBridgeObservationState *)request;
 - (nullable PRBridgeObservationToken *)loadTaskStatusWithIdentifier:(NSString *)identifier
                                                             completion:(PRTaskStatusCompletionHandler)completion;
 - (nullable PRBridgeObservationToken *)performTaskCancellationWithIdentifier:(NSString *)identifier
@@ -1063,6 +1296,63 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, copy, readwrite) NSString *identifier;
 @property(nonatomic, copy, readwrite) NSString *notes;
 @property(nonatomic, assign, readwrite) PRInstanceNotesUpdateOutcome outcome;
+
+@end
+
+@interface PRInstanceSettings ()
+
+@property(nonatomic, copy, readwrite) NSString *identifier;
+@property(nonatomic, assign, readwrite) BOOL windowOverrideEnabled;
+@property(nonatomic, assign, readwrite) BOOL launchMaximized;
+@property(nonatomic, assign, readwrite) NSInteger windowWidth;
+@property(nonatomic, assign, readwrite) NSInteger windowHeight;
+@property(nonatomic, assign, readwrite) BOOL closeAfterLaunch;
+@property(nonatomic, assign, readwrite) BOOL quitAfterGameStop;
+@property(nonatomic, assign, readwrite) BOOL consoleOverrideEnabled;
+@property(nonatomic, assign, readwrite) BOOL showConsole;
+@property(nonatomic, assign, readwrite) BOOL showConsoleOnError;
+@property(nonatomic, assign, readwrite) BOOL autoCloseConsole;
+@property(nonatomic, assign, readwrite) BOOL globalDataPacksEnabled;
+@property(nonatomic, copy, readwrite) NSString *globalDataPacksPath;
+@property(nonatomic, assign, readwrite) BOOL gameTimeOverrideEnabled;
+@property(nonatomic, assign, readwrite) BOOL showGameTime;
+@property(nonatomic, assign, readwrite) BOOL recordGameTime;
+@property(nonatomic, assign, readwrite) BOOL countGameTime;
+@property(nonatomic, assign, readwrite) BOOL joinServerOnLaunch;
+@property(nonatomic, assign, readwrite) PRInstanceJoinTarget joinTarget;
+@property(nonatomic, copy, readwrite) NSString *joinServerAddress;
+@property(nonatomic, copy, readwrite) NSString *joinWorld;
+@property(nonatomic, assign, readwrite) BOOL overrideModDownloadLoaders;
+@property(nonatomic, copy, readwrite) NSArray<NSString *> *modDownloadLoaders;
+@property(nonatomic, assign, readwrite) BOOL javaLocationOverrideEnabled;
+@property(nonatomic, copy, readwrite) NSString *javaPath;
+@property(nonatomic, assign, readwrite) BOOL ignoreJavaCompatibility;
+@property(nonatomic, assign, readwrite) BOOL memoryOverrideEnabled;
+@property(nonatomic, assign, readwrite) NSInteger minMemoryMiB;
+@property(nonatomic, assign, readwrite) NSInteger maxMemoryMiB;
+@property(nonatomic, assign, readwrite) NSInteger permGenMiB;
+@property(nonatomic, assign, readwrite) BOOL lowMemoryWarning;
+@property(nonatomic, assign, readwrite) BOOL javaArgumentsOverrideEnabled;
+@property(nonatomic, copy, readwrite) NSString *jvmArguments;
+@property(nonatomic, assign, readwrite) BOOL commandOverrideEnabled;
+@property(nonatomic, copy, readwrite) NSString *preLaunchCommand;
+@property(nonatomic, copy, readwrite) NSString *wrapperCommand;
+@property(nonatomic, copy, readwrite) NSString *postExitCommand;
+@property(nonatomic, assign, readwrite) BOOL legacySettingsOverrideEnabled;
+@property(nonatomic, assign, readwrite) BOOL onlineFixes;
+@property(nonatomic, assign, readwrite) BOOL nativeWorkaroundsOverrideEnabled;
+@property(nonatomic, assign, readwrite) BOOL useNativeGLFW;
+@property(nonatomic, copy, readwrite) NSString *customGLFWPath;
+@property(nonatomic, assign, readwrite) BOOL useNativeOpenAL;
+@property(nonatomic, copy, readwrite) NSString *customOpenALPath;
+
+@end
+
+@interface PRInstanceSettingsUpdateResult ()
+
+@property(nonatomic, copy, readwrite) NSString *identifier;
+@property(nonatomic, strong, readwrite, nullable) PRInstanceSettings *settings;
+@property(nonatomic, assign, readwrite) PRInstanceSettingsUpdateOutcome outcome;
 
 @end
 
@@ -1277,6 +1567,146 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     if (self) {
         self.identifier = [identifier copy];
         self.notes = [notes copy];
+        self.outcome = outcome;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRInstanceSettings
+
+- (instancetype)initWithIdentifier:(NSString *)identifier
+              windowOverrideEnabled:(BOOL)windowOverrideEnabled
+                     launchMaximized:(BOOL)launchMaximized
+                        windowWidth:(NSInteger)windowWidth
+                       windowHeight:(NSInteger)windowHeight
+                 closeAfterLaunch:(BOOL)closeAfterLaunch
+               quitAfterGameStop:(BOOL)quitAfterGameStop
+             consoleOverrideEnabled:(BOOL)consoleOverrideEnabled
+                      showConsole:(BOOL)showConsole
+               showConsoleOnError:(BOOL)showConsoleOnError
+                 autoCloseConsole:(BOOL)autoCloseConsole
+           globalDataPacksEnabled:(BOOL)globalDataPacksEnabled
+             globalDataPacksPath:(NSString *)globalDataPacksPath
+           gameTimeOverrideEnabled:(BOOL)gameTimeOverrideEnabled
+                   showGameTime:(BOOL)showGameTime
+                 recordGameTime:(BOOL)recordGameTime
+                  countGameTime:(BOOL)countGameTime
+              joinServerOnLaunch:(BOOL)joinServerOnLaunch
+                      joinTarget:(PRInstanceJoinTarget)joinTarget
+            joinServerAddress:(NSString *)joinServerAddress
+                   joinWorld:(NSString *)joinWorld
+       overrideModDownloadLoaders:(BOOL)overrideModDownloadLoaders
+            modDownloadLoaders:(NSArray<NSString *> *)modDownloadLoaders
+       javaLocationOverrideEnabled:(BOOL)javaLocationOverrideEnabled
+                       javaPath:(NSString *)javaPath
+         ignoreJavaCompatibility:(BOOL)ignoreJavaCompatibility
+             memoryOverrideEnabled:(BOOL)memoryOverrideEnabled
+                  minMemoryMiB:(NSInteger)minMemoryMiB
+                  maxMemoryMiB:(NSInteger)maxMemoryMiB
+                     permGenMiB:(NSInteger)permGenMiB
+               lowMemoryWarning:(BOOL)lowMemoryWarning
+       javaArgumentsOverrideEnabled:(BOOL)javaArgumentsOverrideEnabled
+                  jvmArguments:(NSString *)jvmArguments
+          commandOverrideEnabled:(BOOL)commandOverrideEnabled
+               preLaunchCommand:(NSString *)preLaunchCommand
+                 wrapperCommand:(NSString *)wrapperCommand
+              postExitCommand:(NSString *)postExitCommand
+     legacySettingsOverrideEnabled:(BOOL)legacySettingsOverrideEnabled
+                   onlineFixes:(BOOL)onlineFixes
+  nativeWorkaroundsOverrideEnabled:(BOOL)nativeWorkaroundsOverrideEnabled
+                 useNativeGLFW:(BOOL)useNativeGLFW
+               customGLFWPath:(NSString *)customGLFWPath
+                 useNativeOpenAL:(BOOL)useNativeOpenAL
+               customOpenALPath:(NSString *)customOpenALPath
+{
+    NSArray<NSString *> *copiedLoaders = [modDownloadLoaders isKindOfClass:NSArray.class] ? [modDownloadLoaders copy] : nil;
+    NSArray *loaderValues = copiedLoaders;
+    if (!isNonEmptyString(identifier) || ![globalDataPacksPath isKindOfClass:NSString.class]
+        || ![joinServerAddress isKindOfClass:NSString.class] || ![joinWorld isKindOfClass:NSString.class]
+        || ![javaPath isKindOfClass:NSString.class] || ![jvmArguments isKindOfClass:NSString.class]
+        || ![preLaunchCommand isKindOfClass:NSString.class] || ![wrapperCommand isKindOfClass:NSString.class]
+        || ![postExitCommand isKindOfClass:NSString.class] || ![customGLFWPath isKindOfClass:NSString.class]
+        || ![customOpenALPath isKindOfClass:NSString.class] || !isKnownInstanceJoinTarget(joinTarget)
+        || windowWidth < 1 || windowWidth > 65536 || windowHeight < 1 || windowHeight > 65536 || minMemoryMiB < 8
+        || minMemoryMiB > 1048576 || maxMemoryMiB < 8 || maxMemoryMiB > 1048576 || minMemoryMiB > maxMemoryMiB
+        || permGenMiB < 4 || permGenMiB > 1048576 || !loaderValues) {
+        return nil;
+    }
+    for (id loader in loaderValues) {
+        if (!isNonEmptyString((NSString *)loader)) {
+            return nil;
+        }
+    }
+
+    self = [super init];
+    if (self) {
+        self.identifier = [identifier copy];
+        self.windowOverrideEnabled = windowOverrideEnabled;
+        self.launchMaximized = launchMaximized;
+        self.windowWidth = windowWidth;
+        self.windowHeight = windowHeight;
+        self.closeAfterLaunch = closeAfterLaunch;
+        self.quitAfterGameStop = quitAfterGameStop;
+        self.consoleOverrideEnabled = consoleOverrideEnabled;
+        self.showConsole = showConsole;
+        self.showConsoleOnError = showConsoleOnError;
+        self.autoCloseConsole = autoCloseConsole;
+        self.globalDataPacksEnabled = globalDataPacksEnabled;
+        self.globalDataPacksPath = [globalDataPacksPath copy];
+        self.gameTimeOverrideEnabled = gameTimeOverrideEnabled;
+        self.showGameTime = showGameTime;
+        self.recordGameTime = recordGameTime;
+        self.countGameTime = countGameTime;
+        self.joinServerOnLaunch = joinServerOnLaunch;
+        self.joinTarget = joinTarget;
+        self.joinServerAddress = [joinServerAddress copy];
+        self.joinWorld = [joinWorld copy];
+        self.overrideModDownloadLoaders = overrideModDownloadLoaders;
+        self.modDownloadLoaders = copiedLoaders;
+        self.javaLocationOverrideEnabled = javaLocationOverrideEnabled;
+        self.javaPath = [javaPath copy];
+        self.ignoreJavaCompatibility = ignoreJavaCompatibility;
+        self.memoryOverrideEnabled = memoryOverrideEnabled;
+        self.minMemoryMiB = minMemoryMiB;
+        self.maxMemoryMiB = maxMemoryMiB;
+        self.permGenMiB = permGenMiB;
+        self.lowMemoryWarning = lowMemoryWarning;
+        self.javaArgumentsOverrideEnabled = javaArgumentsOverrideEnabled;
+        self.jvmArguments = [jvmArguments copy];
+        self.commandOverrideEnabled = commandOverrideEnabled;
+        self.preLaunchCommand = [preLaunchCommand copy];
+        self.wrapperCommand = [wrapperCommand copy];
+        self.postExitCommand = [postExitCommand copy];
+        self.legacySettingsOverrideEnabled = legacySettingsOverrideEnabled;
+        self.onlineFixes = onlineFixes;
+        self.nativeWorkaroundsOverrideEnabled = nativeWorkaroundsOverrideEnabled;
+        self.useNativeGLFW = useNativeGLFW;
+        self.customGLFWPath = [customGLFWPath copy];
+        self.useNativeOpenAL = useNativeOpenAL;
+        self.customOpenALPath = [customOpenALPath copy];
+    }
+    return self;
+}
+
+@end
+
+@implementation PRInstanceSettingsUpdateResult
+
+- (instancetype)initWithIdentifier:(NSString *)identifier
+                            settings:(PRInstanceSettings *)settings
+                            outcome:(PRInstanceSettingsUpdateOutcome)outcome
+{
+    if (!isNonEmptyString(identifier) || !isKnownInstanceSettingsUpdateOutcome(outcome)
+        || (outcome == PRInstanceSettingsUpdateOutcomeSucceeded && !settings)) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.identifier = [identifier copy];
+        self.settings = settings;
         self.outcome = outcome;
     }
     return self;
@@ -1619,6 +2049,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.taskCancellationRequestStates = [NSMutableArray array];
         self.commandRequestStates = [NSMutableArray array];
         self.notesUpdateRequestStates = [NSMutableArray array];
+        self.settingsRequestStates = [NSMutableArray array];
+        self.settingsUpdateRequestStates = [NSMutableArray array];
         self.observationLock = [[NSLock alloc] init];
         _lifecycle = std::make_unique<NativeFacadeLifecycle>();
         _facade = std::move(facade);
@@ -2417,6 +2849,187 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     return [[PRBridgeObservationToken alloc] initWithState:request];
 }
 
+- (PRBridgeObservationToken *)loadInstanceSettingsWithIdentifier:(NSString *)identifier
+                                                          completion:(PRInstanceSettingsCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    NSString *identifierCopy = [identifier copy];
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeSettingsResult *settingsResult = (PRBridgeSettingsResult *)value;
+        [weakRequest cancel];
+        completion(settingsResult.settings, settingsResult.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeSettingsRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.settingsRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRInstanceSettings *settings = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    const std::string instanceIdentifier = stableIdentifierFromFoundation(identifierCopy);
+                    const std::optional<FrontendInstanceSettingsSnapshot> snapshot =
+                        bridge->_facade->instanceSettings(instanceIdentifier);
+                    if (!snapshot.has_value()) {
+                        error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                                   diagnosticText:@"Instance settings are not available"
+                                               substitutionValues:@{ @"instanceIdentifier": identifierCopy ?: @"" }];
+                    } else {
+                        settings = settingsFromFacadeSnapshot(*snapshot);
+                    }
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid instance settings identifier"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Instance settings operation cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Instance settings unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown instance settings failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeSettingsResult alloc] initWithSettings:settings error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
+- (PRBridgeObservationToken *)updateInstanceSettingsWithIdentifier:(NSString *)identifier
+                                                            settings:(PRInstanceSettings *)settings
+                                                          completion:(PRInstanceSettingsUpdateCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    NSString *identifierCopy = [identifier copy];
+    PRInstanceSettings *settingsCopy = settings;
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeSettingsUpdateResult *settingsResult = (PRBridgeSettingsUpdateResult *)value;
+        [weakRequest cancel];
+        completion(settingsResult.result, settingsResult.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeSettingsUpdateRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.settingsUpdateRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRInstanceSettingsUpdateResult *result = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    const std::string instanceIdentifier = stableIdentifierFromFoundation(identifierCopy);
+                    const FrontendInstanceSettingsSnapshot requestedSettings = settingsFromFoundationObject(settingsCopy);
+                    const FrontendInstanceSettingsUpdateResult updateResult =
+                        bridge->_facade->updateInstanceSettings(instanceIdentifier, requestedSettings);
+                    PRInstanceSettings *confirmedSettings = nil;
+                    if (updateResult.settings.has_value()) {
+                        confirmedSettings = settingsFromFacadeSnapshot(*updateResult.settings);
+                    }
+                    result = [[PRInstanceSettingsUpdateResult alloc]
+                        initWithIdentifier:foundationStringFromUTF8(instanceIdentifier)
+                                  settings:confirmedSettings
+                                  outcome:settingsUpdateOutcomeFromFacadeResult(updateResult.outcome)];
+                    if (!result) {
+                        throw std::invalid_argument("Facade returned an invalid instance settings update result");
+                    }
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid instance settings"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Instance settings update cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Instance settings update unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown instance settings update failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeSettingsUpdateResult alloc] initWithResult:result error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
 - (void)removeInstanceObservation:(PRBridgeObservationState *)observation
 {
     [self.observationLock lock];
@@ -2527,6 +3140,26 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.observationLock unlock];
 }
 
+- (void)removeSettingsRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.settingsRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.settingsRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
+- (void)removeSettingsUpdateRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.settingsUpdateRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.settingsUpdateRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
 - (void)cancelAllObservations
 {
     [self.observationLock lock];
@@ -2542,6 +3175,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [observations addObjectsFromArray:self.taskCancellationRequestStates];
     [observations addObjectsFromArray:self.commandRequestStates];
     [observations addObjectsFromArray:self.notesUpdateRequestStates];
+    [observations addObjectsFromArray:self.settingsRequestStates];
+    [observations addObjectsFromArray:self.settingsUpdateRequestStates];
     [self.instanceObservationStates removeAllObjects];
     [self.instanceChangeObservationStates removeAllObjects];
     [self.taskObservationStates removeAllObjects];
@@ -2553,6 +3188,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.taskCancellationRequestStates removeAllObjects];
     [self.commandRequestStates removeAllObjects];
     [self.notesUpdateRequestStates removeAllObjects];
+    [self.settingsRequestStates removeAllObjects];
+    [self.settingsUpdateRequestStates removeAllObjects];
     [self.observationLock unlock];
 
     for (PRBridgeObservationState *observation in observations) {

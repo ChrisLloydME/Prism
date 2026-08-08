@@ -49,6 +49,10 @@ typedef void (^PRInstanceCommandCompletionHandler)(PRInstanceCommandResult * _Nu
                                                     PRBridgeError * _Nullable error);
 typedef void (^PRInstanceNotesUpdateCompletionHandler)(PRInstanceNotesUpdateResult * _Nullable result,
                                                         PRBridgeError * _Nullable error);
+typedef void (^PRInstanceSettingsCompletionHandler)(PRInstanceSettings * _Nullable settings,
+                                                     PRBridgeError * _Nullable error);
+typedef void (^PRInstanceSettingsUpdateCompletionHandler)(PRInstanceSettingsUpdateResult * _Nullable result,
+                                                           PRBridgeError * _Nullable error);
 
 /// Owns one bridge observation registration and cancels it when released.
 @interface PRBridgeObservationToken : NSObject
@@ -128,6 +132,17 @@ typedef void (^PRInstanceNotesUpdateCompletionHandler)(PRInstanceNotesUpdateResu
 - (nullable PRBridgeObservationToken *)updateInstanceNotesWithIdentifier:(NSString *)identifier
                                                                     notes:(NSString *)notes
                                                                 completion:(PRInstanceNotesUpdateCompletionHandler)completion;
+
+/// Loads immutable, non-secret instance settings for a standard native Form.
+- (nullable PRBridgeObservationToken *)loadInstanceSettingsWithIdentifier:(NSString *)identifier
+                                                                  completion:(PRInstanceSettingsCompletionHandler)completion;
+
+/// Persists instance settings through the injected facade port and returns
+/// the confirmed snapshot. Account selection and environment values are not
+/// part of this contract.
+- (nullable PRBridgeObservationToken *)updateInstanceSettingsWithIdentifier:(NSString *)identifier
+                                                                    settings:(PRInstanceSettings *)settings
+                                                                  completion:(PRInstanceSettingsUpdateCompletionHandler)completion;
 
 @end
 

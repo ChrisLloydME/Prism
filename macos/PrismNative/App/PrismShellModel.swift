@@ -352,6 +352,464 @@ final class PrismInstanceDetailsModel: ObservableObject {
     }
 }
 
+enum PrismInstanceJoinTarget: String, CaseIterable, Hashable, Equatable, Sendable {
+    case none
+    case server
+    case world
+
+    var titleKey: String {
+        switch self {
+        case .none:
+            return "Do Not Join"
+        case .server:
+            return "Server Address"
+        case .world:
+            return "Singleplayer World"
+        }
+    }
+
+    var accessibilityLabelKey: String {
+        switch self {
+        case .none:
+            return "Do Not Join On Launch"
+        case .server:
+            return "Join Server On Launch"
+        case .world:
+            return "Join World On Launch"
+        }
+    }
+}
+
+struct PrismInstanceSettings: Identifiable, Equatable, Sendable {
+    let id: String
+    var windowOverrideEnabled: Bool
+    var launchMaximized: Bool
+    var windowWidth: Int
+    var windowHeight: Int
+    var closeAfterLaunch: Bool
+    var quitAfterGameStop: Bool
+    var consoleOverrideEnabled: Bool
+    var showConsole: Bool
+    var showConsoleOnError: Bool
+    var autoCloseConsole: Bool
+    var globalDataPacksEnabled: Bool
+    var globalDataPacksPath: String
+    var gameTimeOverrideEnabled: Bool
+    var showGameTime: Bool
+    var recordGameTime: Bool
+    var countGameTime: Bool
+    var joinServerOnLaunch: Bool
+    var joinTarget: PrismInstanceJoinTarget
+    var joinServerAddress: String
+    var joinWorld: String
+    var overrideModDownloadLoaders: Bool
+    var modDownloadLoaders: [String]
+    var javaLocationOverrideEnabled: Bool
+    var javaPath: String
+    var ignoreJavaCompatibility: Bool
+    var memoryOverrideEnabled: Bool
+    var minMemoryMiB: Int
+    var maxMemoryMiB: Int
+    var permGenMiB: Int
+    var lowMemoryWarning: Bool
+    var javaArgumentsOverrideEnabled: Bool
+    var jvmArguments: String
+    var commandOverrideEnabled: Bool
+    var preLaunchCommand: String
+    var wrapperCommand: String
+    var postExitCommand: String
+    var legacySettingsOverrideEnabled: Bool
+    var onlineFixes: Bool
+    var nativeWorkaroundsOverrideEnabled: Bool
+    var useNativeGLFW: Bool
+    var customGLFWPath: String
+    var useNativeOpenAL: Bool
+    var customOpenALPath: String
+
+    init?(bridgeSettings: PRInstanceSettings) {
+        let identifier = bridgeSettings.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let loaders = bridgeSettings.modDownloadLoaders.map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard !identifier.isEmpty,
+              (1...65_536).contains(bridgeSettings.windowWidth),
+              (1...65_536).contains(bridgeSettings.windowHeight),
+              (8...1_048_576).contains(bridgeSettings.minMemoryMiB),
+              (8...1_048_576).contains(bridgeSettings.maxMemoryMiB),
+              bridgeSettings.minMemoryMiB <= bridgeSettings.maxMemoryMiB,
+              (4...1_048_576).contains(bridgeSettings.permGenMiB),
+              loaders.allSatisfy({ !$0.isEmpty }),
+              Set(loaders).count == loaders.count,
+              let joinTarget = Self.joinTarget(from: bridgeSettings.joinTarget) else {
+            return nil
+        }
+
+        self.init(
+            id: identifier,
+            windowOverrideEnabled: bridgeSettings.windowOverrideEnabled,
+            launchMaximized: bridgeSettings.launchMaximized,
+            windowWidth: bridgeSettings.windowWidth,
+            windowHeight: bridgeSettings.windowHeight,
+            closeAfterLaunch: bridgeSettings.closeAfterLaunch,
+            quitAfterGameStop: bridgeSettings.quitAfterGameStop,
+            consoleOverrideEnabled: bridgeSettings.consoleOverrideEnabled,
+            showConsole: bridgeSettings.showConsole,
+            showConsoleOnError: bridgeSettings.showConsoleOnError,
+            autoCloseConsole: bridgeSettings.autoCloseConsole,
+            globalDataPacksEnabled: bridgeSettings.globalDataPacksEnabled,
+            globalDataPacksPath: bridgeSettings.globalDataPacksPath,
+            gameTimeOverrideEnabled: bridgeSettings.gameTimeOverrideEnabled,
+            showGameTime: bridgeSettings.showGameTime,
+            recordGameTime: bridgeSettings.recordGameTime,
+            countGameTime: bridgeSettings.countGameTime,
+            joinServerOnLaunch: bridgeSettings.joinServerOnLaunch,
+            joinTarget: joinTarget,
+            joinServerAddress: bridgeSettings.joinServerAddress,
+            joinWorld: bridgeSettings.joinWorld,
+            overrideModDownloadLoaders: bridgeSettings.overrideModDownloadLoaders,
+            modDownloadLoaders: loaders,
+            javaLocationOverrideEnabled: bridgeSettings.javaLocationOverrideEnabled,
+            javaPath: bridgeSettings.javaPath,
+            ignoreJavaCompatibility: bridgeSettings.ignoreJavaCompatibility,
+            memoryOverrideEnabled: bridgeSettings.memoryOverrideEnabled,
+            minMemoryMiB: bridgeSettings.minMemoryMiB,
+            maxMemoryMiB: bridgeSettings.maxMemoryMiB,
+            permGenMiB: bridgeSettings.permGenMiB,
+            lowMemoryWarning: bridgeSettings.lowMemoryWarning,
+            javaArgumentsOverrideEnabled: bridgeSettings.javaArgumentsOverrideEnabled,
+            jvmArguments: bridgeSettings.jvmArguments,
+            commandOverrideEnabled: bridgeSettings.commandOverrideEnabled,
+            preLaunchCommand: bridgeSettings.preLaunchCommand,
+            wrapperCommand: bridgeSettings.wrapperCommand,
+            postExitCommand: bridgeSettings.postExitCommand,
+            legacySettingsOverrideEnabled: bridgeSettings.legacySettingsOverrideEnabled,
+            onlineFixes: bridgeSettings.onlineFixes,
+            nativeWorkaroundsOverrideEnabled: bridgeSettings.nativeWorkaroundsOverrideEnabled,
+            useNativeGLFW: bridgeSettings.useNativeGLFW,
+            customGLFWPath: bridgeSettings.customGLFWPath,
+            useNativeOpenAL: bridgeSettings.useNativeOpenAL,
+            customOpenALPath: bridgeSettings.customOpenALPath
+        )
+    }
+
+    init(
+        id: String,
+        windowOverrideEnabled: Bool,
+        launchMaximized: Bool,
+        windowWidth: Int,
+        windowHeight: Int,
+        closeAfterLaunch: Bool,
+        quitAfterGameStop: Bool,
+        consoleOverrideEnabled: Bool,
+        showConsole: Bool,
+        showConsoleOnError: Bool,
+        autoCloseConsole: Bool,
+        globalDataPacksEnabled: Bool,
+        globalDataPacksPath: String,
+        gameTimeOverrideEnabled: Bool,
+        showGameTime: Bool,
+        recordGameTime: Bool,
+        countGameTime: Bool,
+        joinServerOnLaunch: Bool,
+        joinTarget: PrismInstanceJoinTarget,
+        joinServerAddress: String,
+        joinWorld: String,
+        overrideModDownloadLoaders: Bool,
+        modDownloadLoaders: [String],
+        javaLocationOverrideEnabled: Bool,
+        javaPath: String,
+        ignoreJavaCompatibility: Bool,
+        memoryOverrideEnabled: Bool,
+        minMemoryMiB: Int,
+        maxMemoryMiB: Int,
+        permGenMiB: Int,
+        lowMemoryWarning: Bool,
+        javaArgumentsOverrideEnabled: Bool,
+        jvmArguments: String,
+        commandOverrideEnabled: Bool,
+        preLaunchCommand: String,
+        wrapperCommand: String,
+        postExitCommand: String,
+        legacySettingsOverrideEnabled: Bool,
+        onlineFixes: Bool,
+        nativeWorkaroundsOverrideEnabled: Bool,
+        useNativeGLFW: Bool,
+        customGLFWPath: String,
+        useNativeOpenAL: Bool,
+        customOpenALPath: String
+    ) {
+        self.id = id
+        self.windowOverrideEnabled = windowOverrideEnabled
+        self.launchMaximized = launchMaximized
+        self.windowWidth = windowWidth
+        self.windowHeight = windowHeight
+        self.closeAfterLaunch = closeAfterLaunch
+        self.quitAfterGameStop = quitAfterGameStop
+        self.consoleOverrideEnabled = consoleOverrideEnabled
+        self.showConsole = showConsole
+        self.showConsoleOnError = showConsoleOnError
+        self.autoCloseConsole = autoCloseConsole
+        self.globalDataPacksEnabled = globalDataPacksEnabled
+        self.globalDataPacksPath = globalDataPacksPath
+        self.gameTimeOverrideEnabled = gameTimeOverrideEnabled
+        self.showGameTime = showGameTime
+        self.recordGameTime = recordGameTime
+        self.countGameTime = countGameTime
+        self.joinServerOnLaunch = joinServerOnLaunch
+        self.joinTarget = joinTarget
+        self.joinServerAddress = joinServerAddress
+        self.joinWorld = joinWorld
+        self.overrideModDownloadLoaders = overrideModDownloadLoaders
+        self.modDownloadLoaders = modDownloadLoaders
+        self.javaLocationOverrideEnabled = javaLocationOverrideEnabled
+        self.javaPath = javaPath
+        self.ignoreJavaCompatibility = ignoreJavaCompatibility
+        self.memoryOverrideEnabled = memoryOverrideEnabled
+        self.minMemoryMiB = minMemoryMiB
+        self.maxMemoryMiB = maxMemoryMiB
+        self.permGenMiB = permGenMiB
+        self.lowMemoryWarning = lowMemoryWarning
+        self.javaArgumentsOverrideEnabled = javaArgumentsOverrideEnabled
+        self.jvmArguments = jvmArguments
+        self.commandOverrideEnabled = commandOverrideEnabled
+        self.preLaunchCommand = preLaunchCommand
+        self.wrapperCommand = wrapperCommand
+        self.postExitCommand = postExitCommand
+        self.legacySettingsOverrideEnabled = legacySettingsOverrideEnabled
+        self.onlineFixes = onlineFixes
+        self.nativeWorkaroundsOverrideEnabled = nativeWorkaroundsOverrideEnabled
+        self.useNativeGLFW = useNativeGLFW
+        self.customGLFWPath = customGLFWPath
+        self.useNativeOpenAL = useNativeOpenAL
+        self.customOpenALPath = customOpenALPath
+    }
+
+    private static func joinTarget(from value: PRInstanceJoinTarget) -> PrismInstanceJoinTarget? {
+        switch value {
+        case .none:
+            return PrismInstanceJoinTarget.none
+        case .server:
+            return .server
+        case .world:
+            return .world
+        @unknown default:
+            return nil
+        }
+    }
+}
+
+enum PrismInstanceSettingsState: Equatable, Sendable {
+    case loading(identifier: String)
+    case empty
+    case failed(PrismInstanceDetailsFailure)
+    case content(PrismInstanceSettings)
+}
+
+enum PrismInstanceSettingsSaveState: Equatable, Sendable {
+    case idle
+    case saving
+    case failed(PrismInstanceDetailsFailure)
+}
+
+@MainActor
+final class PrismInstanceSettingsModel: ObservableObject {
+    @Published private(set) var state: PrismInstanceSettingsState = .empty
+    @Published private(set) var draft: PrismInstanceSettings?
+    @Published private(set) var saveState: PrismInstanceSettingsSaveState = .idle
+
+    private let onLoad: ((String) -> Void)?
+    private let onSave: ((String, PrismInstanceSettings) -> Void)?
+    private var activeIdentifier: String?
+
+    init(
+        onLoad: ((String) -> Void)? = nil,
+        onSave: ((String, PrismInstanceSettings) -> Void)? = nil
+    ) {
+        self.onLoad = onLoad
+        self.onSave = onSave
+    }
+
+    var settings: PrismInstanceSettings? {
+        guard case .content(let settings) = state else {
+            return nil
+        }
+        return settings
+    }
+
+    var isLoading: Bool {
+        if case .loading = state {
+            return true
+        }
+        return false
+    }
+
+    var isSaveAvailable: Bool {
+        guard let settings, let draft, saveState != .saving else {
+            return false
+        }
+        return settings != draft
+    }
+
+    var saveFailure: PrismInstanceDetailsFailure? {
+        guard case .failed(let failure) = saveState else {
+            return nil
+        }
+        return failure
+    }
+
+    @discardableResult
+    func beginLoading(identifier: String) -> Bool {
+        let normalizedIdentifier = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedIdentifier.isEmpty else {
+            return false
+        }
+
+        activeIdentifier = normalizedIdentifier
+        state = .loading(identifier: normalizedIdentifier)
+        draft = nil
+        saveState = .idle
+        onLoad?(normalizedIdentifier)
+        return true
+    }
+
+    @discardableResult
+    func apply(settings bridgeSettings: PRInstanceSettings) -> Bool {
+        guard let settings = PrismInstanceSettings(bridgeSettings: bridgeSettings) else {
+            return false
+        }
+
+        activeIdentifier = settings.id
+        state = .content(settings)
+        draft = settings
+        saveState = .idle
+        return true
+    }
+
+    @discardableResult
+    func apply(updateResult bridgeResult: PRInstanceSettingsUpdateResult) -> Bool {
+        let identifier = bridgeResult.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !identifier.isEmpty,
+              let settings,
+              settings.id == identifier,
+              saveState == .saving else {
+            return false
+        }
+
+        switch bridgeResult.outcome {
+        case .succeeded:
+            guard let confirmed = bridgeResult.settings,
+                  let mapped = PrismInstanceSettings(bridgeSettings: confirmed) else {
+                return false
+            }
+            state = .content(mapped)
+            draft = mapped
+            saveState = .idle
+        case .unknownInstance:
+            saveState = .failed(Self.saveFailure(for: identifier, key: "instance.settings.instanceMissing"))
+        case .rejected:
+            saveState = .failed(Self.saveFailure(for: identifier, key: "instance.settings.updateRejected"))
+        @unknown default:
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
+    func apply(error: PRBridgeError, instanceIdentifier: String) -> Bool {
+        let normalizedIdentifier = instanceIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let localizationKey = error.localizationKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedIdentifier.isEmpty, !localizationKey.isEmpty else {
+            return false
+        }
+
+        let failure = PrismInstanceDetailsFailure(
+            instanceIdentifier: normalizedIdentifier,
+            localizationKey: localizationKey,
+            substitutionValues: error.substitutionValues,
+            diagnosticText: error.diagnosticText,
+            recoveryAction: error.recoveryKind == .retry ? .retry : .none,
+            partialChangesRolledBack: error.partialChangesRolledBack
+        )
+
+        if isLoading {
+            state = .failed(failure)
+            draft = nil
+            saveState = .idle
+        } else if activeIdentifier == normalizedIdentifier && settings != nil && saveState == .saving {
+            saveState = .failed(failure)
+        } else {
+            activeIdentifier = normalizedIdentifier
+            state = .failed(failure)
+            draft = nil
+            saveState = .idle
+        }
+        return true
+    }
+
+    func updateDraft(_ update: (inout PrismInstanceSettings) -> Void) {
+        guard saveState != .saving, var draft else {
+            return
+        }
+        update(&draft)
+        self.draft = draft
+        if case .failed = saveState {
+            saveState = .idle
+        }
+    }
+
+    @discardableResult
+    func save() -> Bool {
+        guard let settings, let draft, isSaveAvailable else {
+            return false
+        }
+
+        saveState = .saving
+        onSave?(settings.id, draft)
+        return true
+    }
+
+    @discardableResult
+    func retry() -> Bool {
+        guard case .failed(let failure) = state, failure.isRetryAvailable else {
+            return false
+        }
+        return beginLoading(identifier: failure.instanceIdentifier)
+    }
+
+    @discardableResult
+    func retrySave() -> Bool {
+        guard case .failed(let failure) = saveState,
+              failure.isRetryAvailable,
+              let settings,
+              let draft,
+              settings.id == failure.instanceIdentifier else {
+            return false
+        }
+
+        saveState = .saving
+        onSave?(settings.id, draft)
+        return true
+    }
+
+    func clear() {
+        activeIdentifier = nil
+        state = .empty
+        draft = nil
+        saveState = .idle
+    }
+
+    private static func saveFailure(for identifier: String, key: String) -> PrismInstanceDetailsFailure {
+        PrismInstanceDetailsFailure(
+            instanceIdentifier: identifier,
+            localizationKey: key,
+            substitutionValues: ["instanceIdentifier": identifier],
+            diagnosticText: nil,
+            recoveryAction: .none,
+            partialChangesRolledBack: false
+        )
+    }
+}
+
 @MainActor
 final class PrismInstanceArtworkStore {
     static let defaultItemLimit = 32

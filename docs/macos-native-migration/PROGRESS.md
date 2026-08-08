@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 6, Instance detail and editing
 
-Active work unit: M6-W2
+Active work unit: M6-W3
 
-Next ready work unit: M6-W2
+Next ready work unit: M6-W3
 
 ## Safety baseline
 
@@ -1204,6 +1204,45 @@ Commit: `d3f319c494a61d559643964a6253a3ec8c495df3`.
 
 Next after completion: `M6-W2`, implement instance settings with `Form` and standard controls.
 
+### M6-W2: Native instance settings form
+
+Status: complete
+
+Outcome: add the native instance settings workflow for non-secret, confirmed instance configuration. The native surface now covers game window, console, global data packs, game time, auto-join destination, mod-download loader overrides, Java location/memory/arguments, custom commands, legacy tweaks, and native-library workarounds with standard SwiftUI `Form` controls. Unconfirmed edits remain local drafts until the facade returns a confirmed snapshot.
+
+Scope: directly required `launcher/frontend` settings values and fixture ports, the Foundation-only Objective-C++ bridge, Swift `@MainActor` settings state/view code, and facade/bridge/Shell tests. Account selection and environment-variable values do not cross this boundary; Java discovery/browse/test/download remains the dedicated M7 Java workflow. No live `BaseInstance`, global `Application`, account, Keychain, upstream data, process, production service, or other-platform behavior was accessed.
+
+Legacy contract evidence: `InstanceSettingsPage` derives from `MinecraftSettingsWidget`; the audited `loadSettings`/`saveSettings` paths use the settings keys represented by the snapshot: `OverrideWindow`, `LaunchMaximized`, `MinecraftWinWidth`, `MinecraftWinHeight`, `CloseAfterLaunch`, `QuitAfterGameStop`, `OverrideConsole`, `ShowConsole`, `ShowConsoleOnError`, `AutoCloseConsole`, `GlobalDataPacksEnabled`, `GlobalDataPacksPath`, `OverrideGameTime`, `ShowGameTime`, `RecordGameTime`, `CountGameTime`, `JoinServerOnLaunch`, `JoinServerOnLaunchAddress`, `JoinWorldOnLaunch`, `OverrideModDownloadLoaders`, `ModDownloadLoaders`, `OverrideJavaLocation`, `JavaPath`, `IgnoreJavaCompatibility`, `OverrideMemory`, `MinMemAlloc`, `MaxMemAlloc`, `PermGen`, `LowMemWarning`, `OverrideJavaArgs`, `JvmArgs`, `OverrideCommands`, `PreLaunchCommand`, `WrapperCommand`, `PostExitCommand`, `OverrideLegacySettings`, `OnlineFixes`, `OverrideNativeWorkarounds`, `UseNativeGLFW`, `CustomGLFWPath`, `UseNativeOpenAL`, and `CustomOpenALPath`. Linux-only performance controls are not part of the macOS form.
+
+Required evidence: QWidget-free settings snapshot/update ports, stable identifier and enum validation, dimension and memory range validation, unique loader validation, confirmed success/unknown/rejected outcomes, invalid input and missing-port handling, cancellation-aware asynchronous bridge delivery, shutdown cleanup, draft preservation after rejection/error, standard `Form`/`Section`/`Toggle`/`Stepper`/`Picker`/`TextField`/`TextEditor`/`ProgressView`/`ContentUnavailableView`, accessibility labels/values/help/identifiers, default keyboard save action, localization-key shape checks, temporary-root facade tests, native tests, Debug/Release builds, Bundle ID checks, bridge/Swift boundary scans, no-drawing scans, and `git diff --check`.
+
+HIG decision: use SwiftUI `Form` and `Section` for grouped configuration, `Toggle` for Boolean overrides, `Stepper` for bounded numeric values, `Picker` for the join destination, `TextField`/`TextEditor` for user-entered paths and commands, and system `ProgressView`/`ContentUnavailableView` for loading and recovery. No custom control, custom drawing, third-party UI, or rendering exception was added. References: Apple [`Form`](https://developer.apple.com/documentation/swiftui/form), [`Toggle`](https://developer.apple.com/documentation/swiftui/toggle), [`Stepper`](https://developer.apple.com/documentation/swiftui/stepper), [`Picker`](https://developer.apple.com/documentation/swiftui/picker), [`TextField`](https://developer.apple.com/documentation/swiftui/textfield), [`TextEditor`](https://developer.apple.com/documentation/swiftui/texteditor), [`ProgressView`](https://developer.apple.com/documentation/swiftui/progressview), [`ContentUnavailableView`](https://developer.apple.com/documentation/swiftui/contentunavailableview), [`accessibility`](https://developer.apple.com/documentation/swiftui/accessibility), and HIG [`forms`](https://developer.apple.com/design/human-interface-guidelines/forms).
+
+Architecture: `FrontendInstanceSettingsSnapshot` and `FrontendInstanceSettingsUpdateResult` are value-only C++ contracts with explicit loader/updater ports. The facade validates stable identifiers, enum values, dimensions, memory bounds, unique loaders, and confirmed success snapshots. `PRPrismBridge` is the sole C++/Foundation conversion and ownership boundary; it copies Foundation inputs, serializes facade calls, tracks separate load/update request tokens, maps errors, cancels on shutdown, and delivers completions on the main actor. `PrismInstanceSettingsModel` owns only validated Swift values, retains the confirmed snapshot separately from the editable draft, and routes save/retry intents through injected callbacks. No Qt, C++ type, path owner, account value, environment value, or unsafe ownership API crosses into Swift.
+
+Files changed: `launcher/frontend/FrontendFacade.cpp`, `launcher/frontend/FrontendFacade.h`, `launcher/frontend/FrontendFacadeContractTest.cpp`, `launcher/frontend/FrontendFacadePublicHeaderTest.cpp`, `macos/PrismNative/Bridge/PrismBridge.h`, `macos/PrismNative/Bridge/PrismBridge.mm`, `macos/PrismNative/Bridge/PrismBridgeModels.h`, `macos/PrismNative/App/ContentView.swift`, `macos/PrismNative/App/PrismShellModel.swift`, `macos/PrismNativeTests/PrismBridgeFacadeIntegrationTests.mm`, and `macos/PrismNativeTests/PrismShellTests.swift`.
+
+Tests and exact commands:
+
+- `cmake --build /private/tmp/prism-m5-w4-cmake --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test -j2` — passed; arm64 facade targets rebuilt. `ctest --test-dir /private/tmp/prism-m5-w4-cmake -R 'FrontendFacade(Contract|PublicHeaders)' --output-on-failure` — passed 2/2.
+- `cmake --build /private/tmp/prism-m5-w4-universal --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test -j2` — passed; universal facade archive rebuilt. `ctest --test-dir /private/tmp/prism-m5-w4-universal -R 'FrontendFacade(Contract|PublicHeaders)' --output-on-failure` — passed 2/2. `lipo -info .deriveddata-prism-native-backend/libLauncher_frontend.a` — passed; archive contains `x86_64` and `arm64`.
+- `cmake --build /private/tmp/prism-m5-w4-cmake --target Prism -j2` — passed; existing arm64 Qt `Prism` target linked without execution. Existing dependency deployment-version warnings remain unchanged.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO -only-testing:PrismNativeTests/PrismShellTests -only-testing:PrismNativeTests/PrismBridgeFacadeIntegrationTests test` — passed; focused settings/model/bridge run counted 41 test cases from `.deriveddata-prism-native/Logs/Test/Test-PrismNative-2026.08.09_01-21-17-+0800.xcresult`.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO test` — passed; full native suite counted 79 test cases from `.deriveddata-prism-native/Logs/Test/Test-PrismNative-2026.08.09_01-22-12-+0800.xcresult`.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` and the equivalent Release command with `.deriveddata-prism-native-release` — both passed.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` and `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native-release/Build/Products/Release/Prism.app/Contents/Info.plist` — both returned `com.lloydME.Prism`.
+- Objective-C public-header syntax and Objective-C++ bridge syntax — passed. Forbidden bridge/Swift Qt/C++/ownership scans, upstream-path/network scan, no-drawing scan, standard UI/accessibility/localization source checks, and `git diff --check` — passed.
+
+Verification notes: the first Xcode invocation was terminated during CoreSimulator/cache initialization before project compilation; the required local permission rerun reached compilation. The first post-change focused link exposed the known arm64-only facade archive issue on the x86_64 slice; rebuilding the explicit universal facade archive resolved it. A subsequent test-only assertion used an Objective-C XCTest object-comparison macro with a C++ vector; the compiler diagnostic identified the mismatch and the assertion was corrected before the final 41/41 run. No application launch, screenshot, recording, visual snapshot, upstream application/data, real account, Keychain, signing, installation, publishing, push, or destructive action was used.
+
+Result summary: settings values round-trip through a temporary fixture root with confirmed backend state; rejected and failed updates preserve the draft; invalid dimensions, memory ranges, duplicate loaders, mismatched identifiers, missing loaders, missing confirmations, missing settings, and shutdown are covered. Native tests cover loading, normalization, edits, confirmed save, rejection rollback, failed-save retry, stale-result rejection, standard form controls, accessibility/help, keyboard default action, and safe exclusion of environment/account values. The default composition remains fixture/injection based and intentionally does not discover or mutate live `BaseInstance` settings.
+
+Risk: the settings adapter is still an injected fixture/runtime port. Account selection and environment-variable values require their own security/identity contract; Java discovery, file browse, compatibility test, and download belong to M7; world selection currently accepts a stable name rather than owning the legacy world list; Linux-only performance options remain outside the macOS form. No custom-rendering exception was added.
+
+Commit: pending implementation commit; the follow-up documentation commit will record the final implementation hash.
+
+Next after completion: `M6-W3`, implement the version and component list with system `Table` or `List`.
+
 ## Completed commit index
 
 | Commit | Outcome | Verification |
@@ -1280,6 +1319,7 @@ Next after completion: `M6-W2`, implement instance settings with `Form` and stan
 34. M5-W5 moves only the presentation seam from SwiftUI `ScrollView`/`Text` to AppKit `NSTextView`/`NSScrollView` through `NSViewRepresentable`; the same validated bounded privacy-filtered string crosses no new bridge boundary, and selectable/find-bar behavior remains native. M5-W6 owns the task scenario matrix, not a new log source or ownership path.
 35. M5-W6 closes Milestone 5 scenario evidence at the bridge boundary: C++ facade ports provide fixture success/rejection/cancellation/failure/terminal/log-bound behavior, while Objective-C++ tests now prove Foundation conversion, main-actor delivery, retry errors, shutdown, and cancellation suppression without introducing a production launch or process source.
 36. M6-W1 defines immutable instance-detail metadata and confirmed notes-update contracts. The facade accepts only explicit fixture/runtime ports; Objective-C++ owns C++ values, Foundation copies, errors, cancellation, and main-actor delivery; Swift owns validated detail state and preserves unconfirmed drafts. The native surface uses only standard `Form`, `LabeledContent`, `TextEditor`, `ProgressView`, `ContentUnavailableView`, and accessibility/help APIs, with no paths, Qt types, or custom drawing crossing the boundary.
+37. M6-W2 defines an explicit non-secret instance-settings snapshot/update contract. The facade validates identifiers, join enums, dimensions, memory ranges, unique loader names, and confirmed success snapshots; Objective-C++ owns typed Foundation conversion, request-token lifetime, serialized facade access, errors, shutdown cancellation, and main-actor delivery. Swift owns the confirmed settings versus editable draft split and uses standard `Form` controls. Account selection and environment-variable values are intentionally excluded until their security/identity contracts are migrated.
 
 ## Custom rendering exceptions
 
@@ -1293,4 +1333,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M6-W2`. M6-W1 is complete in `d3f319c494a61d559643964a6253a3ec8c495df3`; M6-W2 may implement only instance settings with standard native controls while preserving the existing facade/bridge ownership and temporary-fixture safety contracts. Do not begin M6-W3 or later work until M6-W2 evidence is verified and committed.
+Read `PLAN.md`, run `git status --short --branch -uall`, inspect the last five commits, then activate only ready `M6-W3`. M6-W1 is complete in `d3f319c494a61d559643964a6253a3ec8c495df3`; M6-W2 is complete in the implementation commit recorded above and may not be reopened. M6-W3 may implement only the version and component list with system `Table` or `List` while preserving the existing facade/bridge ownership and temporary-fixture safety contracts. Do not begin M6-W4 or later work until M6-W3 evidence is verified and committed.

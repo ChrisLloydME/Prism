@@ -121,6 +121,128 @@ typedef NS_ENUM(NSInteger, PRInstanceNotesUpdateOutcome) {
 
 @end
 
+typedef NS_ENUM(NSInteger, PRInstanceJoinTarget) {
+    PRInstanceJoinTargetNone = 0,
+    PRInstanceJoinTargetServer,
+    PRInstanceJoinTargetWorld,
+};
+
+/// Immutable, non-secret instance settings for the native Form surface.
+@interface PRInstanceSettings : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithIdentifier:(NSString *)identifier
+                      windowOverrideEnabled:(BOOL)windowOverrideEnabled
+                             launchMaximized:(BOOL)launchMaximized
+                                windowWidth:(NSInteger)windowWidth
+                               windowHeight:(NSInteger)windowHeight
+                         closeAfterLaunch:(BOOL)closeAfterLaunch
+                       quitAfterGameStop:(BOOL)quitAfterGameStop
+                     consoleOverrideEnabled:(BOOL)consoleOverrideEnabled
+                              showConsole:(BOOL)showConsole
+                       showConsoleOnError:(BOOL)showConsoleOnError
+                         autoCloseConsole:(BOOL)autoCloseConsole
+                   globalDataPacksEnabled:(BOOL)globalDataPacksEnabled
+                     globalDataPacksPath:(NSString *)globalDataPacksPath
+                   gameTimeOverrideEnabled:(BOOL)gameTimeOverrideEnabled
+                           showGameTime:(BOOL)showGameTime
+                         recordGameTime:(BOOL)recordGameTime
+                          countGameTime:(BOOL)countGameTime
+                      joinServerOnLaunch:(BOOL)joinServerOnLaunch
+                              joinTarget:(PRInstanceJoinTarget)joinTarget
+                    joinServerAddress:(NSString *)joinServerAddress
+                           joinWorld:(NSString *)joinWorld
+               overrideModDownloadLoaders:(BOOL)overrideModDownloadLoaders
+                    modDownloadLoaders:(NSArray<NSString *> *)modDownloadLoaders
+               javaLocationOverrideEnabled:(BOOL)javaLocationOverrideEnabled
+                               javaPath:(NSString *)javaPath
+                 ignoreJavaCompatibility:(BOOL)ignoreJavaCompatibility
+                     memoryOverrideEnabled:(BOOL)memoryOverrideEnabled
+                          minMemoryMiB:(NSInteger)minMemoryMiB
+                          maxMemoryMiB:(NSInteger)maxMemoryMiB
+                             permGenMiB:(NSInteger)permGenMiB
+                       lowMemoryWarning:(BOOL)lowMemoryWarning
+               javaArgumentsOverrideEnabled:(BOOL)javaArgumentsOverrideEnabled
+                          jvmArguments:(NSString *)jvmArguments
+                  commandOverrideEnabled:(BOOL)commandOverrideEnabled
+                       preLaunchCommand:(NSString *)preLaunchCommand
+                         wrapperCommand:(NSString *)wrapperCommand
+                      postExitCommand:(NSString *)postExitCommand
+             legacySettingsOverrideEnabled:(BOOL)legacySettingsOverrideEnabled
+                           onlineFixes:(BOOL)onlineFixes
+          nativeWorkaroundsOverrideEnabled:(BOOL)nativeWorkaroundsOverrideEnabled
+                         useNativeGLFW:(BOOL)useNativeGLFW
+                       customGLFWPath:(NSString *)customGLFWPath
+                         useNativeOpenAL:(BOOL)useNativeOpenAL
+                       customOpenALPath:(NSString *)customOpenALPath NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, assign, readonly) BOOL windowOverrideEnabled;
+@property(nonatomic, assign, readonly) BOOL launchMaximized;
+@property(nonatomic, assign, readonly) NSInteger windowWidth;
+@property(nonatomic, assign, readonly) NSInteger windowHeight;
+@property(nonatomic, assign, readonly) BOOL closeAfterLaunch;
+@property(nonatomic, assign, readonly) BOOL quitAfterGameStop;
+@property(nonatomic, assign, readonly) BOOL consoleOverrideEnabled;
+@property(nonatomic, assign, readonly) BOOL showConsole;
+@property(nonatomic, assign, readonly) BOOL showConsoleOnError;
+@property(nonatomic, assign, readonly) BOOL autoCloseConsole;
+@property(nonatomic, assign, readonly) BOOL globalDataPacksEnabled;
+@property(nonatomic, copy, readonly) NSString *globalDataPacksPath;
+@property(nonatomic, assign, readonly) BOOL gameTimeOverrideEnabled;
+@property(nonatomic, assign, readonly) BOOL showGameTime;
+@property(nonatomic, assign, readonly) BOOL recordGameTime;
+@property(nonatomic, assign, readonly) BOOL countGameTime;
+@property(nonatomic, assign, readonly) BOOL joinServerOnLaunch;
+@property(nonatomic, assign, readonly) PRInstanceJoinTarget joinTarget;
+@property(nonatomic, copy, readonly) NSString *joinServerAddress;
+@property(nonatomic, copy, readonly) NSString *joinWorld;
+@property(nonatomic, assign, readonly) BOOL overrideModDownloadLoaders;
+@property(nonatomic, copy, readonly) NSArray<NSString *> *modDownloadLoaders;
+@property(nonatomic, assign, readonly) BOOL javaLocationOverrideEnabled;
+@property(nonatomic, copy, readonly) NSString *javaPath;
+@property(nonatomic, assign, readonly) BOOL ignoreJavaCompatibility;
+@property(nonatomic, assign, readonly) BOOL memoryOverrideEnabled;
+@property(nonatomic, assign, readonly) NSInteger minMemoryMiB;
+@property(nonatomic, assign, readonly) NSInteger maxMemoryMiB;
+@property(nonatomic, assign, readonly) NSInteger permGenMiB;
+@property(nonatomic, assign, readonly) BOOL lowMemoryWarning;
+@property(nonatomic, assign, readonly) BOOL javaArgumentsOverrideEnabled;
+@property(nonatomic, copy, readonly) NSString *jvmArguments;
+@property(nonatomic, assign, readonly) BOOL commandOverrideEnabled;
+@property(nonatomic, copy, readonly) NSString *preLaunchCommand;
+@property(nonatomic, copy, readonly) NSString *wrapperCommand;
+@property(nonatomic, copy, readonly) NSString *postExitCommand;
+@property(nonatomic, assign, readonly) BOOL legacySettingsOverrideEnabled;
+@property(nonatomic, assign, readonly) BOOL onlineFixes;
+@property(nonatomic, assign, readonly) BOOL nativeWorkaroundsOverrideEnabled;
+@property(nonatomic, assign, readonly) BOOL useNativeGLFW;
+@property(nonatomic, copy, readonly) NSString *customGLFWPath;
+@property(nonatomic, assign, readonly) BOOL useNativeOpenAL;
+@property(nonatomic, copy, readonly) NSString *customOpenALPath;
+
+@end
+
+typedef NS_ENUM(NSInteger, PRInstanceSettingsUpdateOutcome) {
+    PRInstanceSettingsUpdateOutcomeSucceeded = 0,
+    PRInstanceSettingsUpdateOutcomeUnknownInstance,
+    PRInstanceSettingsUpdateOutcomeRejected,
+};
+
+/// Immutable confirmed result for one instance settings mutation.
+@interface PRInstanceSettingsUpdateResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithIdentifier:(NSString *)identifier
+                                    settings:(nullable PRInstanceSettings *)settings
+                                    outcome:(PRInstanceSettingsUpdateOutcome)outcome NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, strong, readonly, nullable) PRInstanceSettings *settings;
+@property(nonatomic, assign, readonly) PRInstanceSettingsUpdateOutcome outcome;
+
+@end
+
 /// Immutable progress state for one task subtask.
 @interface PRTaskSubtaskStatus : NSObject
 

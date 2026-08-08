@@ -3,6 +3,60 @@ import XCTest
 
 @MainActor
 final class PrismShellTests: XCTestCase {
+    private func makeInstanceSettings(
+        identifier: String = "fixture.one",
+        windowWidth: Int = 1280
+    ) throws -> PRInstanceSettings {
+        try XCTUnwrap(
+            PRInstanceSettings(
+                identifier: identifier,
+                windowOverrideEnabled: true,
+                launchMaximized: true,
+                windowWidth: windowWidth,
+                windowHeight: 720,
+                closeAfterLaunch: true,
+                quitAfterGameStop: false,
+                consoleOverrideEnabled: true,
+                showConsole: true,
+                showConsoleOnError: true,
+                autoCloseConsole: false,
+                globalDataPacksEnabled: true,
+                globalDataPacksPath: "datapacks",
+                gameTimeOverrideEnabled: true,
+                showGameTime: true,
+                recordGameTime: true,
+                countGameTime: true,
+                joinServerOnLaunch: true,
+                joinTarget: .server,
+                joinServerAddress: "fixture.example:25565",
+                joinWorld: "",
+                overrideModDownloadLoaders: true,
+                modDownloadLoaders: ["Fabric", "Quilt"],
+                javaLocationOverrideEnabled: true,
+                javaPath: "/fixture/bin/java",
+                ignoreJavaCompatibility: true,
+                memoryOverrideEnabled: true,
+                minMemoryMiB: 512,
+                maxMemoryMiB: 4096,
+                permGenMiB: 128,
+                lowMemoryWarning: true,
+                javaArgumentsOverrideEnabled: true,
+                jvmArguments: "-Dfixture=true",
+                commandOverrideEnabled: true,
+                preLaunchCommand: "prepare-fixture",
+                wrapperCommand: "wrapper-fixture",
+                postExitCommand: "cleanup-fixture",
+                legacySettingsOverrideEnabled: true,
+                onlineFixes: false,
+                nativeWorkaroundsOverrideEnabled: true,
+                useNativeGLFW: true,
+                customGLFWPath: "/fixture/libglfw.dylib",
+                useNativeOpenAL: true,
+                customOpenALPath: "/fixture/libopenal.dylib"
+            )
+        )
+    }
+
     func testSidebarManifestHasStableSelectionAndAccessibilityMetadata() {
         let items = PrismShellSidebarItem.allCases
 
@@ -219,6 +273,158 @@ final class PrismShellTests: XCTestCase {
                 )
             )
         )
+    }
+
+    func testInstanceSettingsModelConfirmsEditsAndPreservesDraftOnRejectedOrFailedSave() throws {
+        var loadedIdentifiers: [String] = []
+        var saveRequests: [(String, PrismInstanceSettings)] = []
+        let model = PrismInstanceSettingsModel(
+            onLoad: { loadedIdentifiers.append($0) },
+            onSave: { saveRequests.append(($0, $1)) }
+        )
+
+        XCTAssertTrue(model.beginLoading(identifier: " fixture.one "))
+        XCTAssertEqual(model.state, .loading(identifier: "fixture.one"))
+        XCTAssertEqual(loadedIdentifiers, ["fixture.one"])
+
+        let initialBridgeSettings = try makeInstanceSettings()
+        XCTAssertTrue(model.apply(settings: initialBridgeSettings))
+        XCTAssertEqual(model.settings?.windowWidth, 1280)
+        XCTAssertEqual(model.settings?.modDownloadLoaders, ["Fabric", "Quilt"])
+        XCTAssertEqual(model.settings?.joinTarget, .server)
+
+        model.updateDraft { draft in
+            draft.windowWidth = 1366
+            draft.joinTarget = .world
+            draft.joinWorld = "Fixture World"
+        }
+        XCTAssertTrue(model.isSaveAvailable)
+        XCTAssertTrue(model.save())
+        XCTAssertEqual(model.saveState, .saving)
+        XCTAssertEqual(saveRequests.count, 1)
+        XCTAssertEqual(saveRequests[0].0, "fixture.one")
+        XCTAssertEqual(saveRequests[0].1.windowWidth, 1366)
+        XCTAssertEqual(saveRequests[0].1.joinTarget, .world)
+
+        let confirmedSettings = try makeInstanceSettings(windowWidth: 1440)
+        XCTAssertTrue(
+            model.apply(
+                updateResult: try XCTUnwrap(
+                    PRInstanceSettingsUpdateResult(
+                        identifier: "fixture.one",
+                        settings: confirmedSettings,
+                        outcome: .succeeded
+                    )
+                )
+            )
+        )
+        XCTAssertEqual(model.settings?.windowWidth, 1440)
+        XCTAssertEqual(model.draft?.windowWidth, 1440)
+        XCTAssertEqual(model.saveState, .idle)
+        XCTAssertFalse(model.isSaveAvailable)
+
+        model.updateDraft { $0.windowWidth = 1500 }
+        XCTAssertTrue(model.save())
+        XCTAssertTrue(
+            model.apply(
+                updateResult: try XCTUnwrap(
+                    PRInstanceSettingsUpdateResult(
+                        identifier: "fixture.one",
+                        settings: nil,
+                        outcome: .rejected
+                    )
+                )
+            )
+        )
+        XCTAssertEqual(model.settings?.windowWidth, 1440)
+        XCTAssertEqual(model.draft?.windowWidth, 1500)
+        XCTAssertEqual(model.saveFailure?.localizationKey, "instance.settings.updateRejected")
+        XCTAssertFalse(model.retrySave())
+
+        model.updateDraft { $0.windowWidth = 1510 }
+        XCTAssertTrue(model.save())
+        let bridgeError = try XCTUnwrap(
+            PRBridgeError(
+                code: .dataUnavailable,
+                localizationKey: "instance.settings.unavailable",
+                substitutionValues: ["instanceIdentifier": "fixture.one"],
+                diagnosticText: "fixture settings unavailable",
+                recoveryKind: .retry,
+                partialChangesRolledBack: false
+            )
+        )
+        XCTAssertTrue(model.apply(error: bridgeError, instanceIdentifier: " fixture.one "))
+        XCTAssertEqual(model.settings?.windowWidth, 1440)
+        XCTAssertEqual(model.draft?.windowWidth, 1510)
+        XCTAssertTrue(model.saveFailure?.isRetryAvailable == true)
+        XCTAssertTrue(model.retrySave())
+        XCTAssertEqual(model.saveState, .saving)
+        XCTAssertEqual(saveRequests.count, 4)
+        XCTAssertEqual(saveRequests[3].1.windowWidth, 1510)
+
+        XCTAssertFalse(
+            model.apply(
+                updateResult: try XCTUnwrap(
+                    PRInstanceSettingsUpdateResult(
+                        identifier: "other.instance",
+                        settings: confirmedSettings,
+                        outcome: .succeeded
+                    )
+                )
+            )
+        )
+    }
+
+    func testInstanceSettingsSourceUsesNativeFormControlsAndSafeBoundary() throws {
+        let contentSource = try contentSource()
+        let shellModelSource = try shellModelSource()
+
+        for requiredToken in [
+            "PrismInstanceSettingsView",
+            "Form {",
+            "Section(\"Game Window\")",
+            "Section(\"Java\")",
+            "Toggle(",
+            "Stepper(",
+            "Picker(\"Destination\"",
+            "TextEditor(",
+            "Save Settings",
+            ".keyboardShortcut(.defaultAction)",
+            "ContentUnavailableView",
+            "ProgressView()",
+            "prism.instance-settings.save",
+            ".accessibilityLabel(",
+            ".accessibilityValue(",
+            ".help("
+        ] {
+            XCTAssertTrue(contentSource.contains(requiredToken), "Missing native instance settings API: \(requiredToken)")
+        }
+
+        for requiredToken in [
+            "PrismInstanceSettings",
+            "PrismInstanceSettingsModel",
+            "PRInstanceSettings",
+            "PRInstanceSettingsUpdateResult",
+            "PrismInstanceSettingsState",
+            "PrismInstanceSettingsSaveState",
+            "beginLoading(identifier:",
+            "apply(updateResult bridgeResult:",
+            "isSaveAvailable",
+            "retrySave()",
+            "updateDraft",
+            "partialChangesRolledBack"
+        ] {
+            XCTAssertTrue(shellModelSource.contains(requiredToken), "Missing instance settings state contract: \(requiredToken)")
+        }
+
+        XCTAssertFalse(contentSource.contains("Canvas("))
+        XCTAssertFalse(contentSource.contains("draw("))
+        XCTAssertFalse(contentSource.contains("Path("))
+        XCTAssertFalse(shellModelSource.contains("QWidget"))
+        XCTAssertFalse(shellModelSource.contains("QDialog"))
+        XCTAssertFalse(shellModelSource.contains("Unmanaged"))
+        XCTAssertFalse(shellModelSource.contains("UnsafeMutable"))
+        XCTAssertFalse(shellModelSource.contains("EnvironmentVariables"))
     }
 
     func testInstanceDetailsSourceUsesNativeFormTextEditorAndRecoveryAPIs() throws {

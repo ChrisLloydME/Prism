@@ -43,6 +43,55 @@ FrontendRuntimeDependencies makeFixtureDependencies()
     return dependencies;
 }
 
+FrontendInstanceSettingsSnapshot fixtureSettings(const std::string& identifier)
+{
+    FrontendInstanceSettingsSnapshot settings;
+    settings.id = identifier;
+    settings.windowOverrideEnabled = true;
+    settings.launchMaximized = true;
+    settings.windowWidth = 1280;
+    settings.windowHeight = 720;
+    settings.closeAfterLaunch = true;
+    settings.quitAfterGameStop = false;
+    settings.consoleOverrideEnabled = true;
+    settings.showConsole = true;
+    settings.showConsoleOnError = true;
+    settings.autoCloseConsole = false;
+    settings.globalDataPacksEnabled = true;
+    settings.globalDataPacksPath = "datapacks";
+    settings.gameTimeOverrideEnabled = true;
+    settings.showGameTime = true;
+    settings.recordGameTime = true;
+    settings.countGameTime = true;
+    settings.joinServerOnLaunch = true;
+    settings.joinTarget = FrontendInstanceJoinTarget::Server;
+    settings.joinServerAddress = "fixture.example:25565";
+    settings.overrideModDownloadLoaders = true;
+    settings.modDownloadLoaders = { "Fabric", "Quilt" };
+    settings.javaLocationOverrideEnabled = true;
+    settings.javaPath = "/fixture/bin/java";
+    settings.ignoreJavaCompatibility = true;
+    settings.memoryOverrideEnabled = true;
+    settings.minMemoryMiB = 512;
+    settings.maxMemoryMiB = 4096;
+    settings.permGenMiB = 128;
+    settings.lowMemoryWarning = true;
+    settings.javaArgumentsOverrideEnabled = true;
+    settings.jvmArguments = "-Dfixture=true";
+    settings.commandOverrideEnabled = true;
+    settings.preLaunchCommand = "prepare-fixture";
+    settings.wrapperCommand = "wrapper-fixture";
+    settings.postExitCommand = "cleanup-fixture";
+    settings.legacySettingsOverrideEnabled = true;
+    settings.onlineFixes = false;
+    settings.nativeWorkaroundsOverrideEnabled = true;
+    settings.useNativeGLFW = true;
+    settings.customGLFWPath = "/fixture/libglfw.dylib";
+    settings.useNativeOpenAL = true;
+    settings.customOpenALPath = "/fixture/libopenal.dylib";
+    return settings;
+}
+
 template <typename Function>
 bool throwsInvalidArgument(Function&& function)
 {
@@ -178,6 +227,90 @@ int main()
     });
     const bool missingDetailsPortsAreSafe = !emptyFacade.instanceDetails("fixture-one").has_value()
         && emptyFacade.updateInstanceNotes("fixture-one", "fixture notes").outcome == FrontendInstanceNotesUpdateOutcome::Rejected;
+
+    std::vector<std::string> settingsLoadCalls;
+    std::vector<std::string> settingsUpdateCalls;
+    bool settingsRootMatches = true;
+    auto settingsDependencies = makeFixtureDependencies();
+    settingsDependencies.loadInstanceSettings = [&](const std::filesystem::path& root, const std::string& identifier)
+        -> std::optional<FrontendInstanceSettingsSnapshot> {
+        settingsRootMatches = settingsRootMatches && root == fixtureRoot.lexically_normal();
+        settingsLoadCalls.push_back(identifier);
+        if (identifier != "fixture-one") {
+            return std::nullopt;
+        }
+        return fixtureSettings(identifier);
+    };
+    settingsDependencies.updateInstanceSettings = [&](const std::filesystem::path& root,
+                                                       const std::string& identifier,
+                                                       const FrontendInstanceSettingsSnapshot& requested) {
+        settingsRootMatches = settingsRootMatches && root == fixtureRoot.lexically_normal();
+        settingsUpdateCalls.push_back(identifier + ":" + std::to_string(requested.windowWidth));
+        if (identifier == "fixture-one") {
+            auto confirmed = requested;
+            confirmed.windowWidth = 1440;
+            return FrontendInstanceSettingsUpdateResult{
+                FrontendInstanceSettingsUpdateOutcome::Succeeded,
+                std::move(confirmed),
+            };
+        }
+        if (identifier == "unknown-instance") {
+            return FrontendInstanceSettingsUpdateResult{
+                FrontendInstanceSettingsUpdateOutcome::UnknownInstance,
+                std::nullopt,
+            };
+        }
+        return FrontendInstanceSettingsUpdateResult{
+            FrontendInstanceSettingsUpdateOutcome::Rejected,
+            std::nullopt,
+        };
+    };
+    FrontendFacade settingsFacade(fixtureRoot / "nested" / "..", std::move(settingsDependencies));
+    const auto loadedSettings = settingsFacade.instanceSettings("fixture-one");
+    auto requestedSettings = fixtureSettings("fixture-one");
+    requestedSettings.windowWidth = 1366;
+    const auto savedSettings = settingsFacade.updateInstanceSettings("fixture-one", requestedSettings);
+    const auto unknownSettings = settingsFacade.updateInstanceSettings("unknown-instance", fixtureSettings("unknown-instance"));
+    const auto rejectedSettings = settingsFacade.updateInstanceSettings("rejected-instance", fixtureSettings("rejected-instance"));
+    const bool settingsContract = loadedSettings.has_value() && loadedSettings->windowWidth == 1280
+        && loadedSettings->joinTarget == FrontendInstanceJoinTarget::Server
+        && loadedSettings->modDownloadLoaders == std::vector<std::string>{ "Fabric", "Quilt" }
+        && loadedSettings->javaPath == "/fixture/bin/java" && loadedSettings->jvmArguments == "-Dfixture=true"
+        && savedSettings.outcome == FrontendInstanceSettingsUpdateOutcome::Succeeded && savedSettings.settings.has_value()
+        && savedSettings.settings->windowWidth == 1440
+        && unknownSettings.outcome == FrontendInstanceSettingsUpdateOutcome::UnknownInstance
+        && rejectedSettings.outcome == FrontendInstanceSettingsUpdateOutcome::Rejected && settingsRootMatches
+        && settingsLoadCalls == std::vector<std::string>{ "fixture-one" }
+        && settingsUpdateCalls == std::vector<std::string>{ "fixture-one:1366", "unknown-instance:1280", "rejected-instance:1280" };
+    auto invalidSettingsDependencies = makeFixtureDependencies();
+    invalidSettingsDependencies.loadInstanceSettings = [](const std::filesystem::path&, const std::string&) {
+        auto invalid = fixtureSettings("fixture-one");
+        invalid.windowWidth = 0;
+        return std::optional<FrontendInstanceSettingsSnapshot>(std::move(invalid));
+    };
+    FrontendFacade invalidSettingsFacade(fixtureRoot, std::move(invalidSettingsDependencies));
+    const bool invalidSettingsRejected = throwsInvalidArgument([&invalidSettingsFacade] {
+        (void) invalidSettingsFacade.instanceSettings("fixture-one");
+    });
+    auto invalidUpdateDependencies = makeFixtureDependencies();
+    invalidUpdateDependencies.updateInstanceSettings = [](const std::filesystem::path&,
+                                                           const std::string&,
+                                                           const FrontendInstanceSettingsSnapshot&) {
+        return FrontendInstanceSettingsUpdateResult{
+            FrontendInstanceSettingsUpdateOutcome::Succeeded,
+            std::nullopt,
+        };
+    };
+    FrontendFacade invalidUpdateFacade(fixtureRoot, std::move(invalidUpdateDependencies));
+    auto mismatchedSettings = fixtureSettings("other-instance");
+    const bool invalidSettingsUpdateRejected = throwsInvalidArgument([&invalidUpdateFacade] {
+        (void) invalidUpdateFacade.updateInstanceSettings("fixture-one", fixtureSettings("fixture-one"));
+    }) && throwsInvalidArgument([&invalidUpdateFacade, &mismatchedSettings] {
+        (void) invalidUpdateFacade.updateInstanceSettings("fixture-one", mismatchedSettings);
+    });
+    const bool missingSettingsPortsAreSafe = !emptyFacade.instanceSettings("fixture-one").has_value()
+        && emptyFacade.updateInstanceSettings("fixture-one", fixtureSettings("fixture-one")).outcome
+            == FrontendInstanceSettingsUpdateOutcome::Rejected;
 
     std::vector<std::string> launchCalls;
     std::vector<std::string> stopCalls;
@@ -558,12 +691,21 @@ int main()
         && throwsLogicError([&detailsFacade] {
                (void) detailsFacade.updateInstanceNotes("fixture-one", "after shutdown");
            });
+    const bool rejectedPostShutdownSettingsWork = settingsFacade.shutdown()
+        && throwsLogicError([&settingsFacade] {
+               (void) settingsFacade.instanceSettings("fixture-one");
+           })
+        && throwsLogicError([&settingsFacade, &requestedSettings] {
+               (void) settingsFacade.updateInstanceSettings("fixture-one", requestedSettings);
+           });
 
     std::filesystem::remove(fixtureMarker, error);
     std::filesystem::remove(fixtureRoot, error);
 
     return fixtureWasPreserved && emptyContract && fixtureSnapshotContract && fixtureChangeContract && detailsContract
-               && rejectedInvalidDetailsIdentifiers && missingDetailsPortsAreSafe && rejectedPostShutdownDetailsWork
+               && rejectedInvalidDetailsIdentifiers && missingDetailsPortsAreSafe && settingsContract
+               && invalidSettingsRejected && invalidSettingsUpdateRejected && missingSettingsPortsAreSafe
+               && rejectedPostShutdownSettingsWork && rejectedPostShutdownDetailsWork
                && commandRootContract && missingCommandPortsAreRejected && rejectedPostShutdownCommands && taskStateContract
                && taskCancellationContract && taskForwardingContract && rejectedInvalidTaskIdentifiers
                && missingTaskPortsAreSafe && rejectedPostShutdownTaskWork && rejectedInvalidTaskProgress

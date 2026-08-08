@@ -48,6 +48,80 @@ struct FrontendInstanceNotesUpdateResult final {
     std::string notes;
 };
 
+enum class FrontendInstanceJoinTarget : std::uint8_t { None, Server, World };
+
+/// Confirmed, non-secret instance settings for the native settings form.
+/// Account selection and environment-variable values deliberately stay out of
+/// this value contract until their dedicated security/identity workflows are
+/// migrated.
+struct FrontendInstanceSettingsSnapshot final {
+    std::string id;
+
+    bool windowOverrideEnabled = false;
+    bool launchMaximized = false;
+    int windowWidth = 854;
+    int windowHeight = 480;
+    bool closeAfterLaunch = false;
+    bool quitAfterGameStop = false;
+
+    bool consoleOverrideEnabled = false;
+    bool showConsole = false;
+    bool showConsoleOnError = true;
+    bool autoCloseConsole = false;
+
+    bool globalDataPacksEnabled = false;
+    std::string globalDataPacksPath;
+
+    bool gameTimeOverrideEnabled = false;
+    bool showGameTime = false;
+    bool recordGameTime = false;
+    bool countGameTime = true;
+
+    bool joinServerOnLaunch = false;
+    FrontendInstanceJoinTarget joinTarget = FrontendInstanceJoinTarget::None;
+    std::string joinServerAddress;
+    std::string joinWorld;
+
+    bool overrideModDownloadLoaders = false;
+    std::vector<std::string> modDownloadLoaders;
+
+    bool javaLocationOverrideEnabled = false;
+    std::string javaPath;
+    bool ignoreJavaCompatibility = false;
+
+    bool memoryOverrideEnabled = false;
+    int minMemoryMiB = 512;
+    int maxMemoryMiB = 1024;
+    int permGenMiB = 128;
+    bool lowMemoryWarning = true;
+
+    bool javaArgumentsOverrideEnabled = false;
+    std::string jvmArguments;
+
+    bool commandOverrideEnabled = false;
+    std::string preLaunchCommand;
+    std::string wrapperCommand;
+    std::string postExitCommand;
+
+    bool legacySettingsOverrideEnabled = false;
+    bool onlineFixes = false;
+
+    bool nativeWorkaroundsOverrideEnabled = false;
+    bool useNativeGLFW = false;
+    std::string customGLFWPath;
+    bool useNativeOpenAL = false;
+    std::string customOpenALPath;
+
+    bool hasStableIdentifier() const noexcept { return !id.empty(); }
+};
+
+enum class FrontendInstanceSettingsUpdateOutcome : std::uint8_t { Succeeded, UnknownInstance, Rejected };
+
+struct FrontendInstanceSettingsUpdateResult final {
+    FrontendInstanceSettingsUpdateOutcome outcome = FrontendInstanceSettingsUpdateOutcome::Rejected;
+    std::optional<FrontendInstanceSettingsSnapshot> settings;
+};
+
 enum class FrontendTaskState : std::uint8_t { Queued, Running, Cancelling, Succeeded, Failed, Cancelled };
 
 enum class FrontendTaskProgressKind : std::uint8_t { None, Indeterminate, Determinate };
@@ -126,6 +200,10 @@ struct FrontendRuntimeDependencies final {
     using InstanceCommand = std::function<FrontendInstanceCommandResult(const std::filesystem::path&, const std::string&)>;
     using InstanceNotesUpdater = std::function<FrontendInstanceNotesUpdateResult(
         const std::filesystem::path&, const std::string&, const std::string&)>;
+    using InstanceSettingsLoader = std::function<std::optional<FrontendInstanceSettingsSnapshot>(
+        const std::filesystem::path&, const std::string&)>;
+    using InstanceSettingsUpdater = std::function<FrontendInstanceSettingsUpdateResult(
+        const std::filesystem::path&, const std::string&, const FrontendInstanceSettingsSnapshot&)>;
     using TaskSnapshotLoader = std::function<std::optional<FrontendTaskSnapshot>(const std::filesystem::path&, const std::string&)>;
     using TaskCancellation = std::function<FrontendTaskCancellationResult(const std::filesystem::path&, const std::string&)>;
     using LogEntryHandler = std::function<void(FrontendLogEntry)>;
@@ -141,6 +219,8 @@ struct FrontendRuntimeDependencies final {
     InstanceCommand launchInstance;
     InstanceCommand stopInstance;
     InstanceNotesUpdater updateInstanceNotes;
+    InstanceSettingsLoader loadInstanceSettings;
+    InstanceSettingsUpdater updateInstanceSettings;
     TaskSnapshotLoader loadTaskSnapshot;
     TaskCancellation cancelTask;
     TaskLogStreamer streamTaskLogs;
@@ -178,6 +258,9 @@ class FrontendFacade final {
     FrontendInstanceCommandResult stopInstance(const std::string& instanceIdentifier) const;
     FrontendInstanceNotesUpdateResult updateInstanceNotes(
         const std::string& instanceIdentifier, const std::string& notes) const;
+    std::optional<FrontendInstanceSettingsSnapshot> instanceSettings(const std::string& instanceIdentifier) const;
+    FrontendInstanceSettingsUpdateResult updateInstanceSettings(
+        const std::string& instanceIdentifier, const FrontendInstanceSettingsSnapshot& settings) const;
     std::optional<FrontendTaskSnapshot> taskSnapshot(const std::string& taskIdentifier) const;
     FrontendTaskCancellationResult cancelTask(const std::string& taskIdentifier) const;
     std::optional<FrontendLogSnapshot> taskLogSnapshot(const std::string& taskIdentifier) const;
