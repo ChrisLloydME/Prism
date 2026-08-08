@@ -493,7 +493,15 @@ final class PrismGlobalSettingsModel: ObservableObject {
 
 struct PrismSettingsView: View {
     @ObservedObject var model: PrismGlobalSettingsModel
+    @ObservedObject var javaModel: PrismJavaDiscoveryModel
     @State private var isDirectoryImporterPresented = false
+    @State private var selectedTab: SettingsTab = .appearance
+
+    private enum SettingsTab: Hashable {
+        case appearance
+        case general
+        case java
+    }
 
     var body: some View {
         Group {
@@ -525,43 +533,50 @@ struct PrismSettingsView: View {
 
     private var settingsTabs: some View {
         VStack(spacing: 0) {
-            TabView {
+            TabView(selection: $selectedTab) {
                 appearanceForm
                     .tabItem { Label("Appearance", systemImage: "paintbrush") }
+                    .tag(SettingsTab.appearance)
                 generalForm
                     .tabItem { Label("General", systemImage: "gearshape") }
+                    .tag(SettingsTab.general)
+                PrismJavaSettingsView(model: javaModel)
+                    .tabItem { Label("Java", systemImage: "cup.and.saucer") }
+                    .tag(SettingsTab.java)
             }
 
-            Divider()
-            HStack {
-                if let message = model.validationMessage ?? model.directorySelectionError {
-                    Text(message)
-                        .foregroundStyle(.secondary)
-                        .accessibilityValue(Text(message))
-                } else if let failure = model.saveFailure {
-                    Text(failure.diagnosticText ?? "Settings could not be saved.")
-                        .foregroundStyle(.secondary)
-                        .accessibilityValue(Text(failure.diagnosticText ?? "Settings could not be saved."))
+            if selectedTab != .java {
+                Divider()
+                HStack {
+                    if let message = model.validationMessage ?? model.directorySelectionError {
+                        Text(message)
+                            .foregroundStyle(.secondary)
+                            .accessibilityValue(Text(message))
+                    } else if let failure = model.saveFailure {
+                        Text(failure.diagnosticText ?? "Settings could not be saved.")
+                            .foregroundStyle(.secondary)
+                            .accessibilityValue(Text(failure.diagnosticText ?? "Settings could not be saved."))
+                    }
+                    Spacer()
+                    Button("Revert") {
+                        _ = model.cancelDraft()
+                    }
+                    .disabled(!model.hasChanges || model.isSaving)
+                    .accessibilityIdentifier("prism.settings.revert")
+                    Button("Save") {
+                        _ = model.save()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!model.isSaveAvailable)
+                    .accessibilityIdentifier("prism.settings.save")
+                    if model.isSaving {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Saving Settings")
+                    }
                 }
-                Spacer()
-                Button("Revert") {
-                    _ = model.cancelDraft()
-                }
-                .disabled(!model.hasChanges || model.isSaving)
-                .accessibilityIdentifier("prism.settings.revert")
-                Button("Save") {
-                    _ = model.save()
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(!model.isSaveAvailable)
-                .accessibilityIdentifier("prism.settings.save")
-                if model.isSaving {
-                    ProgressView()
-                        .controlSize(.small)
-                        .accessibilityLabel("Saving Settings")
-                }
+                .padding()
             }
-            .padding()
         }
         .accessibilityIdentifier("prism.settings.form")
     }

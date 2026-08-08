@@ -2275,6 +2275,7 @@ final class PrismShellTests: XCTestCase {
 
     func testSettingsSourceUsesStandardSceneControlsAndExplicitBoundaries() throws {
         let settingsSource = try settingsSource()
+        let javaSource = try javaSource()
         let appSource = try appSource()
         for requiredToken in [
             "Settings {",
@@ -2294,13 +2295,138 @@ final class PrismShellTests: XCTestCase {
             XCTAssertTrue(settingsSource.contains(requiredToken), "Missing Settings contract: \(requiredToken)")
         }
         XCTAssertTrue(appSource.contains("Settings {"))
-        XCTAssertTrue(appSource.contains("PrismSettingsView(model: globalSettingsModel)"))
+        XCTAssertTrue(appSource.contains("PrismSettingsView(model: globalSettingsModel, javaModel: javaDiscoveryModel)"))
         for forbiddenToken in [
             "QWidget", "QDialog", "Qt", "Unmanaged", "UnsafeMutable", "UnsafeRaw", "Canvas(",
             "draw(", "Path(", "CGContext", "NSBezierPath", "[String: Any]", "Keychain", "Process("
         ] {
             XCTAssertFalse(settingsSource.contains(forbiddenToken), "Forbidden Settings boundary: \(forbiddenToken)")
         }
+
+        for requiredToken in [
+            "PrismJavaDiscoveryModel",
+            "List(selection:",
+            "ProgressView(\"Detecting Java installations…\")",
+            "ContentUnavailableView",
+            ".disabled(!installation.isSelectable)",
+            "accessibilityIdentifier(\"prism.settings.java",
+            "cup.and.saucer",
+            "PrismJavaInstallation.fixture()"
+        ] {
+            XCTAssertTrue(javaSource.contains(requiredToken), "Missing Java Settings contract: \(requiredToken)")
+        }
+        for forbiddenToken in [
+            "QWidget", "QDialog", "Qt", "Unmanaged", "UnsafeMutable", "UnsafeRaw", "Canvas(",
+            "draw(", "Path(", "CGContext", "NSBezierPath", "FileManager", "URLSession", "Process("
+        ] {
+            XCTAssertFalse(javaSource.contains(forbiddenToken), "Forbidden Java Settings boundary: \(forbiddenToken)")
+        }
+    }
+
+    func testJavaDiscoveryModelTracksFixtureStatesAndConfirmedSelection() throws {
+        var discoveryGenerations: [Int] = []
+        var selectionGenerations: [Int] = []
+        var cancellationCount = 0
+        let model = PrismJavaDiscoveryModel(
+            initialInstallations: [],
+            onDiscover: { discoveryGenerations.append($0) },
+            onSelect: { _, generation in selectionGenerations.append(generation) },
+            onCancel: { cancellationCount += 1 }
+        )
+
+        XCTAssertTrue(model.refresh())
+        let firstDiscoveryGeneration = try XCTUnwrap(discoveryGenerations.first)
+        let emptyResult = try XCTUnwrap(
+            PRJavaDiscoveryResult(
+                installations: [],
+                outcome: .succeeded,
+                localizationKey: "",
+                diagnosticText: nil,
+                retryable: false
+            )
+        )
+        XCTAssertTrue(model.apply(discoveryResult: emptyResult, generation: firstDiscoveryGeneration))
+        if case .empty = model.state {
+        } else {
+            XCTFail("Successful empty Java discovery should expose the empty state")
+        }
+
+        XCTAssertTrue(model.refresh())
+        let failedResult = try XCTUnwrap(
+            PRJavaDiscoveryResult(
+                installations: [],
+                outcome: .failed,
+                localizationKey: "java.discovery.filesystemUnavailable",
+                diagnosticText: "Fixture discovery could not read the configured source.",
+                retryable: true
+            )
+        )
+        XCTAssertTrue(model.apply(discoveryResult: failedResult))
+        XCTAssertEqual(model.state, .failed(
+            PrismJavaFailure(
+                localizationKey: "java.discovery.filesystemUnavailable",
+                diagnosticText: "Fixture discovery could not read the configured source.",
+                recoveryAction: .retry
+            )
+        ))
+        XCTAssertTrue(model.retryDiscovery())
+        XCTAssertTrue(model.cancelDiscovery())
+        XCTAssertEqual(cancellationCount, 1)
+        XCTAssertEqual(model.state, .cancelled)
+
+        let available = PrismJavaInstallation.fixture().first(where: { $0.isSelectable })!
+        let selectionModel = PrismJavaDiscoveryModel(
+            initialInstallations: PrismJavaInstallation.fixture(),
+            onSelect: { _, generation in selectionGenerations.append(generation) }
+        )
+        XCTAssertTrue(selectionModel.select(id: available.id))
+        let selectionGeneration = try XCTUnwrap(selectionGenerations.first)
+        let rejectedSelection = try XCTUnwrap(
+            PRJavaSelectionResult(
+                installation: nil,
+                outcome: .rejected,
+                localizationKey: "java.selection.rejected",
+                diagnosticText: "Fixture selection was rejected."
+            )
+        )
+        XCTAssertTrue(selectionModel.apply(selectionResult: rejectedSelection, generation: selectionGeneration))
+        XCTAssertNil(selectionModel.confirmedSelectionID)
+        XCTAssertEqual(selectionModel.draftSelectionID, available.id)
+        XCTAssertEqual(selectionModel.selectionFailure?.localizationKey, "java.selection.rejected")
+
+        XCTAssertTrue(selectionModel.retrySelection())
+        let retryGeneration = try XCTUnwrap(selectionGenerations.last)
+        let bridgeInstallation = try XCTUnwrap(
+            PRJavaInstallation(
+                identifier: available.id,
+                version: available.version,
+                vendor: available.vendor,
+                architecture: available.architecture,
+                executablePath: available.executablePath,
+                is64Bit: available.is64Bit,
+                managed: available.managed,
+                validity: .valid,
+                diagnosticText: nil
+            )
+        )
+        let staleSuccess = try XCTUnwrap(
+            PRJavaSelectionResult(
+                installation: bridgeInstallation,
+                outcome: .succeeded,
+                localizationKey: "",
+                diagnosticText: nil
+            )
+        )
+        XCTAssertFalse(selectionModel.apply(selectionResult: staleSuccess, generation: selectionGeneration))
+        XCTAssertTrue(selectionModel.apply(selectionResult: staleSuccess, generation: retryGeneration))
+        XCTAssertEqual(selectionModel.confirmedSelectionID, available.id)
+        XCTAssertEqual(selectionModel.draftSelectionID, available.id)
+        XCTAssertFalse(selectionModel.isSavingSelection)
+
+        let fixtureModel = PrismJavaDiscoveryModel()
+        XCTAssertEqual(fixtureModel.installations.count, 4)
+        XCTAssertTrue(fixtureModel.selectableInstallations.allSatisfy(\.isSelectable))
+        XCTAssertFalse(fixtureModel.installations.contains(where: { $0.validity != .valid && $0.isSelectable }))
     }
 
     private func makeGlobalSettings(instanceDirectoryURL: URL, catOpacity: Int) throws -> PRGlobalSettings {
@@ -2372,6 +2498,15 @@ final class PrismShellTests: XCTestCase {
             .deletingLastPathComponent()
         let sourceURL = sourceRoot
             .appendingPathComponent("PrismNative/App/PrismSettings.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private func javaSource() throws -> String {
+        let sourceRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = sourceRoot
+            .appendingPathComponent("PrismNative/App/PrismJavaSettings.swift")
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 

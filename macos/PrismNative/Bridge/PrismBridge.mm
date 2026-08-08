@@ -154,6 +154,40 @@ bool isKnownGlobalSettingsCatFit(NSString *catFit)
     return [catFit isEqualToString:@"fit"] || [catFit isEqualToString:@"fill"] || [catFit isEqualToString:@"strech"];
 }
 
+bool isKnownJavaInstallationValidity(PRJavaInstallationValidity validity)
+{
+    switch (validity) {
+        case PRJavaInstallationValidityValid:
+        case PRJavaInstallationValidityIncompatible:
+        case PRJavaInstallationValidityUnavailable:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownJavaDiscoveryOutcome(PRJavaDiscoveryOutcome outcome)
+{
+    switch (outcome) {
+        case PRJavaDiscoveryOutcomeSucceeded:
+        case PRJavaDiscoveryOutcomeFailed:
+        case PRJavaDiscoveryOutcomeCancelled:
+        case PRJavaDiscoveryOutcomeRejected:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownJavaSelectionOutcome(PRJavaSelectionOutcome outcome)
+{
+    switch (outcome) {
+        case PRJavaSelectionOutcomeSucceeded:
+        case PRJavaSelectionOutcomeUnknownInstallation:
+        case PRJavaSelectionOutcomeRejected:
+            return true;
+    }
+    return false;
+}
+
 std::string stableIdentifierFromFoundation(NSString *identifier)
 {
     if (![identifier isKindOfClass:NSString.class]) {
@@ -1188,6 +1222,106 @@ PRGlobalSettingsUpdateOutcome globalSettingsUpdateOutcomeFromFacadeResult(Fronte
     throw std::invalid_argument("Facade returned an unknown global settings update outcome");
 }
 
+PRJavaInstallationValidity javaInstallationValidityFromFacadeResult(FrontendJavaInstallationValidity validity)
+{
+    switch (validity) {
+        case FrontendJavaInstallationValidity::Valid:
+            return PRJavaInstallationValidityValid;
+        case FrontendJavaInstallationValidity::Incompatible:
+            return PRJavaInstallationValidityIncompatible;
+        case FrontendJavaInstallationValidity::Unavailable:
+            return PRJavaInstallationValidityUnavailable;
+    }
+    throw std::invalid_argument("Facade returned an unknown Java installation validity");
+}
+
+PRJavaDiscoveryOutcome javaDiscoveryOutcomeFromFacadeResult(FrontendJavaDiscoveryOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendJavaDiscoveryOutcome::Succeeded:
+            return PRJavaDiscoveryOutcomeSucceeded;
+        case FrontendJavaDiscoveryOutcome::Failed:
+            return PRJavaDiscoveryOutcomeFailed;
+        case FrontendJavaDiscoveryOutcome::Cancelled:
+            return PRJavaDiscoveryOutcomeCancelled;
+        case FrontendJavaDiscoveryOutcome::Rejected:
+            return PRJavaDiscoveryOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown Java discovery outcome");
+}
+
+PRJavaSelectionOutcome javaSelectionOutcomeFromFacadeResult(FrontendJavaSelectionOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendJavaSelectionOutcome::Succeeded:
+            return PRJavaSelectionOutcomeSucceeded;
+        case FrontendJavaSelectionOutcome::UnknownInstallation:
+            return PRJavaSelectionOutcomeUnknownInstallation;
+        case FrontendJavaSelectionOutcome::Rejected:
+            return PRJavaSelectionOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown Java selection outcome");
+}
+
+PRJavaInstallation *javaInstallationFromFacadeSnapshot(const FrontendJavaInstallationSnapshot& snapshot)
+{
+    const std::string executablePath = snapshot.executablePath.string();
+    PRJavaInstallation *installation = [[PRJavaInstallation alloc]
+        initWithIdentifier:foundationStringFromUTF8(snapshot.id)
+                    version:foundationStringFromUTF8AllowEmpty(snapshot.version)
+                     vendor:foundationStringFromUTF8AllowEmpty(snapshot.vendor)
+               architecture:foundationStringFromUTF8AllowEmpty(snapshot.architecture)
+            executablePath:foundationStringFromUTF8(executablePath)
+                  is64Bit:snapshot.is64Bit
+                   managed:snapshot.managed
+                  validity:javaInstallationValidityFromFacadeResult(snapshot.validity)
+            diagnosticText:foundationStringFromUTF8(snapshot.diagnosticText)];
+    if (!installation) {
+        throw std::invalid_argument("Facade returned an invalid Java installation");
+    }
+    return installation;
+}
+
+NSArray<PRJavaInstallation *> *javaInstallationsFromFacadeSnapshots(
+    const std::vector<FrontendJavaInstallationSnapshot>& snapshots)
+{
+    NSMutableArray<PRJavaInstallation *> *converted = [NSMutableArray arrayWithCapacity:snapshots.size()];
+    for (const FrontendJavaInstallationSnapshot& snapshot : snapshots) {
+        [converted addObject:javaInstallationFromFacadeSnapshot(snapshot)];
+    }
+    return [converted copy];
+}
+
+PRJavaDiscoveryResult *javaDiscoveryResultFromFacadeResult(const FrontendJavaDiscoveryResult& result)
+{
+    PRJavaDiscoveryResult *converted = [[PRJavaDiscoveryResult alloc]
+        initWithInstallations:javaInstallationsFromFacadeSnapshots(result.installations)
+                       outcome:javaDiscoveryOutcomeFromFacadeResult(result.outcome)
+               localizationKey:foundationStringFromUTF8AllowEmpty(result.localizationKey)
+                 diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+                     retryable:result.retryable];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid Java discovery result");
+    }
+    return converted;
+}
+
+PRJavaSelectionResult *javaSelectionResultFromFacadeResult(const FrontendJavaSelectionResult& result)
+{
+    PRJavaInstallation *installation = result.installation.has_value()
+        ? javaInstallationFromFacadeSnapshot(*result.installation)
+        : nil;
+    PRJavaSelectionResult *converted = [[PRJavaSelectionResult alloc]
+        initWithInstallation:installation
+                       outcome:javaSelectionOutcomeFromFacadeResult(result.outcome)
+               localizationKey:foundationStringFromUTF8AllowEmpty(result.localizationKey)
+                 diagnosticText:foundationStringFromUTF8(result.diagnosticText)];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid Java selection result");
+    }
+    return converted;
+}
+
 PRInstanceNotesUpdateOutcome notesUpdateOutcomeFromFacadeResult(FrontendInstanceNotesUpdateOutcome outcome)
 {
     switch (outcome) {
@@ -2121,6 +2255,56 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@interface PRBridgeJavaDiscoveryResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithResult:(nullable PRJavaDiscoveryResult *)result
+                          error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRJavaDiscoveryResult *result;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeJavaDiscoveryResult
+
+- (instancetype)initWithResult:(PRJavaDiscoveryResult *)result error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _result = result;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
+@interface PRBridgeJavaSelectionResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithResult:(nullable PRJavaSelectionResult *)result
+                          error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRJavaSelectionResult *result;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeJavaSelectionResult
+
+- (instancetype)initWithResult:(PRJavaSelectionResult *)result error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _result = result;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
 @interface PRBridgeTaskStatusResult : NSObject
 
 - (instancetype)init NS_UNAVAILABLE;
@@ -2271,6 +2455,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *notesUpdateRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *settingsRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *settingsUpdateRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *javaDiscoveryRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *javaSelectionRequestStates;
 @property(nonatomic, strong) NSLock *observationLock;
 
 - (nullable instancetype)initWithDataRootURL:(NSURL *)dataRootURL
@@ -2300,6 +2486,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 - (void)removeNotesUpdateRequest:(PRBridgeObservationState *)request;
 - (void)removeSettingsRequest:(PRBridgeObservationState *)request;
 - (void)removeSettingsUpdateRequest:(PRBridgeObservationState *)request;
+- (void)removeJavaDiscoveryRequest:(PRBridgeObservationState *)request;
+- (void)removeJavaSelectionRequest:(PRBridgeObservationState *)request;
 - (nullable PRBridgeObservationToken *)loadTaskStatusWithIdentifier:(NSString *)identifier
                                                             completion:(PRTaskStatusCompletionHandler)completion;
 - (nullable PRBridgeObservationToken *)performTaskCancellationWithIdentifier:(NSString *)identifier
@@ -2587,6 +2775,39 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @property(nonatomic, strong, readwrite, nullable) PRGlobalSettings *settings;
 @property(nonatomic, assign, readwrite) PRGlobalSettingsUpdateOutcome outcome;
+
+@end
+
+@interface PRJavaInstallation ()
+
+@property(nonatomic, copy, readwrite) NSString *identifier;
+@property(nonatomic, copy, readwrite) NSString *version;
+@property(nonatomic, copy, readwrite) NSString *vendor;
+@property(nonatomic, copy, readwrite) NSString *architecture;
+@property(nonatomic, copy, readwrite) NSString *executablePath;
+@property(nonatomic, assign, readwrite) BOOL is64Bit;
+@property(nonatomic, assign, readwrite) BOOL managed;
+@property(nonatomic, assign, readwrite) PRJavaInstallationValidity validity;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+
+@end
+
+@interface PRJavaDiscoveryResult ()
+
+@property(nonatomic, copy, readwrite) NSArray<PRJavaInstallation *> *installations;
+@property(nonatomic, assign, readwrite) PRJavaDiscoveryOutcome outcome;
+@property(nonatomic, copy, readwrite) NSString *localizationKey;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readwrite) BOOL retryable;
+
+@end
+
+@interface PRJavaSelectionResult ()
+
+@property(nonatomic, strong, readwrite, nullable) PRJavaInstallation *installation;
+@property(nonatomic, assign, readwrite) PRJavaSelectionOutcome outcome;
+@property(nonatomic, copy, readwrite) NSString *localizationKey;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
 
 @end
 
@@ -3436,6 +3657,111 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@implementation PRJavaInstallation
+
+- (instancetype)initWithIdentifier:(NSString *)identifier
+                             version:(NSString *)version
+                              vendor:(NSString *)vendor
+                        architecture:(NSString *)architecture
+                     executablePath:(NSString *)executablePath
+                           is64Bit:(BOOL)is64Bit
+                            managed:(BOOL)managed
+                           validity:(PRJavaInstallationValidity)validity
+                     diagnosticText:(NSString *)diagnosticText
+{
+    if (!isNonEmptyString(identifier) || ![version isKindOfClass:NSString.class]
+        || ![vendor isKindOfClass:NSString.class] || ![architecture isKindOfClass:NSString.class]
+        || !isNonEmptyString(executablePath) || !isKnownJavaInstallationValidity(validity)
+        || (validity == PRJavaInstallationValidityValid
+            && (!isNonEmptyString(version) || !isNonEmptyString(architecture)))) {
+        return nil;
+    }
+
+    if (diagnosticText && ![diagnosticText isKindOfClass:NSString.class]) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.identifier = [identifier copy];
+        self.version = [version copy];
+        self.vendor = [vendor copy];
+        self.architecture = [architecture copy];
+        self.executablePath = [executablePath copy];
+        self.is64Bit = is64Bit;
+        self.managed = managed;
+        self.validity = validity;
+        self.diagnosticText = [diagnosticText copy];
+    }
+    return self;
+}
+
+@end
+
+@implementation PRJavaDiscoveryResult
+
+- (instancetype)initWithInstallations:(NSArray<PRJavaInstallation *> *)installations
+                                outcome:(PRJavaDiscoveryOutcome)outcome
+                        localizationKey:(NSString *)localizationKey
+                          diagnosticText:(NSString *)diagnosticText
+                              retryable:(BOOL)retryable
+{
+    if (![installations isKindOfClass:NSArray.class] || !isKnownJavaDiscoveryOutcome(outcome)
+        || ![localizationKey isKindOfClass:NSString.class]
+        || (outcome != PRJavaDiscoveryOutcomeSucceeded && !isNonEmptyString(localizationKey))) {
+        return nil;
+    }
+    for (id installation in installations) {
+        if (![installation isKindOfClass:PRJavaInstallation.class]) {
+            return nil;
+        }
+    }
+    if (diagnosticText && ![diagnosticText isKindOfClass:NSString.class]) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.installations = [installations copy];
+        self.outcome = outcome;
+        self.localizationKey = [localizationKey copy];
+        self.diagnosticText = [diagnosticText copy];
+        self.retryable = retryable;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRJavaSelectionResult
+
+- (instancetype)initWithInstallation:(PRJavaInstallation *)installation
+                               outcome:(PRJavaSelectionOutcome)outcome
+                       localizationKey:(NSString *)localizationKey
+                         diagnosticText:(NSString *)diagnosticText
+{
+    if (!isKnownJavaSelectionOutcome(outcome) || ![localizationKey isKindOfClass:NSString.class]
+        || (outcome == PRJavaSelectionOutcomeSucceeded
+            && (!installation || installation.validity != PRJavaInstallationValidityValid))
+        || (outcome != PRJavaSelectionOutcomeSucceeded && !isNonEmptyString(localizationKey))) {
+        return nil;
+    }
+    if (diagnosticText && ![diagnosticText isKindOfClass:NSString.class]) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.installation = installation;
+        self.outcome = outcome;
+        self.localizationKey = [localizationKey copy];
+        self.diagnosticText = [diagnosticText copy];
+    }
+    return self;
+}
+
+@end
+
 @implementation PRTaskSubtaskStatus
 
 - (instancetype)initWithIdentifier:(NSString *)identifier
@@ -3782,6 +4108,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.notesUpdateRequestStates = [NSMutableArray array];
         self.settingsRequestStates = [NSMutableArray array];
         self.settingsUpdateRequestStates = [NSMutableArray array];
+        self.javaDiscoveryRequestStates = [NSMutableArray array];
+        self.javaSelectionRequestStates = [NSMutableArray array];
         self.observationLock = [[NSLock alloc] init];
         _lifecycle = std::make_unique<NativeFacadeLifecycle>();
         _facade = std::move(facade);
@@ -5757,6 +6085,162 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     return [[PRBridgeObservationToken alloc] initWithState:request];
 }
 
+- (PRBridgeObservationToken *)loadJavaInstallationsWithCompletion:(PRJavaDiscoveryCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeJavaDiscoveryResult *javaResult = (PRBridgeJavaDiscoveryResult *)value;
+        [weakRequest cancel];
+        completion(javaResult.result, javaResult.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeJavaDiscoveryRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.javaDiscoveryRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRJavaDiscoveryResult *result = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    result = javaDiscoveryResultFromFacadeResult(bridge->_facade->javaInstallations());
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid Java discovery result"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Java discovery cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Java discovery unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown Java discovery failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeJavaDiscoveryResult alloc] initWithResult:result error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
+- (PRBridgeObservationToken *)selectJavaInstallationWithIdentifier:(NSString *)identifier
+                                                            completion:(PRJavaSelectionCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    NSString *identifierCopy = [identifier copy];
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeJavaSelectionResult *javaResult = (PRBridgeJavaSelectionResult *)value;
+        [weakRequest cancel];
+        completion(javaResult.result, javaResult.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeJavaSelectionRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.javaSelectionRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRJavaSelectionResult *result = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    const std::string installationIdentifier = stableIdentifierFromFoundation(identifierCopy);
+                    result = javaSelectionResultFromFacadeResult(
+                        bridge->_facade->selectJavaInstallation(installationIdentifier));
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid Java selection"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Java selection cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Java selection unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown Java selection failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeJavaSelectionResult alloc] initWithResult:result error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
 - (void)removeInstanceObservation:(PRBridgeObservationState *)observation
 {
     [self.observationLock lock];
@@ -5977,6 +6461,26 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.observationLock unlock];
 }
 
+- (void)removeJavaDiscoveryRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.javaDiscoveryRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.javaDiscoveryRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
+- (void)removeJavaSelectionRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.javaSelectionRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.javaSelectionRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
 - (void)cancelAllObservations
 {
     [self.observationLock lock];
@@ -6003,6 +6507,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [observations addObjectsFromArray:self.notesUpdateRequestStates];
     [observations addObjectsFromArray:self.settingsRequestStates];
     [observations addObjectsFromArray:self.settingsUpdateRequestStates];
+    [observations addObjectsFromArray:self.javaDiscoveryRequestStates];
+    [observations addObjectsFromArray:self.javaSelectionRequestStates];
     [self.instanceObservationStates removeAllObjects];
     [self.instanceChangeObservationStates removeAllObjects];
     [self.taskObservationStates removeAllObjects];
@@ -6025,6 +6531,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.notesUpdateRequestStates removeAllObjects];
     [self.settingsRequestStates removeAllObjects];
     [self.settingsUpdateRequestStates removeAllObjects];
+    [self.javaDiscoveryRequestStates removeAllObjects];
+    [self.javaSelectionRequestStates removeAllObjects];
     [self.observationLock unlock];
 
     for (PRBridgeObservationState *observation in observations) {

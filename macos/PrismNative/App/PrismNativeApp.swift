@@ -5,6 +5,7 @@ struct PrismNativeApp: App {
     @StateObject private var commandModel = PrismCommandModel()
     @StateObject private var taskModel = PrismTaskPresentationModel()
     @StateObject private var globalSettingsModel = PrismGlobalSettingsModel()
+    @StateObject private var javaDiscoveryModel = PrismJavaDiscoveryModel()
 
     var body: some Scene {
         WindowGroup {
@@ -16,7 +17,7 @@ struct PrismNativeApp: App {
         }
 
         Settings {
-            PrismSettingsView(model: globalSettingsModel)
+            PrismSettingsView(model: globalSettingsModel, javaModel: javaDiscoveryModel)
         }
     }
 }

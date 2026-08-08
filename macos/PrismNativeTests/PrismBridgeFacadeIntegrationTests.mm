@@ -106,6 +106,26 @@ FrontendGlobalSettingsSnapshot fixtureGlobalSettings(const std::filesystem::path
     return settings;
 }
 
+FrontendJavaInstallationSnapshot fixtureJavaInstallation(
+    const std::filesystem::path& fixtureRoot,
+    const std::string& identifier,
+    FrontendJavaInstallationValidity validity = FrontendJavaInstallationValidity::Valid)
+{
+    FrontendJavaInstallationSnapshot installation;
+    installation.id = identifier;
+    installation.version = validity == FrontendJavaInstallationValidity::Valid ? "21.0.2" : "8.0.392";
+    installation.vendor = "Fixture JDK";
+    installation.architecture = "aarch64";
+    installation.executablePath = fixtureRoot / "java" / identifier / "bin" / "java";
+    installation.is64Bit = true;
+    installation.managed = identifier == "fixture-managed";
+    installation.validity = validity;
+    installation.diagnosticText = validity == FrontendJavaInstallationValidity::Valid
+        ? ""
+        : "Fixture Java installation is not usable.";
+    return installation;
+}
+
 FrontendRuntimeDependencies baseFixtureDependencies()
 {
     FrontendRuntimeDependencies dependencies;
@@ -1064,6 +1084,134 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     completion.inverted = YES;
     PRBridgeObservationToken *token = [bridge loadGlobalSettingsWithCompletion:^(__unused PRGlobalSettings *settings,
                                                                                     __unused PRBridgeError *error) {
+        [completion fulfill];
+    }];
+    XCTAssertNotNil(token);
+    XCTAssertEqual(dispatch_semaphore_wait(loaderEntered, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)), 0);
+    XCTAssertTrue([token cancel]);
+    dispatch_semaphore_signal(releaseLoader);
+    [self waitForExpectations:@[ completion ] timeout:0.2];
+}
+
+- (void)testFacadeJavaDiscoveryAndSelectionConvertFixtureContractsOnMainActor
+{
+    auto discoveryRootMatches = std::make_shared<std::atomic<bool>>(true);
+    auto selectionRootMatches = std::make_shared<std::atomic<bool>>(true);
+    auto selectionCalls = std::make_shared<std::vector<std::string>>();
+    const std::filesystem::path fixtureRoot = std::filesystem::path(self.fixtureRootURL.path.UTF8String).lexically_normal();
+
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.loadJavaInstallations = [discoveryRootMatches, fixtureRoot](const std::filesystem::path& root) {
+        *discoveryRootMatches = root == fixtureRoot;
+        return FrontendJavaDiscoveryResult{
+            FrontendJavaDiscoveryOutcome::Succeeded,
+            { fixtureJavaInstallation(fixtureRoot, "fixture-managed"),
+              fixtureJavaInstallation(fixtureRoot, "fixture-incompatible", FrontendJavaInstallationValidity::Incompatible),
+              fixtureJavaInstallation(fixtureRoot, "fixture-missing", FrontendJavaInstallationValidity::Unavailable) },
+            "",
+            "",
+            false,
+        };
+    };
+    dependencies.selectJavaInstallation = [selectionRootMatches, selectionCalls, fixtureRoot](
+                                              const std::filesystem::path& root,
+                                              const std::string& identifier) {
+        *selectionRootMatches = root == fixtureRoot;
+        selectionCalls->push_back(identifier);
+        if (identifier == "fixture-managed") {
+            return FrontendJavaSelectionResult{
+                FrontendJavaSelectionOutcome::Succeeded,
+                fixtureJavaInstallation(fixtureRoot, identifier),
+                "",
+                "",
+            };
+        }
+        return FrontendJavaSelectionResult{
+            FrontendJavaSelectionOutcome::UnknownInstallation,
+            std::nullopt,
+            "java.selection.unknownInstallation",
+            "Fixture Java installation is no longer available.",
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    XCTestExpectation *discoveryCompletion = [self expectationWithDescription:@"Java discovery completed"];
+    __block NSArray<PRJavaInstallation *> *receivedInstallations = nil;
+    __block PRBridgeError *receivedDiscoveryError = nil;
+    __block BOOL discoveryRanOnMainThread = NO;
+    PRBridgeObservationToken *discoveryToken = [bridge loadJavaInstallationsWithCompletion:^(PRJavaDiscoveryResult *result,
+                                                                                               PRBridgeError *error) {
+        discoveryRanOnMainThread = [NSThread isMainThread];
+        receivedInstallations = result.installations;
+        receivedDiscoveryError = error;
+        XCTAssertEqual(result.outcome, PRJavaDiscoveryOutcomeSucceeded);
+        [discoveryCompletion fulfill];
+    }];
+    XCTAssertNotNil(discoveryToken);
+    [self waitForExpectations:@[ discoveryCompletion ] timeout:2.0];
+    XCTAssertTrue(discoveryRanOnMainThread);
+    XCTAssertNil(receivedDiscoveryError);
+    XCTAssertTrue(discoveryToken.isCancelled);
+    XCTAssertEqual(receivedInstallations.count, (NSUInteger)3);
+    XCTAssertEqualObjects(receivedInstallations[0].identifier, @"fixture-managed");
+    XCTAssertEqual(receivedInstallations[0].validity, PRJavaInstallationValidityValid);
+    XCTAssertTrue(receivedInstallations[0].managed);
+    XCTAssertEqualObjects(receivedInstallations[1].version, @"8.0.392");
+    XCTAssertEqual(receivedInstallations[1].validity, PRJavaInstallationValidityIncompatible);
+    XCTAssertEqual(receivedInstallations[2].validity, PRJavaInstallationValidityUnavailable);
+
+    XCTestExpectation *selectionCompletion = [self expectationWithDescription:@"Java selection completed"];
+    __block PRJavaSelectionResult *receivedSelection = nil;
+    __block PRBridgeError *receivedSelectionError = nil;
+    __block BOOL selectionRanOnMainThread = NO;
+    PRBridgeObservationToken *selectionToken = [bridge selectJavaInstallationWithIdentifier:@" fixture-managed "
+                                                                                      completion:^(PRJavaSelectionResult *result,
+                                                                                                   PRBridgeError *error) {
+        selectionRanOnMainThread = [NSThread isMainThread];
+        receivedSelection = result;
+        receivedSelectionError = error;
+        [selectionCompletion fulfill];
+    }];
+    XCTAssertNotNil(selectionToken);
+    [self waitForExpectations:@[ selectionCompletion ] timeout:2.0];
+    XCTAssertTrue(selectionRanOnMainThread);
+    XCTAssertNil(receivedSelectionError);
+    XCTAssertTrue(selectionToken.isCancelled);
+    XCTAssertEqual(receivedSelection.outcome, PRJavaSelectionOutcomeSucceeded);
+    XCTAssertEqualObjects(receivedSelection.installation.identifier, @"fixture-managed");
+    XCTAssertEqual(*selectionCalls, (std::vector<std::string>{ "fixture-managed" }));
+    XCTAssertTrue(discoveryRootMatches->load());
+    XCTAssertTrue(selectionRootMatches->load());
+}
+
+- (void)testFacadeJavaDiscoveryCancellationSuppressesQueuedCompletion
+{
+    dispatch_semaphore_t loaderEntered = dispatch_semaphore_create(0);
+    dispatch_semaphore_t releaseLoader = dispatch_semaphore_create(0);
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.loadJavaInstallations = [loaderEntered, releaseLoader](const std::filesystem::path& root) {
+        dispatch_semaphore_signal(loaderEntered);
+        dispatch_semaphore_wait(releaseLoader, DISPATCH_TIME_FOREVER);
+        return FrontendJavaDiscoveryResult{
+            FrontendJavaDiscoveryOutcome::Succeeded,
+            { fixtureJavaInstallation(root, "fixture-java") },
+            "",
+            "",
+            false,
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTestExpectation *completion = [self expectationWithDescription:@"Cancelled Java discovery completion"];
+    completion.inverted = YES;
+    PRBridgeObservationToken *token = [bridge loadJavaInstallationsWithCompletion:^(__unused PRJavaDiscoveryResult *result,
+                                                                                       __unused PRBridgeError *error) {
         [completion fulfill];
     }];
     XCTAssertNotNil(token);

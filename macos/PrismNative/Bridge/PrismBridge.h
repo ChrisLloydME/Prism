@@ -75,6 +75,10 @@ typedef void (^PRGlobalSettingsCompletionHandler)(PRGlobalSettings * _Nullable s
                                                    PRBridgeError * _Nullable error);
 typedef void (^PRGlobalSettingsUpdateCompletionHandler)(PRGlobalSettingsUpdateResult * _Nullable result,
                                                          PRBridgeError * _Nullable error);
+typedef void (^PRJavaDiscoveryCompletionHandler)(PRJavaDiscoveryResult * _Nullable result,
+                                                  PRBridgeError * _Nullable error);
+typedef void (^PRJavaSelectionCompletionHandler)(PRJavaSelectionResult * _Nullable result,
+                                                  PRBridgeError * _Nullable error);
 
 /// Owns one bridge observation registration and cancels it when released.
 @interface PRBridgeObservationToken : NSObject
@@ -223,6 +227,16 @@ typedef void (^PRGlobalSettingsUpdateCompletionHandler)(PRGlobalSettingsUpdateRe
 /// provider-secret values are not part of this contract.
 - (nullable PRBridgeObservationToken *)updateGlobalSettings:(PRGlobalSettings *)settings
                                                   completion:(PRGlobalSettingsUpdateCompletionHandler)completion;
+
+/// Loads fixture-controlled Java installation rows asynchronously. The native
+/// loading state exposes indeterminate system progress; no Java executable is
+/// launched by this bridge method, and the returned token cancels delivery.
+- (nullable PRBridgeObservationToken *)loadJavaInstallationsWithCompletion:(PRJavaDiscoveryCompletionHandler)completion;
+
+/// Confirms one stable Java installation identifier through the injected
+/// adapter. Executable paths and process ownership remain outside Swift.
+- (nullable PRBridgeObservationToken *)selectJavaInstallationWithIdentifier:(NSString *)identifier
+                                                                    completion:(PRJavaSelectionCompletionHandler)completion;
 
 @end
 

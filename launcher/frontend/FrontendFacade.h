@@ -365,6 +365,45 @@ struct FrontendGlobalSettingsUpdateResult final {
     std::optional<FrontendGlobalSettingsSnapshot> settings;
 };
 
+enum class FrontendJavaInstallationValidity : std::uint8_t { Valid, Incompatible, Unavailable };
+
+/// Immutable Java discovery row. The adapter owns process execution and path
+/// probing; this value contains only sanitized labels and a display path.
+struct FrontendJavaInstallationSnapshot final {
+    std::string id;
+    std::string version;
+    std::string vendor;
+    std::string architecture;
+    std::filesystem::path executablePath;
+    bool is64Bit = false;
+    bool managed = false;
+    FrontendJavaInstallationValidity validity = FrontendJavaInstallationValidity::Valid;
+    std::string diagnosticText;
+
+    bool hasStableIdentifier() const noexcept { return !id.empty(); }
+};
+
+enum class FrontendJavaDiscoveryOutcome : std::uint8_t { Succeeded, Failed, Cancelled, Rejected };
+
+/// Confirmed result of one discovery operation. Raw Java stdout/stderr and
+/// process ownership deliberately remain outside the native contract.
+struct FrontendJavaDiscoveryResult final {
+    FrontendJavaDiscoveryOutcome outcome = FrontendJavaDiscoveryOutcome::Rejected;
+    std::vector<FrontendJavaInstallationSnapshot> installations;
+    std::string localizationKey;
+    std::string diagnosticText;
+    bool retryable = false;
+};
+
+enum class FrontendJavaSelectionOutcome : std::uint8_t { Succeeded, UnknownInstallation, Rejected };
+
+struct FrontendJavaSelectionResult final {
+    FrontendJavaSelectionOutcome outcome = FrontendJavaSelectionOutcome::Rejected;
+    std::optional<FrontendJavaInstallationSnapshot> installation;
+    std::string localizationKey;
+    std::string diagnosticText;
+};
+
 enum class FrontendTaskState : std::uint8_t { Queued, Running, Cancelling, Succeeded, Failed, Cancelled };
 
 enum class FrontendTaskProgressKind : std::uint8_t { None, Indeterminate, Determinate };
@@ -479,6 +518,8 @@ struct FrontendRuntimeDependencies final {
         std::function<std::optional<FrontendGlobalSettingsSnapshot>(const std::filesystem::path&)>;
     using GlobalSettingsUpdater = std::function<FrontendGlobalSettingsUpdateResult(
         const std::filesystem::path&, const FrontendGlobalSettingsSnapshot&)>;
+    using JavaDiscoveryLoader = std::function<FrontendJavaDiscoveryResult(const std::filesystem::path&)>;
+    using JavaSelectionUpdater = std::function<FrontendJavaSelectionResult(const std::filesystem::path&, const std::string&)>;
     using TaskSnapshotLoader = std::function<std::optional<FrontendTaskSnapshot>(const std::filesystem::path&, const std::string&)>;
     using TaskCancellation = std::function<FrontendTaskCancellationResult(const std::filesystem::path&, const std::string&)>;
     using LogEntryHandler = std::function<void(FrontendLogEntry)>;
@@ -507,6 +548,8 @@ struct FrontendRuntimeDependencies final {
     InstanceSettingsUpdater updateInstanceSettings;
     GlobalSettingsLoader loadGlobalSettings;
     GlobalSettingsUpdater updateGlobalSettings;
+    JavaDiscoveryLoader loadJavaInstallations;
+    JavaSelectionUpdater selectJavaInstallation;
     TaskSnapshotLoader loadTaskSnapshot;
     TaskCancellation cancelTask;
     TaskLogStreamer streamTaskLogs;
@@ -566,6 +609,8 @@ class FrontendFacade final {
         const std::string& instanceIdentifier, const FrontendInstanceSettingsSnapshot& settings) const;
     std::optional<FrontendGlobalSettingsSnapshot> globalSettings() const;
     FrontendGlobalSettingsUpdateResult updateGlobalSettings(const FrontendGlobalSettingsSnapshot& settings) const;
+    FrontendJavaDiscoveryResult javaInstallations() const;
+    FrontendJavaSelectionResult selectJavaInstallation(const std::string& installationIdentifier) const;
     std::optional<FrontendTaskSnapshot> taskSnapshot(const std::string& taskIdentifier) const;
     FrontendTaskCancellationResult cancelTask(const std::string& taskIdentifier) const;
     std::optional<FrontendLogSnapshot> taskLogSnapshot(const std::string& taskIdentifier) const;

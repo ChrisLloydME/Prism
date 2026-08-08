@@ -388,6 +388,94 @@ void validateGlobalSettingsSnapshot(const FrontendGlobalSettingsSnapshot& settin
     }
 }
 
+bool isKnownJavaInstallationValidity(FrontendJavaInstallationValidity validity) noexcept
+{
+    switch (validity) {
+        case FrontendJavaInstallationValidity::Valid:
+        case FrontendJavaInstallationValidity::Incompatible:
+        case FrontendJavaInstallationValidity::Unavailable:
+            return true;
+    }
+    return false;
+}
+
+void validateJavaInstallationSnapshot(const FrontendJavaInstallationSnapshot& installation)
+{
+    if (!installation.hasStableIdentifier() || installation.executablePath.empty()
+        || !isKnownJavaInstallationValidity(installation.validity)) {
+        throw std::invalid_argument("Java installations require stable identifiers and executable paths");
+    }
+    if (installation.validity == FrontendJavaInstallationValidity::Valid
+        && (installation.version.empty() || installation.architecture.empty())) {
+        throw std::invalid_argument("Valid Java installations require version and architecture labels");
+    }
+}
+
+bool isKnownJavaDiscoveryOutcome(FrontendJavaDiscoveryOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendJavaDiscoveryOutcome::Succeeded:
+        case FrontendJavaDiscoveryOutcome::Failed:
+        case FrontendJavaDiscoveryOutcome::Cancelled:
+        case FrontendJavaDiscoveryOutcome::Rejected:
+            return true;
+    }
+    return false;
+}
+
+void validateJavaDiscoveryResult(const FrontendJavaDiscoveryResult& result)
+{
+    if (!isKnownJavaDiscoveryOutcome(result.outcome)) {
+        throw std::invalid_argument("Java discovery returned an unknown outcome");
+    }
+
+    std::set<std::string> identifiers;
+    for (const auto& installation : result.installations) {
+        validateJavaInstallationSnapshot(installation);
+        if (!identifiers.insert(installation.id).second) {
+            throw std::invalid_argument("Java discovery requires unique installation identifiers");
+        }
+    }
+
+    if (result.outcome != FrontendJavaDiscoveryOutcome::Succeeded && result.localizationKey.empty()) {
+        throw std::invalid_argument("Failed Java discovery requires a localization key");
+    }
+}
+
+bool isKnownJavaSelectionOutcome(FrontendJavaSelectionOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendJavaSelectionOutcome::Succeeded:
+        case FrontendJavaSelectionOutcome::UnknownInstallation:
+        case FrontendJavaSelectionOutcome::Rejected:
+            return true;
+    }
+    return false;
+}
+
+void validateJavaSelectionResult(
+    const FrontendJavaSelectionResult& result,
+    const std::string& requestedIdentifier)
+{
+    if (!isKnownJavaSelectionOutcome(result.outcome)) {
+        throw std::invalid_argument("Java selection returned an unknown outcome");
+    }
+    if (result.outcome == FrontendJavaSelectionOutcome::Succeeded) {
+        if (!result.installation.has_value() || result.installation->id != requestedIdentifier
+            || result.installation->validity != FrontendJavaInstallationValidity::Valid) {
+            throw std::invalid_argument("Successful Java selection requires the requested valid installation");
+        }
+        validateJavaInstallationSnapshot(*result.installation);
+    } else {
+        if (result.localizationKey.empty()) {
+            throw std::invalid_argument("Rejected Java selection requires a localization key");
+        }
+        if (result.installation.has_value()) {
+            validateJavaInstallationSnapshot(*result.installation);
+        }
+    }
+}
+
 void validateInstanceChanges(const std::vector<FrontendInstanceChange>& changes)
 {
     for (const auto& change : changes) {
@@ -1051,6 +1139,47 @@ FrontendGlobalSettingsUpdateResult executeGlobalSettingsUpdate(
     return result;
 }
 
+FrontendJavaDiscoveryResult executeJavaDiscovery(
+    const FrontendRuntimeDependencies::JavaDiscoveryLoader& loader,
+    const std::filesystem::path& dataRoot)
+{
+    if (!loader) {
+        return FrontendJavaDiscoveryResult{
+            FrontendJavaDiscoveryOutcome::Rejected,
+            {},
+            "java.discovery.unavailable",
+            "Java discovery is unavailable.",
+            true,
+        };
+    }
+
+    auto result = loader(dataRoot);
+    validateJavaDiscoveryResult(result);
+    return result;
+}
+
+FrontendJavaSelectionResult executeJavaSelection(
+    const FrontendRuntimeDependencies::JavaSelectionUpdater& updater,
+    const std::filesystem::path& dataRoot,
+    const std::string& installationIdentifier)
+{
+    if (installationIdentifier.empty()) {
+        throw std::invalid_argument("Java selection requires a stable installation identifier");
+    }
+    if (!updater) {
+        return FrontendJavaSelectionResult{
+            FrontendJavaSelectionOutcome::Rejected,
+            std::nullopt,
+            "java.selection.unavailable",
+            "Java selection is unavailable.",
+        };
+    }
+
+    auto result = updater(dataRoot, installationIdentifier);
+    validateJavaSelectionResult(result, installationIdentifier);
+    return result;
+}
+
 std::optional<FrontendTaskSnapshot> executeTaskSnapshot(
     const FrontendRuntimeDependencies::TaskSnapshotLoader& loader,
     const std::filesystem::path& dataRoot,
@@ -1273,6 +1402,18 @@ FrontendGlobalSettingsUpdateResult FrontendFacade::updateGlobalSettings(
 {
     ensureRunning(m_lifecycleState);
     return executeGlobalSettingsUpdate(m_runtimeDependencies.updateGlobalSettings, m_dataRoot, settings);
+}
+
+FrontendJavaDiscoveryResult FrontendFacade::javaInstallations() const
+{
+    ensureRunning(m_lifecycleState);
+    return executeJavaDiscovery(m_runtimeDependencies.loadJavaInstallations, m_dataRoot);
+}
+
+FrontendJavaSelectionResult FrontendFacade::selectJavaInstallation(const std::string& installationIdentifier) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeJavaSelection(m_runtimeDependencies.selectJavaInstallation, m_dataRoot, installationIdentifier);
 }
 
 std::optional<FrontendTaskSnapshot> FrontendFacade::taskSnapshot(const std::string& taskIdentifier) const

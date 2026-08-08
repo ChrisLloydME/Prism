@@ -664,6 +664,87 @@ typedef NS_ENUM(NSInteger, PRGlobalSettingsUpdateOutcome) {
 
 @end
 
+typedef NS_ENUM(NSInteger, PRJavaInstallationValidity) {
+    PRJavaInstallationValidityValid = 0,
+    PRJavaInstallationValidityIncompatible,
+    PRJavaInstallationValidityUnavailable,
+};
+
+/// Immutable Java discovery row. The executable path is display metadata only;
+/// Swift never executes it or receives Java process output.
+@interface PRJavaInstallation : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithIdentifier:(NSString *)identifier
+                                     version:(NSString *)version
+                                      vendor:(NSString *)vendor
+                                architecture:(NSString *)architecture
+                             executablePath:(NSString *)executablePath
+                                   is64Bit:(BOOL)is64Bit
+                                    managed:(BOOL)managed
+                                   validity:(PRJavaInstallationValidity)validity
+                             diagnosticText:(nullable NSString *)diagnosticText NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, copy, readonly) NSString *version;
+@property(nonatomic, copy, readonly) NSString *vendor;
+@property(nonatomic, copy, readonly) NSString *architecture;
+@property(nonatomic, copy, readonly) NSString *executablePath;
+@property(nonatomic, assign, readonly) BOOL is64Bit;
+@property(nonatomic, assign, readonly) BOOL managed;
+@property(nonatomic, assign, readonly) PRJavaInstallationValidity validity;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+
+@end
+
+typedef NS_ENUM(NSInteger, PRJavaDiscoveryOutcome) {
+    PRJavaDiscoveryOutcomeSucceeded = 0,
+    PRJavaDiscoveryOutcomeFailed,
+    PRJavaDiscoveryOutcomeCancelled,
+    PRJavaDiscoveryOutcomeRejected,
+};
+
+/// Immutable result for one discovery operation. Failure text is adapter-owned
+/// and sanitized; raw stdout/stderr never crosses the bridge.
+@interface PRJavaDiscoveryResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithInstallations:(NSArray<PRJavaInstallation *> *)installations
+                                        outcome:(PRJavaDiscoveryOutcome)outcome
+                                localizationKey:(NSString *)localizationKey
+                                  diagnosticText:(nullable NSString *)diagnosticText
+                                      retryable:(BOOL)retryable NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSArray<PRJavaInstallation *> *installations;
+@property(nonatomic, assign, readonly) PRJavaDiscoveryOutcome outcome;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL retryable;
+
+@end
+
+typedef NS_ENUM(NSInteger, PRJavaSelectionOutcome) {
+    PRJavaSelectionOutcomeSucceeded = 0,
+    PRJavaSelectionOutcomeUnknownInstallation,
+    PRJavaSelectionOutcomeRejected,
+};
+
+/// Immutable confirmed Java selection result.
+@interface PRJavaSelectionResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithInstallation:(nullable PRJavaInstallation *)installation
+                                       outcome:(PRJavaSelectionOutcome)outcome
+                               localizationKey:(NSString *)localizationKey
+                                 diagnosticText:(nullable NSString *)diagnosticText NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRJavaInstallation *installation;
+@property(nonatomic, assign, readonly) PRJavaSelectionOutcome outcome;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+
+@end
+
 /// Immutable progress state for one task subtask.
 @interface PRTaskSubtaskStatus : NSObject
 

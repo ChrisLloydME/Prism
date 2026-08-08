@@ -121,6 +121,26 @@ FrontendGlobalSettingsSnapshot fixtureGlobalSettings(const std::filesystem::path
     return settings;
 }
 
+FrontendJavaInstallationSnapshot fixtureJavaInstallation(
+    const std::filesystem::path& fixtureRoot,
+    const std::string& identifier,
+    FrontendJavaInstallationValidity validity = FrontendJavaInstallationValidity::Valid)
+{
+    FrontendJavaInstallationSnapshot installation;
+    installation.id = identifier;
+    installation.version = validity == FrontendJavaInstallationValidity::Valid ? "21.0.2" : "8.0.392";
+    installation.vendor = "Fixture JDK";
+    installation.architecture = "aarch64";
+    installation.executablePath = fixtureRoot / "java" / identifier / "bin" / "java";
+    installation.is64Bit = true;
+    installation.managed = identifier == "fixture-managed";
+    installation.validity = validity;
+    installation.diagnosticText = validity == FrontendJavaInstallationValidity::Valid
+        ? ""
+        : "Fixture Java installation is not usable.";
+    return installation;
+}
+
 template <typename Function>
 bool throwsInvalidArgument(Function&& function)
 {
@@ -581,6 +601,92 @@ int main()
         && emptyFacade.updateGlobalSettings(fixtureGlobalSettings(fixtureRoot)).outcome
             == FrontendGlobalSettingsUpdateOutcome::Rejected;
 
+    std::size_t javaDiscoveryCalls = 0;
+    std::size_t javaSelectionCalls = 0;
+    bool javaRootMatches = true;
+    auto javaDependencies = makeFixtureDependencies();
+    javaDependencies.loadJavaInstallations = [&](const std::filesystem::path& root) {
+        javaRootMatches = javaRootMatches && root == fixtureRoot.lexically_normal();
+        ++javaDiscoveryCalls;
+        return FrontendJavaDiscoveryResult{
+            FrontendJavaDiscoveryOutcome::Succeeded,
+            { fixtureJavaInstallation(fixtureRoot, "fixture-managed"),
+              fixtureJavaInstallation(fixtureRoot, "fixture-incompatible", FrontendJavaInstallationValidity::Incompatible),
+              fixtureJavaInstallation(fixtureRoot, "fixture-missing", FrontendJavaInstallationValidity::Unavailable) },
+            "",
+            "",
+            false,
+        };
+    };
+    javaDependencies.selectJavaInstallation = [&](const std::filesystem::path& root, const std::string& identifier) {
+        javaRootMatches = javaRootMatches && root == fixtureRoot.lexically_normal();
+        ++javaSelectionCalls;
+        if (identifier == "fixture-managed") {
+            return FrontendJavaSelectionResult{
+                FrontendJavaSelectionOutcome::Succeeded,
+                fixtureJavaInstallation(fixtureRoot, identifier),
+                "",
+                "",
+            };
+        }
+        if (identifier == "fixture-incompatible") {
+            return FrontendJavaSelectionResult{
+                FrontendJavaSelectionOutcome::UnknownInstallation,
+                std::nullopt,
+                "java.selection.incompatible",
+                "The selected Java installation is incompatible.",
+            };
+        }
+        return FrontendJavaSelectionResult{
+            FrontendJavaSelectionOutcome::Rejected,
+            std::nullopt,
+            "java.selection.rejected",
+            "Fixture selection was rejected.",
+        };
+    };
+    FrontendFacade javaFacade(fixtureRoot / "nested" / "..", std::move(javaDependencies));
+    const auto javaDiscovery = javaFacade.javaInstallations();
+    const auto selectedJava = javaFacade.selectJavaInstallation("fixture-managed");
+    const auto incompatibleJava = javaFacade.selectJavaInstallation("fixture-incompatible");
+    const bool javaContract = javaDiscovery.outcome == FrontendJavaDiscoveryOutcome::Succeeded
+        && javaDiscovery.installations.size() == 3 && javaDiscovery.installations[0].managed
+        && javaDiscovery.installations[1].validity == FrontendJavaInstallationValidity::Incompatible
+        && javaDiscovery.installations[2].validity == FrontendJavaInstallationValidity::Unavailable
+        && selectedJava.outcome == FrontendJavaSelectionOutcome::Succeeded && selectedJava.installation.has_value()
+        && selectedJava.installation->id == "fixture-managed"
+        && incompatibleJava.outcome == FrontendJavaSelectionOutcome::UnknownInstallation
+        && javaDiscoveryCalls == 1 && javaSelectionCalls == 2 && javaRootMatches;
+    auto invalidJavaDiscoveryDependencies = makeFixtureDependencies();
+    invalidJavaDiscoveryDependencies.loadJavaInstallations = [&](const std::filesystem::path&) {
+        auto duplicate = fixtureJavaInstallation(fixtureRoot, "duplicate");
+        return FrontendJavaDiscoveryResult{
+            FrontendJavaDiscoveryOutcome::Succeeded,
+            { duplicate, duplicate },
+            "",
+            "",
+            false,
+        };
+    };
+    FrontendFacade invalidJavaDiscoveryFacade(fixtureRoot, std::move(invalidJavaDiscoveryDependencies));
+    const bool invalidJavaDiscoveryRejected = throwsInvalidArgument([&invalidJavaDiscoveryFacade] {
+        (void) invalidJavaDiscoveryFacade.javaInstallations();
+    });
+    auto invalidJavaSelectionDependencies = makeFixtureDependencies();
+    invalidJavaSelectionDependencies.selectJavaInstallation = [](const std::filesystem::path&, const std::string&) {
+        return FrontendJavaSelectionResult{
+            FrontendJavaSelectionOutcome::Succeeded,
+            std::nullopt,
+            "",
+            "",
+        };
+    };
+    FrontendFacade invalidJavaSelectionFacade(fixtureRoot, std::move(invalidJavaSelectionDependencies));
+    const bool invalidJavaSelectionRejected = throwsInvalidArgument([&invalidJavaSelectionFacade] {
+        (void) invalidJavaSelectionFacade.selectJavaInstallation("fixture-managed");
+    });
+    const bool missingJavaPortsAreSafe = emptyFacade.javaInstallations().outcome == FrontendJavaDiscoveryOutcome::Rejected
+        && emptyFacade.selectJavaInstallation("fixture-managed").outcome == FrontendJavaSelectionOutcome::Rejected;
+
     std::vector<std::string> launchCalls;
     std::vector<std::string> stopCalls;
     bool commandRootMatches = true;
@@ -974,6 +1080,13 @@ int main()
         && throwsLogicError([&globalSettingsFacade, &requestedGlobalSettings] {
                (void) globalSettingsFacade.updateGlobalSettings(requestedGlobalSettings);
            });
+    const bool rejectedPostShutdownJavaWork = javaFacade.shutdown()
+        && throwsLogicError([&javaFacade] {
+               (void) javaFacade.javaInstallations();
+           })
+        && throwsLogicError([&javaFacade] {
+               (void) javaFacade.selectJavaInstallation("fixture-managed");
+           });
     const bool rejectedPostShutdownComponentsWork = componentFacade.shutdown()
         && throwsLogicError([&componentFacade] {
                (void) componentFacade.instanceComponents("fixture-one");
@@ -1003,7 +1116,9 @@ int main()
                && rejectedPostShutdownResourceWork
                && logPrivacyAndBounds && longLogIsTruncated && missingLogPortIsSafe
                && globalSettingsContract && invalidGlobalSettingsRejected && invalidGlobalSettingsUpdateRejected
-               && missingGlobalSettingsPortsAreSafe && rejectedPostShutdownGlobalSettingsWork
+               && missingGlobalSettingsPortsAreSafe && rejectedPostShutdownGlobalSettingsWork && javaContract
+               && invalidJavaDiscoveryRejected && invalidJavaSelectionRejected && missingJavaPortsAreSafe
+               && rejectedPostShutdownJavaWork
                && rejectedEmptyRoot && rejectedRelativeRoot && rejectedIncompleteDependencies
                && lifecycleContract && callbacksRanExactlyOnce && destructorShutdownContract && !error
         ? 0
