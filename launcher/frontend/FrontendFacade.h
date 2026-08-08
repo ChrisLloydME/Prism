@@ -114,6 +114,133 @@ struct FrontendInstanceResourceMutationResult final {
     bool partialChangesRolledBack = false;
 };
 
+enum class FrontendInstanceDetailKind : std::uint8_t { Worlds, Servers, Screenshots, Logs };
+
+enum class FrontendInstanceDetailAction : std::uint8_t {
+    Add,
+    Update,
+    Delete,
+    MoveUp,
+    MoveDown,
+    Import,
+    Copy,
+    Rename,
+    Reveal,
+    ResetIcon,
+    Join,
+    Refresh,
+    Open,
+    CopyImage,
+    CopyFiles,
+};
+
+enum class FrontendInstanceDetailMutationOutcome : std::uint8_t {
+    Succeeded,
+    UnknownInstance,
+    UnknownItem,
+    Rejected,
+    Failed,
+};
+
+/// Ordered world data for the native instance world list. Timestamps are
+/// Unix seconds and sizes are raw bytes; formatting remains a Swift concern.
+struct FrontendInstanceWorldSnapshot final {
+    std::string id;
+    std::string name;
+    std::string folderName;
+    std::string gameMode;
+    std::string iconKey;
+    std::string warningDescription;
+    std::int64_t lastPlayedUnixSeconds = 0;
+    std::uint64_t sizeBytes = 0;
+    std::int64_t seed = 0;
+    bool hasSeed = false;
+    bool isArchive = false;
+    bool canBeRenamed = true;
+    bool canBeCopied = true;
+    bool canBeDeleted = true;
+    bool canBeJoined = false;
+    bool hasIcon = false;
+
+    bool hasStableIdentifier() const noexcept { return !id.empty(); }
+};
+
+enum class FrontendServerResourcePolicy : std::uint8_t { Ask, Always, Never };
+enum class FrontendServerStatus : std::uint8_t { Unknown, Online, Offline, Failed };
+
+/// Ordered server-list data. Server icons remain an adapter concern until a
+/// native image contract is needed; the list itself exposes only safe text.
+struct FrontendInstanceServerSnapshot final {
+    std::string id;
+    std::string name;
+    std::string address;
+    FrontendServerResourcePolicy resourcePolicy = FrontendServerResourcePolicy::Ask;
+    FrontendServerStatus status = FrontendServerStatus::Unknown;
+    std::int64_t onlinePlayers = -1;
+    bool canBeEdited = true;
+    bool canBeDeleted = true;
+    bool canBeJoined = false;
+
+    bool hasStableIdentifier() const noexcept { return !id.empty(); }
+};
+
+/// Screenshot file metadata. Image bytes are intentionally not copied into a
+/// list snapshot; system file/image actions remain explicit adapter requests.
+struct FrontendInstanceScreenshotSnapshot final {
+    std::string id;
+    std::string fileName;
+    std::string displayName;
+    std::int64_t modifiedUnixSeconds = 0;
+    std::uint64_t sizeBytes = 0;
+    bool readable = false;
+    bool writable = false;
+
+    bool hasStableIdentifier() const noexcept { return !id.empty(); }
+};
+
+/// Historical or current log-file metadata. Content is loaded separately so
+/// a large log cannot be forced through a list snapshot.
+struct FrontendInstanceLogFileSnapshot final {
+    std::string id;
+    std::string fileName;
+    std::string displayName;
+    std::int64_t modifiedUnixSeconds = 0;
+    std::uint64_t sizeBytes = 0;
+    bool compressed = false;
+    bool current = false;
+    bool readable = false;
+    bool canBeDeleted = false;
+
+    bool hasStableIdentifier() const noexcept { return !id.empty(); }
+};
+
+/// One explicit action across the four M6-W5 lists. Fields are interpreted by
+/// action: import uses sourcePath; copy/rename/update use targetName/name/
+/// address; delete requires confirmed; position is used by server moves.
+struct FrontendInstanceDetailMutationRequest final {
+    FrontendInstanceDetailKind kind = FrontendInstanceDetailKind::Worlds;
+    FrontendInstanceDetailAction action = FrontendInstanceDetailAction::Reveal;
+    std::string itemIdentifier;
+    std::filesystem::path sourcePath;
+    std::string targetName;
+    std::string name;
+    std::string address;
+    FrontendServerResourcePolicy resourcePolicy = FrontendServerResourcePolicy::Ask;
+    bool confirmed = false;
+    int position = -1;
+};
+
+struct FrontendInstanceDetailMutationResult final {
+    FrontendInstanceDetailKind kind = FrontendInstanceDetailKind::Worlds;
+    FrontendInstanceDetailAction action = FrontendInstanceDetailAction::Reveal;
+    FrontendInstanceDetailMutationOutcome outcome = FrontendInstanceDetailMutationOutcome::Rejected;
+    std::string instanceIdentifier;
+    std::string itemIdentifier;
+    std::string localizationKey;
+    std::string diagnosticText;
+    bool partialChangesRolledBack = false;
+};
+
 enum class FrontendInstanceChangeKind : std::uint8_t { Added, Updated, Removed };
 
 enum class FrontendLifecycleState : std::uint8_t { Running, ShuttingDown, Stopped };
@@ -254,6 +381,15 @@ struct FrontendLogEntry final {
     bool truncated = false;
 };
 
+struct FrontendInstanceLogSnapshot final {
+    std::string instanceIdentifier;
+    std::string logIdentifier;
+    std::vector<FrontendLogEntry> entries;
+    std::uint64_t droppedEntryCount = 0;
+    std::uint64_t totalByteCount = 0;
+    bool truncated = false;
+};
+
 struct FrontendLogSnapshot final {
     std::string taskId;
     std::vector<FrontendLogEntry> entries;
@@ -282,6 +418,18 @@ struct FrontendRuntimeDependencies final {
     using InstanceResourceMutator = std::function<FrontendInstanceResourceMutationResult(
         const std::filesystem::path&, const std::string&, FrontendInstanceResourceKind,
         const FrontendInstanceResourceMutationRequest&)>;
+    using InstanceWorldsLoader = std::function<std::optional<std::vector<FrontendInstanceWorldSnapshot>>(
+        const std::filesystem::path&, const std::string&)>;
+    using InstanceServersLoader = std::function<std::optional<std::vector<FrontendInstanceServerSnapshot>>(
+        const std::filesystem::path&, const std::string&)>;
+    using InstanceScreenshotsLoader = std::function<std::optional<std::vector<FrontendInstanceScreenshotSnapshot>>(
+        const std::filesystem::path&, const std::string&)>;
+    using InstanceLogFilesLoader = std::function<std::optional<std::vector<FrontendInstanceLogFileSnapshot>>(
+        const std::filesystem::path&, const std::string&)>;
+    using InstanceLogLoader = std::function<std::optional<FrontendInstanceLogSnapshot>(
+        const std::filesystem::path&, const std::string&, const std::string&)>;
+    using InstanceDetailMutator = std::function<FrontendInstanceDetailMutationResult(
+        const std::filesystem::path&, const std::string&, const FrontendInstanceDetailMutationRequest&)>;
     using InstanceChangeLoader = std::function<std::vector<FrontendInstanceChange>(const std::filesystem::path&)>;
     using InstanceCommand = std::function<FrontendInstanceCommandResult(const std::filesystem::path&, const std::string&)>;
     using InstanceNotesUpdater = std::function<FrontendInstanceNotesUpdateResult(
@@ -304,6 +452,12 @@ struct FrontendRuntimeDependencies final {
     InstanceComponentsLoader loadInstanceComponents;
     InstanceResourcesLoader loadInstanceResources;
     InstanceResourceMutator mutateInstanceResource;
+    InstanceWorldsLoader loadInstanceWorlds;
+    InstanceServersLoader loadInstanceServers;
+    InstanceScreenshotsLoader loadInstanceScreenshots;
+    InstanceLogFilesLoader loadInstanceLogFiles;
+    InstanceLogLoader loadInstanceLog;
+    InstanceDetailMutator mutateInstanceDetail;
     InstanceChangeLoader loadInstanceChanges;
     InstanceCommand launchInstance;
     InstanceCommand stopInstance;
@@ -350,6 +504,15 @@ class FrontendFacade final {
         const std::string& instanceIdentifier,
         FrontendInstanceResourceKind kind,
         const FrontendInstanceResourceMutationRequest& request) const;
+    std::optional<std::vector<FrontendInstanceWorldSnapshot>> instanceWorlds(const std::string& instanceIdentifier) const;
+    std::optional<std::vector<FrontendInstanceServerSnapshot>> instanceServers(const std::string& instanceIdentifier) const;
+    std::optional<std::vector<FrontendInstanceScreenshotSnapshot>> instanceScreenshots(
+        const std::string& instanceIdentifier) const;
+    std::optional<std::vector<FrontendInstanceLogFileSnapshot>> instanceLogFiles(const std::string& instanceIdentifier) const;
+    std::optional<FrontendInstanceLogSnapshot> instanceLog(
+        const std::string& instanceIdentifier, const std::string& logIdentifier) const;
+    FrontendInstanceDetailMutationResult mutateInstanceDetail(
+        const std::string& instanceIdentifier, const FrontendInstanceDetailMutationRequest& request) const;
     std::vector<FrontendInstanceChange> instanceChanges() const;
     FrontendInstanceCommandResult launchInstance(const std::string& instanceIdentifier) const;
     FrontendInstanceCommandResult stopInstance(const std::string& instanceIdentifier) const;

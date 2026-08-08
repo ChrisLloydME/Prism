@@ -462,6 +462,77 @@ bool isKnownResourceMutationOutcome(PRInstanceResourceMutationOutcome outcome)
     return false;
 }
 
+bool isKnownInstanceDetailKind(PRInstanceDetailKind kind)
+{
+    switch (kind) {
+        case PRInstanceDetailKindWorlds:
+        case PRInstanceDetailKindServers:
+        case PRInstanceDetailKindScreenshots:
+        case PRInstanceDetailKindLogs:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownInstanceDetailAction(PRInstanceDetailAction action)
+{
+    switch (action) {
+        case PRInstanceDetailActionAdd:
+        case PRInstanceDetailActionUpdate:
+        case PRInstanceDetailActionDelete:
+        case PRInstanceDetailActionMoveUp:
+        case PRInstanceDetailActionMoveDown:
+        case PRInstanceDetailActionImport:
+        case PRInstanceDetailActionCopy:
+        case PRInstanceDetailActionRename:
+        case PRInstanceDetailActionReveal:
+        case PRInstanceDetailActionResetIcon:
+        case PRInstanceDetailActionJoin:
+        case PRInstanceDetailActionRefresh:
+        case PRInstanceDetailActionOpen:
+        case PRInstanceDetailActionCopyImage:
+        case PRInstanceDetailActionCopyFiles:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownInstanceDetailMutationOutcome(PRInstanceDetailMutationOutcome outcome)
+{
+    switch (outcome) {
+        case PRInstanceDetailMutationOutcomeSucceeded:
+        case PRInstanceDetailMutationOutcomeUnknownInstance:
+        case PRInstanceDetailMutationOutcomeUnknownItem:
+        case PRInstanceDetailMutationOutcomeRejected:
+        case PRInstanceDetailMutationOutcomeFailed:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownServerResourcePolicy(PRInstanceServerResourcePolicy policy)
+{
+    switch (policy) {
+        case PRInstanceServerResourcePolicyAsk:
+        case PRInstanceServerResourcePolicyAlways:
+        case PRInstanceServerResourcePolicyNever:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownServerStatus(PRInstanceServerStatus status)
+{
+    switch (status) {
+        case PRInstanceServerStatusUnknown:
+        case PRInstanceServerStatusOnline:
+        case PRInstanceServerStatusOffline:
+        case PRInstanceServerStatusFailed:
+            return true;
+    }
+    return false;
+}
+
 NSArray<PRInstanceResource *> *resourcesFromFacadeSnapshots(
     const std::vector<FrontendInstanceResourceSnapshot>& snapshots)
 {
@@ -503,6 +574,324 @@ PRInstanceResourceMutationResult *resourceMutationResultFromFacadeResult(
            partialChangesRolledBack:result.partialChangesRolledBack];
     if (!converted) {
         throw std::invalid_argument("Facade returned an invalid resource mutation result");
+    }
+    return converted;
+}
+
+PRInstanceDetailKind detailKindFromFacadeKind(FrontendInstanceDetailKind kind)
+{
+    switch (kind) {
+        case FrontendInstanceDetailKind::Worlds:
+            return PRInstanceDetailKindWorlds;
+        case FrontendInstanceDetailKind::Servers:
+            return PRInstanceDetailKindServers;
+        case FrontendInstanceDetailKind::Screenshots:
+            return PRInstanceDetailKindScreenshots;
+        case FrontendInstanceDetailKind::Logs:
+            return PRInstanceDetailKindLogs;
+    }
+    throw std::invalid_argument("Facade returned an unknown instance detail kind");
+}
+
+FrontendInstanceDetailKind detailKindFromFoundationKind(PRInstanceDetailKind kind)
+{
+    switch (kind) {
+        case PRInstanceDetailKindWorlds:
+            return FrontendInstanceDetailKind::Worlds;
+        case PRInstanceDetailKindServers:
+            return FrontendInstanceDetailKind::Servers;
+        case PRInstanceDetailKindScreenshots:
+            return FrontendInstanceDetailKind::Screenshots;
+        case PRInstanceDetailKindLogs:
+            return FrontendInstanceDetailKind::Logs;
+    }
+    throw std::invalid_argument("Instance detail operations require a known kind");
+}
+
+PRInstanceDetailAction detailActionFromFacadeAction(FrontendInstanceDetailAction action)
+{
+    switch (action) {
+        case FrontendInstanceDetailAction::Add:
+            return PRInstanceDetailActionAdd;
+        case FrontendInstanceDetailAction::Update:
+            return PRInstanceDetailActionUpdate;
+        case FrontendInstanceDetailAction::Delete:
+            return PRInstanceDetailActionDelete;
+        case FrontendInstanceDetailAction::MoveUp:
+            return PRInstanceDetailActionMoveUp;
+        case FrontendInstanceDetailAction::MoveDown:
+            return PRInstanceDetailActionMoveDown;
+        case FrontendInstanceDetailAction::Import:
+            return PRInstanceDetailActionImport;
+        case FrontendInstanceDetailAction::Copy:
+            return PRInstanceDetailActionCopy;
+        case FrontendInstanceDetailAction::Rename:
+            return PRInstanceDetailActionRename;
+        case FrontendInstanceDetailAction::Reveal:
+            return PRInstanceDetailActionReveal;
+        case FrontendInstanceDetailAction::ResetIcon:
+            return PRInstanceDetailActionResetIcon;
+        case FrontendInstanceDetailAction::Join:
+            return PRInstanceDetailActionJoin;
+        case FrontendInstanceDetailAction::Refresh:
+            return PRInstanceDetailActionRefresh;
+        case FrontendInstanceDetailAction::Open:
+            return PRInstanceDetailActionOpen;
+        case FrontendInstanceDetailAction::CopyImage:
+            return PRInstanceDetailActionCopyImage;
+        case FrontendInstanceDetailAction::CopyFiles:
+            return PRInstanceDetailActionCopyFiles;
+    }
+    throw std::invalid_argument("Facade returned an unknown instance detail action");
+}
+
+FrontendInstanceDetailAction detailActionFromFoundationAction(PRInstanceDetailAction action)
+{
+    switch (action) {
+        case PRInstanceDetailActionAdd:
+            return FrontendInstanceDetailAction::Add;
+        case PRInstanceDetailActionUpdate:
+            return FrontendInstanceDetailAction::Update;
+        case PRInstanceDetailActionDelete:
+            return FrontendInstanceDetailAction::Delete;
+        case PRInstanceDetailActionMoveUp:
+            return FrontendInstanceDetailAction::MoveUp;
+        case PRInstanceDetailActionMoveDown:
+            return FrontendInstanceDetailAction::MoveDown;
+        case PRInstanceDetailActionImport:
+            return FrontendInstanceDetailAction::Import;
+        case PRInstanceDetailActionCopy:
+            return FrontendInstanceDetailAction::Copy;
+        case PRInstanceDetailActionRename:
+            return FrontendInstanceDetailAction::Rename;
+        case PRInstanceDetailActionReveal:
+            return FrontendInstanceDetailAction::Reveal;
+        case PRInstanceDetailActionResetIcon:
+            return FrontendInstanceDetailAction::ResetIcon;
+        case PRInstanceDetailActionJoin:
+            return FrontendInstanceDetailAction::Join;
+        case PRInstanceDetailActionRefresh:
+            return FrontendInstanceDetailAction::Refresh;
+        case PRInstanceDetailActionOpen:
+            return FrontendInstanceDetailAction::Open;
+        case PRInstanceDetailActionCopyImage:
+            return FrontendInstanceDetailAction::CopyImage;
+        case PRInstanceDetailActionCopyFiles:
+            return FrontendInstanceDetailAction::CopyFiles;
+    }
+    throw std::invalid_argument("Instance detail operations require a known action");
+}
+
+PRInstanceDetailMutationOutcome detailMutationOutcomeFromFacadeOutcome(
+    FrontendInstanceDetailMutationOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendInstanceDetailMutationOutcome::Succeeded:
+            return PRInstanceDetailMutationOutcomeSucceeded;
+        case FrontendInstanceDetailMutationOutcome::UnknownInstance:
+            return PRInstanceDetailMutationOutcomeUnknownInstance;
+        case FrontendInstanceDetailMutationOutcome::UnknownItem:
+            return PRInstanceDetailMutationOutcomeUnknownItem;
+        case FrontendInstanceDetailMutationOutcome::Rejected:
+            return PRInstanceDetailMutationOutcomeRejected;
+        case FrontendInstanceDetailMutationOutcome::Failed:
+            return PRInstanceDetailMutationOutcomeFailed;
+    }
+    throw std::invalid_argument("Facade returned an unknown instance detail mutation outcome");
+}
+
+FrontendInstanceDetailMutationOutcome detailMutationOutcomeFromFoundationOutcome(
+    PRInstanceDetailMutationOutcome outcome)
+{
+    switch (outcome) {
+        case PRInstanceDetailMutationOutcomeSucceeded:
+            return FrontendInstanceDetailMutationOutcome::Succeeded;
+        case PRInstanceDetailMutationOutcomeUnknownInstance:
+            return FrontendInstanceDetailMutationOutcome::UnknownInstance;
+        case PRInstanceDetailMutationOutcomeUnknownItem:
+            return FrontendInstanceDetailMutationOutcome::UnknownItem;
+        case PRInstanceDetailMutationOutcomeRejected:
+            return FrontendInstanceDetailMutationOutcome::Rejected;
+        case PRInstanceDetailMutationOutcomeFailed:
+            return FrontendInstanceDetailMutationOutcome::Failed;
+    }
+    throw std::invalid_argument("Instance detail operations require a known mutation outcome");
+}
+
+PRInstanceServerResourcePolicy serverResourcePolicyFromFacadePolicy(FrontendServerResourcePolicy policy)
+{
+    switch (policy) {
+        case FrontendServerResourcePolicy::Ask:
+            return PRInstanceServerResourcePolicyAsk;
+        case FrontendServerResourcePolicy::Always:
+            return PRInstanceServerResourcePolicyAlways;
+        case FrontendServerResourcePolicy::Never:
+            return PRInstanceServerResourcePolicyNever;
+    }
+    throw std::invalid_argument("Facade returned an unknown server resource policy");
+}
+
+FrontendServerResourcePolicy serverResourcePolicyFromFoundationPolicy(PRInstanceServerResourcePolicy policy)
+{
+    switch (policy) {
+        case PRInstanceServerResourcePolicyAsk:
+            return FrontendServerResourcePolicy::Ask;
+        case PRInstanceServerResourcePolicyAlways:
+            return FrontendServerResourcePolicy::Always;
+        case PRInstanceServerResourcePolicyNever:
+            return FrontendServerResourcePolicy::Never;
+    }
+    throw std::invalid_argument("Server operations require a known resource policy");
+}
+
+PRInstanceServerStatus serverStatusFromFacadeStatus(FrontendServerStatus status)
+{
+    switch (status) {
+        case FrontendServerStatus::Unknown:
+            return PRInstanceServerStatusUnknown;
+        case FrontendServerStatus::Online:
+            return PRInstanceServerStatusOnline;
+        case FrontendServerStatus::Offline:
+            return PRInstanceServerStatusOffline;
+        case FrontendServerStatus::Failed:
+            return PRInstanceServerStatusFailed;
+    }
+    throw std::invalid_argument("Facade returned an unknown server status");
+}
+
+NSArray<PRInstanceWorld *> *worldsFromFacadeSnapshots(
+    const std::vector<FrontendInstanceWorldSnapshot>& snapshots)
+{
+    NSMutableArray<PRInstanceWorld *> *converted = [NSMutableArray arrayWithCapacity:snapshots.size()];
+    for (const FrontendInstanceWorldSnapshot& snapshot : snapshots) {
+        NSNumber *seed = snapshot.hasSeed ? @(snapshot.seed) : nil;
+        PRInstanceWorld *world = [[PRInstanceWorld alloc]
+            initWithIdentifier:foundationStringFromUTF8(snapshot.id)
+                           name:foundationStringFromUTF8(snapshot.name)
+                     folderName:foundationStringFromUTF8(snapshot.folderName)
+                       gameMode:foundationStringFromUTF8AllowEmpty(snapshot.gameMode)
+                       iconKey:foundationStringFromUTF8(snapshot.iconKey)
+             warningDescription:foundationStringFromUTF8(snapshot.warningDescription)
+          lastPlayedUnixSeconds:static_cast<NSInteger>(snapshot.lastPlayedUnixSeconds)
+                      sizeBytes:snapshot.sizeBytes
+                           seed:seed
+                      isArchive:snapshot.isArchive
+                 canBeRenamed:snapshot.canBeRenamed
+                  canBeCopied:snapshot.canBeCopied
+                 canBeDeleted:snapshot.canBeDeleted
+                   canBeJoined:snapshot.canBeJoined
+                     hasIcon:snapshot.hasIcon];
+        if (!world) {
+            throw std::invalid_argument("Facade returned an invalid instance world");
+        }
+        [converted addObject:world];
+    }
+    return [converted copy];
+}
+
+NSArray<PRInstanceServer *> *serversFromFacadeSnapshots(
+    const std::vector<FrontendInstanceServerSnapshot>& snapshots)
+{
+    NSMutableArray<PRInstanceServer *> *converted = [NSMutableArray arrayWithCapacity:snapshots.size()];
+    for (const FrontendInstanceServerSnapshot& snapshot : snapshots) {
+        PRInstanceServer *server = [[PRInstanceServer alloc]
+            initWithIdentifier:foundationStringFromUTF8(snapshot.id)
+                           name:foundationStringFromUTF8(snapshot.name)
+                        address:foundationStringFromUTF8(snapshot.address)
+                 resourcePolicy:serverResourcePolicyFromFacadePolicy(snapshot.resourcePolicy)
+                         status:serverStatusFromFacadeStatus(snapshot.status)
+                  onlinePlayers:static_cast<NSInteger>(snapshot.onlinePlayers)
+                    canBeEdited:snapshot.canBeEdited
+                   canBeDeleted:snapshot.canBeDeleted
+                     canBeJoined:snapshot.canBeJoined];
+        if (!server) {
+            throw std::invalid_argument("Facade returned an invalid instance server");
+        }
+        [converted addObject:server];
+    }
+    return [converted copy];
+}
+
+NSArray<PRInstanceScreenshot *> *screenshotsFromFacadeSnapshots(
+    const std::vector<FrontendInstanceScreenshotSnapshot>& snapshots)
+{
+    NSMutableArray<PRInstanceScreenshot *> *converted = [NSMutableArray arrayWithCapacity:snapshots.size()];
+    for (const FrontendInstanceScreenshotSnapshot& snapshot : snapshots) {
+        PRInstanceScreenshot *screenshot = [[PRInstanceScreenshot alloc]
+            initWithIdentifier:foundationStringFromUTF8(snapshot.id)
+                       fileName:foundationStringFromUTF8(snapshot.fileName)
+                   displayName:foundationStringFromUTF8(snapshot.displayName)
+          modifiedUnixSeconds:static_cast<NSInteger>(snapshot.modifiedUnixSeconds)
+                      sizeBytes:snapshot.sizeBytes
+                       readable:snapshot.readable
+                       writable:snapshot.writable];
+        if (!screenshot) {
+            throw std::invalid_argument("Facade returned an invalid instance screenshot");
+        }
+        [converted addObject:screenshot];
+    }
+    return [converted copy];
+}
+
+NSArray<PRInstanceLogFile *> *logFilesFromFacadeSnapshots(
+    const std::vector<FrontendInstanceLogFileSnapshot>& snapshots)
+{
+    NSMutableArray<PRInstanceLogFile *> *converted = [NSMutableArray arrayWithCapacity:snapshots.size()];
+    for (const FrontendInstanceLogFileSnapshot& snapshot : snapshots) {
+        PRInstanceLogFile *logFile = [[PRInstanceLogFile alloc]
+            initWithIdentifier:foundationStringFromUTF8(snapshot.id)
+                       fileName:foundationStringFromUTF8(snapshot.fileName)
+                   displayName:foundationStringFromUTF8(snapshot.displayName)
+          modifiedUnixSeconds:static_cast<NSInteger>(snapshot.modifiedUnixSeconds)
+                      sizeBytes:snapshot.sizeBytes
+                     compressed:snapshot.compressed
+                        current:snapshot.current
+                       readable:snapshot.readable
+                 canBeDeleted:snapshot.canBeDeleted];
+        if (!logFile) {
+            throw std::invalid_argument("Facade returned an invalid instance log file");
+        }
+        [converted addObject:logFile];
+    }
+    return [converted copy];
+}
+
+PRTaskLogEntry *logEntryFromFacadeEntry(const FrontendLogEntry& entry);
+
+PRInstanceLogSnapshot *instanceLogSnapshotFromFacadeSnapshot(const FrontendInstanceLogSnapshot& snapshot)
+{
+    NSMutableArray<PRTaskLogEntry *> *entries = [NSMutableArray arrayWithCapacity:snapshot.entries.size()];
+    for (const FrontendLogEntry& entry : snapshot.entries) {
+        [entries addObject:logEntryFromFacadeEntry(entry)];
+    }
+
+    PRInstanceLogSnapshot *converted = [[PRInstanceLogSnapshot alloc]
+        initWithInstanceIdentifier:foundationStringFromUTF8(snapshot.instanceIdentifier)
+                      logIdentifier:foundationStringFromUTF8(snapshot.logIdentifier)
+                            entries:entries
+                 droppedEntryCount:snapshot.droppedEntryCount
+                      totalByteCount:snapshot.totalByteCount
+                          truncated:snapshot.truncated];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid instance log snapshot");
+    }
+    return converted;
+}
+
+PRInstanceDetailMutationResult *detailMutationResultFromFacadeResult(
+    const FrontendInstanceDetailMutationResult& result)
+{
+    PRInstanceDetailMutationResult *converted = [[PRInstanceDetailMutationResult alloc]
+        initWithKind:detailKindFromFacadeKind(result.kind)
+               action:detailActionFromFacadeAction(result.action)
+             outcome:detailMutationOutcomeFromFacadeOutcome(result.outcome)
+   instanceIdentifier:foundationStringFromUTF8(result.instanceIdentifier)
+        itemIdentifier:foundationStringFromUTF8AllowEmpty(result.itemIdentifier)
+       localizationKey:foundationStringFromUTF8(result.localizationKey)
+        diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+     partialChangesRolledBack:result.partialChangesRolledBack];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid instance detail mutation result");
     }
     return converted;
 }
@@ -1309,6 +1698,156 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@interface PRBridgeInstanceWorldsResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithWorlds:(nullable NSArray<PRInstanceWorld *> *)worlds
+                          error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly, nullable) NSArray<PRInstanceWorld *> *worlds;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeInstanceWorldsResult
+
+- (instancetype)initWithWorlds:(NSArray<PRInstanceWorld *> *)worlds error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _worlds = [worlds copy];
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
+@interface PRBridgeInstanceServersResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithServers:(nullable NSArray<PRInstanceServer *> *)servers
+                           error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly, nullable) NSArray<PRInstanceServer *> *servers;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeInstanceServersResult
+
+- (instancetype)initWithServers:(NSArray<PRInstanceServer *> *)servers error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _servers = [servers copy];
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
+@interface PRBridgeInstanceScreenshotsResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithScreenshots:(nullable NSArray<PRInstanceScreenshot *> *)screenshots
+                               error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly, nullable) NSArray<PRInstanceScreenshot *> *screenshots;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeInstanceScreenshotsResult
+
+- (instancetype)initWithScreenshots:(NSArray<PRInstanceScreenshot *> *)screenshots error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _screenshots = [screenshots copy];
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
+@interface PRBridgeInstanceLogFilesResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithLogFiles:(nullable NSArray<PRInstanceLogFile *> *)logFiles
+                            error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly, nullable) NSArray<PRInstanceLogFile *> *logFiles;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeInstanceLogFilesResult
+
+- (instancetype)initWithLogFiles:(NSArray<PRInstanceLogFile *> *)logFiles error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _logFiles = [logFiles copy];
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
+@interface PRBridgeInstanceLogResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithSnapshot:(nullable PRInstanceLogSnapshot *)snapshot
+                             error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRInstanceLogSnapshot *snapshot;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeInstanceLogResult
+
+- (instancetype)initWithSnapshot:(PRInstanceLogSnapshot *)snapshot error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _snapshot = snapshot;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
+@interface PRBridgeInstanceDetailMutationResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithResult:(nullable PRInstanceDetailMutationResult *)result
+                           error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRInstanceDetailMutationResult *result;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeInstanceDetailMutationResult
+
+- (instancetype)initWithResult:(PRInstanceDetailMutationResult *)result error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _result = result;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
 @interface PRBridgeCommandResult : NSObject
 
 - (instancetype)init NS_UNAVAILABLE;
@@ -1546,6 +2085,12 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *componentsRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *resourcesRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *resourceMutationRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *worldsRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *serversRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *screenshotsRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *logFilesRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *instanceLogRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *instanceDetailMutationRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *taskRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *taskLogRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *taskCancellationRequestStates;
@@ -1569,6 +2114,12 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 - (void)removeComponentsRequest:(PRBridgeObservationState *)request;
 - (void)removeResourcesRequest:(PRBridgeObservationState *)request;
 - (void)removeResourceMutationRequest:(PRBridgeObservationState *)request;
+- (void)removeWorldsRequest:(PRBridgeObservationState *)request;
+- (void)removeServersRequest:(PRBridgeObservationState *)request;
+- (void)removeScreenshotsRequest:(PRBridgeObservationState *)request;
+- (void)removeLogFilesRequest:(PRBridgeObservationState *)request;
+- (void)removeInstanceLogRequest:(PRBridgeObservationState *)request;
+- (void)removeInstanceDetailMutationRequest:(PRBridgeObservationState *)request;
 - (void)removeTaskRequest:(PRBridgeObservationState *)request;
 - (void)removeTaskLogRequest:(PRBridgeObservationState *)request;
 - (void)removeTaskCancellationRequest:(PRBridgeObservationState *)request;
@@ -1653,6 +2204,105 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, assign, readwrite) PRInstanceResourceKind kind;
 @property(nonatomic, assign, readwrite) PRInstanceResourceAction action;
 @property(nonatomic, assign, readwrite) PRInstanceResourceMutationOutcome outcome;
+@property(nonatomic, copy, readwrite, nullable) NSString *localizationKey;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readwrite) BOOL partialChangesRolledBack;
+
+@end
+
+@interface PRInstanceWorld ()
+
+@property(nonatomic, copy, readwrite) NSString *identifier;
+@property(nonatomic, copy, readwrite) NSString *name;
+@property(nonatomic, copy, readwrite) NSString *folderName;
+@property(nonatomic, copy, readwrite) NSString *gameMode;
+@property(nonatomic, copy, readwrite, nullable) NSString *iconKey;
+@property(nonatomic, copy, readwrite, nullable) NSString *warningDescription;
+@property(nonatomic, assign, readwrite) NSInteger lastPlayedUnixSeconds;
+@property(nonatomic, assign, readwrite) uint64_t sizeBytes;
+@property(nonatomic, strong, readwrite, nullable) NSNumber *seed;
+@property(nonatomic, assign, readwrite) BOOL archive;
+@property(nonatomic, assign, readwrite) BOOL canBeRenamed;
+@property(nonatomic, assign, readwrite) BOOL canBeCopied;
+@property(nonatomic, assign, readwrite) BOOL canBeDeleted;
+@property(nonatomic, assign, readwrite) BOOL canBeJoined;
+@property(nonatomic, assign, readwrite) BOOL hasIcon;
+
+@end
+
+@interface PRInstanceServer ()
+
+@property(nonatomic, copy, readwrite) NSString *identifier;
+@property(nonatomic, copy, readwrite) NSString *name;
+@property(nonatomic, copy, readwrite) NSString *address;
+@property(nonatomic, assign, readwrite) PRInstanceServerResourcePolicy resourcePolicy;
+@property(nonatomic, assign, readwrite) PRInstanceServerStatus status;
+@property(nonatomic, assign, readwrite) NSInteger onlinePlayers;
+@property(nonatomic, assign, readwrite) BOOL canBeEdited;
+@property(nonatomic, assign, readwrite) BOOL canBeDeleted;
+@property(nonatomic, assign, readwrite) BOOL canBeJoined;
+
+@end
+
+@interface PRInstanceScreenshot ()
+
+@property(nonatomic, copy, readwrite) NSString *identifier;
+@property(nonatomic, copy, readwrite) NSString *fileName;
+@property(nonatomic, copy, readwrite) NSString *displayName;
+@property(nonatomic, assign, readwrite) NSInteger modifiedUnixSeconds;
+@property(nonatomic, assign, readwrite) uint64_t sizeBytes;
+@property(nonatomic, assign, readwrite) BOOL readable;
+@property(nonatomic, assign, readwrite) BOOL writable;
+
+@end
+
+@interface PRInstanceLogFile ()
+
+@property(nonatomic, copy, readwrite) NSString *identifier;
+@property(nonatomic, copy, readwrite) NSString *fileName;
+@property(nonatomic, copy, readwrite) NSString *displayName;
+@property(nonatomic, assign, readwrite) NSInteger modifiedUnixSeconds;
+@property(nonatomic, assign, readwrite) uint64_t sizeBytes;
+@property(nonatomic, assign, readwrite) BOOL compressed;
+@property(nonatomic, assign, readwrite) BOOL current;
+@property(nonatomic, assign, readwrite) BOOL readable;
+@property(nonatomic, assign, readwrite) BOOL canBeDeleted;
+
+@end
+
+@interface PRInstanceLogSnapshot ()
+
+@property(nonatomic, copy, readwrite) NSString *instanceIdentifier;
+@property(nonatomic, copy, readwrite) NSString *logIdentifier;
+@property(nonatomic, copy, readwrite) NSArray<PRTaskLogEntry *> *entries;
+@property(nonatomic, assign, readwrite) uint64_t droppedEntryCount;
+@property(nonatomic, assign, readwrite) uint64_t totalByteCount;
+@property(nonatomic, assign, readwrite) BOOL truncated;
+
+@end
+
+@interface PRInstanceDetailMutationRequest ()
+
+@property(nonatomic, assign, readwrite) PRInstanceDetailKind kind;
+@property(nonatomic, assign, readwrite) PRInstanceDetailAction action;
+@property(nonatomic, copy, readwrite) NSString *itemIdentifier;
+@property(nonatomic, copy, readwrite, nullable) NSURL *sourceURL;
+@property(nonatomic, copy, readwrite) NSString *targetName;
+@property(nonatomic, copy, readwrite) NSString *name;
+@property(nonatomic, copy, readwrite) NSString *address;
+@property(nonatomic, assign, readwrite) PRInstanceServerResourcePolicy resourcePolicy;
+@property(nonatomic, assign, readwrite) BOOL confirmed;
+@property(nonatomic, assign, readwrite) NSInteger position;
+
+@end
+
+@interface PRInstanceDetailMutationResult ()
+
+@property(nonatomic, assign, readwrite) PRInstanceDetailKind kind;
+@property(nonatomic, assign, readwrite) PRInstanceDetailAction action;
+@property(nonatomic, assign, readwrite) PRInstanceDetailMutationOutcome outcome;
+@property(nonatomic, copy, readwrite) NSString *instanceIdentifier;
+@property(nonatomic, copy, readwrite) NSString *itemIdentifier;
 @property(nonatomic, copy, readwrite, nullable) NSString *localizationKey;
 @property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
 @property(nonatomic, assign, readwrite) BOOL partialChangesRolledBack;
@@ -2027,6 +2677,277 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.kind = kind;
         self.action = action;
         self.outcome = outcome;
+        self.localizationKey = [localizationKey copy];
+        self.diagnosticText = [diagnosticText copy];
+        self.partialChangesRolledBack = partialChangesRolledBack;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRInstanceWorld
+
+- (instancetype)initWithIdentifier:(NSString *)identifier
+                               name:(NSString *)name
+                         folderName:(NSString *)folderName
+                           gameMode:(NSString *)gameMode
+                           iconKey:(NSString *)iconKey
+                 warningDescription:(NSString *)warningDescription
+              lastPlayedUnixSeconds:(NSInteger)lastPlayedUnixSeconds
+                          sizeBytes:(uint64_t)sizeBytes
+                               seed:(NSNumber *)seed
+                          isArchive:(BOOL)isArchive
+                     canBeRenamed:(BOOL)canBeRenamed
+                      canBeCopied:(BOOL)canBeCopied
+                     canBeDeleted:(BOOL)canBeDeleted
+                       canBeJoined:(BOOL)canBeJoined
+                         hasIcon:(BOOL)hasIcon
+{
+    if (!isNonEmptyString(identifier) || !isNonEmptyString(name) || !isNonEmptyString(folderName)
+        || ![gameMode isKindOfClass:NSString.class] || (iconKey && ![iconKey isKindOfClass:NSString.class])
+        || (warningDescription && ![warningDescription isKindOfClass:NSString.class])
+        || (seed && ![seed isKindOfClass:NSNumber.class])) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.identifier = [identifier copy];
+        self.name = [name copy];
+        self.folderName = [folderName copy];
+        self.gameMode = [gameMode copy];
+        self.iconKey = [iconKey copy];
+        self.warningDescription = [warningDescription copy];
+        self.lastPlayedUnixSeconds = lastPlayedUnixSeconds;
+        self.sizeBytes = sizeBytes;
+        self.seed = [seed copy];
+        self.archive = isArchive;
+        self.canBeRenamed = canBeRenamed;
+        self.canBeCopied = canBeCopied;
+        self.canBeDeleted = canBeDeleted;
+        self.canBeJoined = canBeJoined;
+        self.hasIcon = hasIcon;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRInstanceServer
+
+- (instancetype)initWithIdentifier:(NSString *)identifier
+                               name:(NSString *)name
+                            address:(NSString *)address
+                     resourcePolicy:(PRInstanceServerResourcePolicy)resourcePolicy
+                             status:(PRInstanceServerStatus)status
+                      onlinePlayers:(NSInteger)onlinePlayers
+                        canBeEdited:(BOOL)canBeEdited
+                       canBeDeleted:(BOOL)canBeDeleted
+                        canBeJoined:(BOOL)canBeJoined
+{
+    if (!isNonEmptyString(identifier) || !isNonEmptyString(name) || !isNonEmptyString(address)
+        || !isKnownServerResourcePolicy(resourcePolicy) || !isKnownServerStatus(status) || onlinePlayers < -1) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.identifier = [identifier copy];
+        self.name = [name copy];
+        self.address = [address copy];
+        self.resourcePolicy = resourcePolicy;
+        self.status = status;
+        self.onlinePlayers = onlinePlayers;
+        self.canBeEdited = canBeEdited;
+        self.canBeDeleted = canBeDeleted;
+        self.canBeJoined = canBeJoined;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRInstanceScreenshot
+
+- (instancetype)initWithIdentifier:(NSString *)identifier
+                           fileName:(NSString *)fileName
+                       displayName:(NSString *)displayName
+              modifiedUnixSeconds:(NSInteger)modifiedUnixSeconds
+                          sizeBytes:(uint64_t)sizeBytes
+                           readable:(BOOL)readable
+                           writable:(BOOL)writable
+{
+    if (!isNonEmptyString(identifier) || !isNonEmptyString(fileName) || !isNonEmptyString(displayName)) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.identifier = [identifier copy];
+        self.fileName = [fileName copy];
+        self.displayName = [displayName copy];
+        self.modifiedUnixSeconds = modifiedUnixSeconds;
+        self.sizeBytes = sizeBytes;
+        self.readable = readable;
+        self.writable = writable;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRInstanceLogFile
+
+- (instancetype)initWithIdentifier:(NSString *)identifier
+                           fileName:(NSString *)fileName
+                       displayName:(NSString *)displayName
+              modifiedUnixSeconds:(NSInteger)modifiedUnixSeconds
+                          sizeBytes:(uint64_t)sizeBytes
+                         compressed:(BOOL)compressed
+                            current:(BOOL)current
+                           readable:(BOOL)readable
+                       canBeDeleted:(BOOL)canBeDeleted
+{
+    if (!isNonEmptyString(identifier) || !isNonEmptyString(fileName) || !isNonEmptyString(displayName)) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.identifier = [identifier copy];
+        self.fileName = [fileName copy];
+        self.displayName = [displayName copy];
+        self.modifiedUnixSeconds = modifiedUnixSeconds;
+        self.sizeBytes = sizeBytes;
+        self.compressed = compressed;
+        self.current = current;
+        self.readable = readable;
+        self.canBeDeleted = canBeDeleted;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRInstanceLogSnapshot
+
+- (instancetype)initWithInstanceIdentifier:(NSString *)instanceIdentifier
+                               logIdentifier:(NSString *)logIdentifier
+                                     entries:(NSArray<PRTaskLogEntry *> *)entries
+                          droppedEntryCount:(uint64_t)droppedEntryCount
+                               totalByteCount:(uint64_t)totalByteCount
+                                   truncated:(BOOL)truncated
+{
+    if (!isNonEmptyString(instanceIdentifier) || !isNonEmptyString(logIdentifier)
+        || ![entries isKindOfClass:NSArray.class] || entries.count > kFrontendLogMaxEntries
+        || totalByteCount > kFrontendLogMaxBytes) {
+        return nil;
+    }
+
+    NSMutableSet<NSNumber *> *sequences = [NSMutableSet setWithCapacity:entries.count];
+    uint64_t calculatedByteCount = 0;
+    BOOL containsTruncatedEntry = NO;
+    for (id candidate in entries) {
+        if (![candidate isKindOfClass:PRTaskLogEntry.class]) {
+            return nil;
+        }
+        PRTaskLogEntry *entry = (PRTaskLogEntry *)candidate;
+        NSNumber *sequence = @(entry.sequence);
+        if ([sequences containsObject:sequence]) {
+            return nil;
+        }
+        [sequences addObject:sequence];
+
+        NSUInteger byteCount = [entry.text lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+        if (byteCount > kFrontendLogMaxBytes || UINT64_MAX - calculatedByteCount < byteCount) {
+            return nil;
+        }
+        calculatedByteCount += byteCount;
+        containsTruncatedEntry = containsTruncatedEntry || entry.truncated;
+    }
+    if (calculatedByteCount != totalByteCount || (!truncated && (droppedEntryCount > 0 || containsTruncatedEntry))) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.instanceIdentifier = [instanceIdentifier copy];
+        self.logIdentifier = [logIdentifier copy];
+        self.entries = [entries copy];
+        self.droppedEntryCount = droppedEntryCount;
+        self.totalByteCount = totalByteCount;
+        self.truncated = truncated;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRInstanceDetailMutationRequest
+
+- (instancetype)initWithKind:(PRInstanceDetailKind)kind
+                        action:(PRInstanceDetailAction)action
+               itemIdentifier:(NSString *)itemIdentifier
+                    sourceURL:(NSURL *)sourceURL
+                   targetName:(NSString *)targetName
+                          name:(NSString *)name
+                       address:(NSString *)address
+                resourcePolicy:(PRInstanceServerResourcePolicy)resourcePolicy
+                     confirmed:(BOOL)confirmed
+                      position:(NSInteger)position
+{
+    if (!isKnownInstanceDetailKind(kind) || !isKnownInstanceDetailAction(action)
+        || ![itemIdentifier isKindOfClass:NSString.class] || (sourceURL && ![sourceURL isKindOfClass:NSURL.class])
+        || ![targetName isKindOfClass:NSString.class] || ![name isKindOfClass:NSString.class]
+        || ![address isKindOfClass:NSString.class] || !isKnownServerResourcePolicy(resourcePolicy)) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.kind = kind;
+        self.action = action;
+        self.itemIdentifier = [itemIdentifier copy];
+        self.sourceURL = [sourceURL copy];
+        self.targetName = [targetName copy];
+        self.name = [name copy];
+        self.address = [address copy];
+        self.resourcePolicy = resourcePolicy;
+        self.confirmed = confirmed;
+        self.position = position;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRInstanceDetailMutationResult
+
+- (instancetype)initWithKind:(PRInstanceDetailKind)kind
+                        action:(PRInstanceDetailAction)action
+                      outcome:(PRInstanceDetailMutationOutcome)outcome
+            instanceIdentifier:(NSString *)instanceIdentifier
+                 itemIdentifier:(NSString *)itemIdentifier
+                localizationKey:(NSString *)localizationKey
+                 diagnosticText:(NSString *)diagnosticText
+      partialChangesRolledBack:(BOOL)partialChangesRolledBack
+{
+    if (!isKnownInstanceDetailKind(kind) || !isKnownInstanceDetailAction(action)
+        || !isKnownInstanceDetailMutationOutcome(outcome) || !isNonEmptyString(instanceIdentifier)
+        || ![itemIdentifier isKindOfClass:NSString.class]
+        || (localizationKey && ![localizationKey isKindOfClass:NSString.class])
+        || (diagnosticText && ![diagnosticText isKindOfClass:NSString.class])) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.kind = kind;
+        self.action = action;
+        self.outcome = outcome;
+        self.instanceIdentifier = [instanceIdentifier copy];
+        self.itemIdentifier = [itemIdentifier copy];
         self.localizationKey = [localizationKey copy];
         self.diagnosticText = [diagnosticText copy];
         self.partialChangesRolledBack = partialChangesRolledBack;
@@ -2552,6 +3473,12 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.componentsRequestStates = [NSMutableArray array];
         self.resourcesRequestStates = [NSMutableArray array];
         self.resourceMutationRequestStates = [NSMutableArray array];
+        self.worldsRequestStates = [NSMutableArray array];
+        self.serversRequestStates = [NSMutableArray array];
+        self.screenshotsRequestStates = [NSMutableArray array];
+        self.logFilesRequestStates = [NSMutableArray array];
+        self.instanceLogRequestStates = [NSMutableArray array];
+        self.instanceDetailMutationRequestStates = [NSMutableArray array];
         self.taskRequestStates = [NSMutableArray array];
         self.taskLogRequestStates = [NSMutableArray array];
         self.taskCancellationRequestStates = [NSMutableArray array];
@@ -3168,6 +4095,554 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
         if (!state.isCancelled) {
             [state deliverOnMainActor:[[PRBridgeResourceMutationResult alloc] initWithResult:result error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
+- (PRBridgeObservationToken *)loadInstanceWorldsWithIdentifier:(NSString *)identifier
+                                                     completion:(PRInstanceWorldsCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    NSString *identifierCopy = [identifier copy];
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeInstanceWorldsResult *worldsResult = (PRBridgeInstanceWorldsResult *)value;
+        [weakRequest cancel];
+        completion(worldsResult.worlds, worldsResult.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeWorldsRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.worldsRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        NSArray<PRInstanceWorld *> *worlds = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    const std::string instanceIdentifier = stableIdentifierFromFoundation(identifierCopy);
+                    const std::optional<std::vector<FrontendInstanceWorldSnapshot>> snapshots =
+                        bridge->_facade->instanceWorlds(instanceIdentifier);
+                    if (!snapshots.has_value()) {
+                        error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                                   diagnosticText:@"Instance worlds are not available"
+                                               substitutionValues:@{ @"instanceIdentifier": identifierCopy ?: @"" }];
+                    } else {
+                        worlds = worldsFromFacadeSnapshots(*snapshots);
+                    }
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid instance worlds request"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Instance worlds operation cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Instance worlds unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown instance worlds failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeInstanceWorldsResult alloc] initWithWorlds:worlds error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
+- (PRBridgeObservationToken *)loadInstanceServersWithIdentifier:(NSString *)identifier
+                                                      completion:(PRInstanceServersCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    NSString *identifierCopy = [identifier copy];
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeInstanceServersResult *serversResult = (PRBridgeInstanceServersResult *)value;
+        [weakRequest cancel];
+        completion(serversResult.servers, serversResult.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeServersRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.serversRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        NSArray<PRInstanceServer *> *servers = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    const std::string instanceIdentifier = stableIdentifierFromFoundation(identifierCopy);
+                    const std::optional<std::vector<FrontendInstanceServerSnapshot>> snapshots =
+                        bridge->_facade->instanceServers(instanceIdentifier);
+                    if (!snapshots.has_value()) {
+                        error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                                   diagnosticText:@"Instance servers are not available"
+                                               substitutionValues:@{ @"instanceIdentifier": identifierCopy ?: @"" }];
+                    } else {
+                        servers = serversFromFacadeSnapshots(*snapshots);
+                    }
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid instance servers request"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Instance servers operation cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Instance servers unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown instance servers failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeInstanceServersResult alloc] initWithServers:servers error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
+- (PRBridgeObservationToken *)loadInstanceScreenshotsWithIdentifier:(NSString *)identifier
+                                                            completion:(PRInstanceScreenshotsCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    NSString *identifierCopy = [identifier copy];
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeInstanceScreenshotsResult *screenshotsResult = (PRBridgeInstanceScreenshotsResult *)value;
+        [weakRequest cancel];
+        completion(screenshotsResult.screenshots, screenshotsResult.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeScreenshotsRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.screenshotsRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        NSArray<PRInstanceScreenshot *> *screenshots = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    const std::string instanceIdentifier = stableIdentifierFromFoundation(identifierCopy);
+                    const std::optional<std::vector<FrontendInstanceScreenshotSnapshot>> snapshots =
+                        bridge->_facade->instanceScreenshots(instanceIdentifier);
+                    if (!snapshots.has_value()) {
+                        error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                                   diagnosticText:@"Instance screenshots are not available"
+                                               substitutionValues:@{ @"instanceIdentifier": identifierCopy ?: @"" }];
+                    } else {
+                        screenshots = screenshotsFromFacadeSnapshots(*snapshots);
+                    }
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid instance screenshots request"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Instance screenshots operation cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Instance screenshots unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown instance screenshots failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeInstanceScreenshotsResult alloc]
+                initWithScreenshots:screenshots error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
+- (PRBridgeObservationToken *)loadInstanceLogFilesWithIdentifier:(NSString *)identifier
+                                                         completion:(PRInstanceLogFilesCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    NSString *identifierCopy = [identifier copy];
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeInstanceLogFilesResult *logFilesResult = (PRBridgeInstanceLogFilesResult *)value;
+        [weakRequest cancel];
+        completion(logFilesResult.logFiles, logFilesResult.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeLogFilesRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.logFilesRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        NSArray<PRInstanceLogFile *> *logFiles = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    const std::string instanceIdentifier = stableIdentifierFromFoundation(identifierCopy);
+                    const std::optional<std::vector<FrontendInstanceLogFileSnapshot>> snapshots =
+                        bridge->_facade->instanceLogFiles(instanceIdentifier);
+                    if (!snapshots.has_value()) {
+                        error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                                   diagnosticText:@"Instance log files are not available"
+                                               substitutionValues:@{ @"instanceIdentifier": identifierCopy ?: @"" }];
+                    } else {
+                        logFiles = logFilesFromFacadeSnapshots(*snapshots);
+                    }
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid instance log files request"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Instance log files operation cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Instance log files unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown instance log files failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeInstanceLogFilesResult alloc]
+                initWithLogFiles:logFiles error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
+- (PRBridgeObservationToken *)loadInstanceLogWithIdentifier:(NSString *)identifier
+                                               logIdentifier:(NSString *)logIdentifier
+                                                   completion:(PRInstanceLogCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    NSString *identifierCopy = [identifier copy];
+    NSString *logIdentifierCopy = [logIdentifier copy];
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeInstanceLogResult *logResult = (PRBridgeInstanceLogResult *)value;
+        [weakRequest cancel];
+        completion(logResult.snapshot, logResult.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeInstanceLogRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.instanceLogRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRInstanceLogSnapshot *snapshot = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    const std::string instanceIdentifier = stableIdentifierFromFoundation(identifierCopy);
+                    const std::string logIdentifier = stableIdentifierFromFoundation(logIdentifierCopy);
+                    const std::optional<FrontendInstanceLogSnapshot> facadeSnapshot =
+                        bridge->_facade->instanceLog(instanceIdentifier, logIdentifier);
+                    if (!facadeSnapshot.has_value()) {
+                        error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                                   diagnosticText:@"Instance log is not available"
+                                               substitutionValues:@{ @"instanceIdentifier": identifierCopy ?: @"",
+                                                                      @"logIdentifier": logIdentifierCopy ?: @"" }];
+                    } else {
+                        snapshot = instanceLogSnapshotFromFacadeSnapshot(*facadeSnapshot);
+                    }
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid instance log request"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Instance log operation cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Instance log unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown instance log failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeInstanceLogResult alloc]
+                initWithSnapshot:snapshot error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
+- (PRBridgeObservationToken *)applyInstanceDetailActionWithIdentifier:(NSString *)identifier
+                                                                request:(PRInstanceDetailMutationRequest *)detailRequest
+                                                            completion:(PRInstanceDetailMutationCompletionHandler)completion
+{
+    if (!completion || !detailRequest || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    NSString *identifierCopy = [identifier copy];
+    PRInstanceDetailKind kind = detailRequest.kind;
+    PRInstanceDetailAction action = detailRequest.action;
+    NSString *itemIdentifierCopy = [detailRequest.itemIdentifier copy];
+    NSURL *sourceURLCopy = [detailRequest.sourceURL copy];
+    NSString *targetNameCopy = [detailRequest.targetName copy];
+    NSString *nameCopy = [detailRequest.name copy];
+    NSString *addressCopy = [detailRequest.address copy];
+    PRInstanceServerResourcePolicy resourcePolicy = detailRequest.resourcePolicy;
+    BOOL confirmed = detailRequest.confirmed;
+    NSInteger position = detailRequest.position;
+
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeInstanceDetailMutationResult *mutationResult = (PRBridgeInstanceDetailMutationResult *)value;
+        [weakRequest cancel];
+        completion(mutationResult.result, mutationResult.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeInstanceDetailMutationRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.instanceDetailMutationRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRInstanceDetailMutationResult *result = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    const std::string instanceIdentifier = stableIdentifierFromFoundation(identifierCopy);
+                    FrontendInstanceDetailMutationRequest requestValue;
+                    requestValue.kind = detailKindFromFoundationKind(kind);
+                    requestValue.action = detailActionFromFoundationAction(action);
+                    requestValue.itemIdentifier = utf8TextFromFoundation(itemIdentifierCopy);
+                    requestValue.targetName = utf8TextFromFoundation(targetNameCopy);
+                    requestValue.name = utf8TextFromFoundation(nameCopy);
+                    requestValue.address = utf8TextFromFoundation(addressCopy);
+                    requestValue.resourcePolicy = serverResourcePolicyFromFoundationPolicy(resourcePolicy);
+                    requestValue.confirmed = confirmed;
+                    requestValue.position = static_cast<int>(position);
+                    if (sourceURLCopy) {
+                        requestValue.sourcePath = resourceSourcePathFromFoundation(sourceURLCopy);
+                    }
+                    result = detailMutationResultFromFacadeResult(
+                        bridge->_facade->mutateInstanceDetail(instanceIdentifier, requestValue));
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid instance detail action"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Instance detail action cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Instance detail action unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown instance detail action failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeInstanceDetailMutationResult alloc]
+                initWithResult:result error:error]];
         }
     });
 
@@ -3901,6 +5376,66 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.observationLock unlock];
 }
 
+- (void)removeWorldsRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.worldsRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.worldsRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
+- (void)removeServersRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.serversRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.serversRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
+- (void)removeScreenshotsRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.screenshotsRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.screenshotsRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
+- (void)removeLogFilesRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.logFilesRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.logFilesRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
+- (void)removeInstanceLogRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.instanceLogRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.instanceLogRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
+- (void)removeInstanceDetailMutationRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.instanceDetailMutationRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.instanceDetailMutationRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
 - (void)removeTaskRequest:(PRBridgeObservationState *)request
 {
     [self.observationLock lock];
@@ -3984,6 +5519,12 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [observations addObjectsFromArray:self.componentsRequestStates];
     [observations addObjectsFromArray:self.resourcesRequestStates];
     [observations addObjectsFromArray:self.resourceMutationRequestStates];
+    [observations addObjectsFromArray:self.worldsRequestStates];
+    [observations addObjectsFromArray:self.serversRequestStates];
+    [observations addObjectsFromArray:self.screenshotsRequestStates];
+    [observations addObjectsFromArray:self.logFilesRequestStates];
+    [observations addObjectsFromArray:self.instanceLogRequestStates];
+    [observations addObjectsFromArray:self.instanceDetailMutationRequestStates];
     [observations addObjectsFromArray:self.taskRequestStates];
     [observations addObjectsFromArray:self.taskLogRequestStates];
     [observations addObjectsFromArray:self.taskCancellationRequestStates];
@@ -4000,6 +5541,12 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.componentsRequestStates removeAllObjects];
     [self.resourcesRequestStates removeAllObjects];
     [self.resourceMutationRequestStates removeAllObjects];
+    [self.worldsRequestStates removeAllObjects];
+    [self.serversRequestStates removeAllObjects];
+    [self.screenshotsRequestStates removeAllObjects];
+    [self.logFilesRequestStates removeAllObjects];
+    [self.instanceLogRequestStates removeAllObjects];
+    [self.instanceDetailMutationRequestStates removeAllObjects];
     [self.taskRequestStates removeAllObjects];
     [self.taskLogRequestStates removeAllObjects];
     [self.taskCancellationRequestStates removeAllObjects];

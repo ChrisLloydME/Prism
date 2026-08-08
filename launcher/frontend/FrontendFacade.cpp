@@ -149,6 +149,199 @@ void validateInstanceResourceMutationResult(
     }
 }
 
+bool isKnownInstanceDetailKind(FrontendInstanceDetailKind kind) noexcept
+{
+    switch (kind) {
+        case FrontendInstanceDetailKind::Worlds:
+        case FrontendInstanceDetailKind::Servers:
+        case FrontendInstanceDetailKind::Screenshots:
+        case FrontendInstanceDetailKind::Logs:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownInstanceDetailAction(FrontendInstanceDetailAction action) noexcept
+{
+    switch (action) {
+        case FrontendInstanceDetailAction::Add:
+        case FrontendInstanceDetailAction::Update:
+        case FrontendInstanceDetailAction::Delete:
+        case FrontendInstanceDetailAction::MoveUp:
+        case FrontendInstanceDetailAction::MoveDown:
+        case FrontendInstanceDetailAction::Import:
+        case FrontendInstanceDetailAction::Copy:
+        case FrontendInstanceDetailAction::Rename:
+        case FrontendInstanceDetailAction::Reveal:
+        case FrontendInstanceDetailAction::ResetIcon:
+        case FrontendInstanceDetailAction::Join:
+        case FrontendInstanceDetailAction::Refresh:
+        case FrontendInstanceDetailAction::Open:
+        case FrontendInstanceDetailAction::CopyImage:
+        case FrontendInstanceDetailAction::CopyFiles:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownInstanceDetailMutationOutcome(FrontendInstanceDetailMutationOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendInstanceDetailMutationOutcome::Succeeded:
+        case FrontendInstanceDetailMutationOutcome::UnknownInstance:
+        case FrontendInstanceDetailMutationOutcome::UnknownItem:
+        case FrontendInstanceDetailMutationOutcome::Rejected:
+        case FrontendInstanceDetailMutationOutcome::Failed:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownServerResourcePolicy(FrontendServerResourcePolicy policy) noexcept
+{
+    switch (policy) {
+        case FrontendServerResourcePolicy::Ask:
+        case FrontendServerResourcePolicy::Always:
+        case FrontendServerResourcePolicy::Never:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownServerStatus(FrontendServerStatus status) noexcept
+{
+    switch (status) {
+        case FrontendServerStatus::Unknown:
+        case FrontendServerStatus::Online:
+        case FrontendServerStatus::Offline:
+        case FrontendServerStatus::Failed:
+            return true;
+    }
+    return false;
+}
+
+void validateWorlds(const std::vector<FrontendInstanceWorldSnapshot>& worlds)
+{
+    std::set<std::string> identifiers;
+    for (const auto& world : worlds) {
+        if (!world.hasStableIdentifier() || world.name.empty() || world.folderName.empty()
+            || !identifiers.insert(world.id).second) {
+            throw std::invalid_argument("World snapshots require unique identifiers, names, and folders");
+        }
+    }
+}
+
+void validateServers(const std::vector<FrontendInstanceServerSnapshot>& servers)
+{
+    std::set<std::string> identifiers;
+    for (const auto& server : servers) {
+        if (!server.hasStableIdentifier() || server.name.empty() || server.address.empty()
+            || !isKnownServerResourcePolicy(server.resourcePolicy) || !isKnownServerStatus(server.status)
+            || server.onlinePlayers < -1 || !identifiers.insert(server.id).second) {
+            throw std::invalid_argument("Server snapshots require unique identifiers and valid status data");
+        }
+    }
+}
+
+void validateScreenshots(const std::vector<FrontendInstanceScreenshotSnapshot>& screenshots)
+{
+    std::set<std::string> identifiers;
+    for (const auto& screenshot : screenshots) {
+        if (!screenshot.hasStableIdentifier() || screenshot.fileName.empty() || screenshot.displayName.empty()
+            || !identifiers.insert(screenshot.id).second) {
+            throw std::invalid_argument("Screenshot snapshots require unique identifiers and file names");
+        }
+    }
+}
+
+void validateLogFiles(const std::vector<FrontendInstanceLogFileSnapshot>& logs)
+{
+    std::set<std::string> identifiers;
+    for (const auto& log : logs) {
+        if (!log.hasStableIdentifier() || log.fileName.empty() || log.displayName.empty()
+            || !identifiers.insert(log.id).second) {
+            throw std::invalid_argument("Log-file snapshots require unique identifiers and file names");
+        }
+    }
+}
+
+void validateInstanceDetailRequest(
+    const std::string& instanceIdentifier,
+    const FrontendInstanceDetailMutationRequest& request)
+{
+    if (instanceIdentifier.empty() || !isKnownInstanceDetailKind(request.kind)
+        || !isKnownInstanceDetailAction(request.action)) {
+        throw std::invalid_argument("Instance detail requests require a stable identifier and known kind/action");
+    }
+
+    const bool actionNeedsItem = request.action != FrontendInstanceDetailAction::Add
+        && request.action != FrontendInstanceDetailAction::Refresh;
+    if (actionNeedsItem && request.itemIdentifier.empty()) {
+        throw std::invalid_argument("Instance detail requests require an item identifier");
+    }
+    if (request.action == FrontendInstanceDetailAction::Delete && !request.confirmed) {
+        throw std::invalid_argument("Deleting instance detail data requires explicit confirmation");
+    }
+    if (request.action == FrontendInstanceDetailAction::Import
+        && (request.kind != FrontendInstanceDetailKind::Worlds || request.sourcePath.empty()
+            || !request.sourcePath.is_absolute())) {
+        throw std::invalid_argument("World import requires an absolute source path");
+    }
+    if (request.action != FrontendInstanceDetailAction::Import && !request.sourcePath.empty()) {
+        throw std::invalid_argument("Only world import requests may carry a source path");
+    }
+    if ((request.action == FrontendInstanceDetailAction::Copy || request.action == FrontendInstanceDetailAction::Rename)
+        && request.targetName.empty()) {
+        throw std::invalid_argument("Copy and rename requests require a target name");
+    }
+    if (request.action == FrontendInstanceDetailAction::Update
+        && (request.kind != FrontendInstanceDetailKind::Servers || request.name.empty() || request.address.empty()
+            || !isKnownServerResourcePolicy(request.resourcePolicy))) {
+        throw std::invalid_argument("Server updates require name, address, and a known resource policy");
+    }
+    if (request.action == FrontendInstanceDetailAction::Add
+        && (request.kind != FrontendInstanceDetailKind::Servers || request.name.empty() || request.address.empty()
+            || !isKnownServerResourcePolicy(request.resourcePolicy))) {
+        throw std::invalid_argument("Adding a server requires name, address, and a known resource policy");
+    }
+    if ((request.action == FrontendInstanceDetailAction::MoveUp || request.action == FrontendInstanceDetailAction::MoveDown)
+        && (request.kind != FrontendInstanceDetailKind::Servers || request.position < 0)) {
+        throw std::invalid_argument("Server move requests require a non-negative position");
+    }
+    if (request.action == FrontendInstanceDetailAction::CopyImage
+        && request.kind != FrontendInstanceDetailKind::Screenshots) {
+        throw std::invalid_argument("CopyImage is only valid for screenshots");
+    }
+    if (request.action == FrontendInstanceDetailAction::CopyFiles
+        && request.kind != FrontendInstanceDetailKind::Screenshots) {
+        throw std::invalid_argument("CopyFiles is only valid for screenshots");
+    }
+    if (request.kind == FrontendInstanceDetailKind::Logs
+        && request.action != FrontendInstanceDetailAction::Delete
+        && request.action != FrontendInstanceDetailAction::Reveal
+        && request.action != FrontendInstanceDetailAction::Open
+        && request.action != FrontendInstanceDetailAction::Refresh) {
+        throw std::invalid_argument("Log requests only support open, reveal, refresh, and confirmed delete");
+    }
+}
+
+void validateInstanceDetailMutationResult(
+    const FrontendInstanceDetailMutationRequest& request,
+    const FrontendInstanceDetailMutationResult& result,
+    const std::string& instanceIdentifier)
+{
+    if (!isKnownInstanceDetailKind(result.kind) || !isKnownInstanceDetailAction(result.action)
+        || !isKnownInstanceDetailMutationOutcome(result.outcome) || result.kind != request.kind
+        || result.action != request.action || result.instanceIdentifier != instanceIdentifier
+        || (!request.itemIdentifier.empty() && result.itemIdentifier != request.itemIdentifier)) {
+        throw std::invalid_argument("Instance detail mutation returned an invalid confirmed result");
+    }
+    if (request.itemIdentifier.empty() && result.itemIdentifier.empty()
+        && request.action == FrontendInstanceDetailAction::Add) {
+        throw std::invalid_argument("Adding a server must return its stable identifier");
+    }
+}
+
 bool isKnownInstanceJoinTarget(FrontendInstanceJoinTarget target) noexcept
 {
     switch (target) {
@@ -445,6 +638,29 @@ void validateLogSnapshot(const FrontendLogSnapshot& snapshot)
     }
 }
 
+void validateInstanceLogSnapshot(const FrontendInstanceLogSnapshot& snapshot)
+{
+    if (snapshot.instanceIdentifier.empty() || snapshot.logIdentifier.empty()
+        || snapshot.entries.size() > kFrontendLogMaxEntries || snapshot.totalByteCount > kFrontendLogMaxBytes) {
+        throw std::invalid_argument("Instance log snapshots require stable identifiers and bounded contents");
+    }
+
+    std::set<std::uint64_t> sequences;
+    std::uint64_t totalByteCount = 0;
+    bool containsTruncatedEntry = false;
+    for (const auto& entry : snapshot.entries) {
+        if (!sequences.insert(entry.sequence).second || entry.text.size() > kFrontendLogMaxBytes) {
+            throw std::invalid_argument("Instance log snapshots require unique sequences and bounded entries");
+        }
+        totalByteCount += static_cast<std::uint64_t>(entry.text.size());
+        containsTruncatedEntry = containsTruncatedEntry || entry.truncated;
+    }
+    if (totalByteCount != snapshot.totalByteCount
+        || (!snapshot.truncated && (snapshot.droppedEntryCount > 0 || containsTruncatedEntry))) {
+        throw std::invalid_argument("Instance log snapshots require accurate truncation metadata");
+    }
+}
+
 void ensureRunning(FrontendLifecycleState state)
 {
     if (state != FrontendLifecycleState::Running) {
@@ -575,6 +791,123 @@ FrontendInstanceResourceMutationResult executeInstanceResourceMutation(
 
     auto result = mutator(dataRoot, instanceIdentifier, kind, request);
     validateInstanceResourceMutationResult(kind, request, result, instanceIdentifier);
+    return result;
+}
+
+std::optional<std::vector<FrontendInstanceWorldSnapshot>> executeInstanceWorlds(
+    const FrontendRuntimeDependencies::InstanceWorldsLoader& loader,
+    const std::filesystem::path& dataRoot,
+    const std::string& instanceIdentifier)
+{
+    if (instanceIdentifier.empty()) {
+        throw std::invalid_argument("World operations require a stable instance identifier");
+    }
+    if (!loader) {
+        return std::nullopt;
+    }
+    auto worlds = loader(dataRoot, instanceIdentifier);
+    if (worlds.has_value()) {
+        validateWorlds(*worlds);
+    }
+    return worlds;
+}
+
+std::optional<std::vector<FrontendInstanceServerSnapshot>> executeInstanceServers(
+    const FrontendRuntimeDependencies::InstanceServersLoader& loader,
+    const std::filesystem::path& dataRoot,
+    const std::string& instanceIdentifier)
+{
+    if (instanceIdentifier.empty()) {
+        throw std::invalid_argument("Server operations require a stable instance identifier");
+    }
+    if (!loader) {
+        return std::nullopt;
+    }
+    auto servers = loader(dataRoot, instanceIdentifier);
+    if (servers.has_value()) {
+        validateServers(*servers);
+    }
+    return servers;
+}
+
+std::optional<std::vector<FrontendInstanceScreenshotSnapshot>> executeInstanceScreenshots(
+    const FrontendRuntimeDependencies::InstanceScreenshotsLoader& loader,
+    const std::filesystem::path& dataRoot,
+    const std::string& instanceIdentifier)
+{
+    if (instanceIdentifier.empty()) {
+        throw std::invalid_argument("Screenshot operations require a stable instance identifier");
+    }
+    if (!loader) {
+        return std::nullopt;
+    }
+    auto screenshots = loader(dataRoot, instanceIdentifier);
+    if (screenshots.has_value()) {
+        validateScreenshots(*screenshots);
+    }
+    return screenshots;
+}
+
+std::optional<std::vector<FrontendInstanceLogFileSnapshot>> executeInstanceLogFiles(
+    const FrontendRuntimeDependencies::InstanceLogFilesLoader& loader,
+    const std::filesystem::path& dataRoot,
+    const std::string& instanceIdentifier)
+{
+    if (instanceIdentifier.empty()) {
+        throw std::invalid_argument("Log operations require a stable instance identifier");
+    }
+    if (!loader) {
+        return std::nullopt;
+    }
+    auto logs = loader(dataRoot, instanceIdentifier);
+    if (logs.has_value()) {
+        validateLogFiles(*logs);
+    }
+    return logs;
+}
+
+std::optional<FrontendInstanceLogSnapshot> executeInstanceLog(
+    const FrontendRuntimeDependencies::InstanceLogLoader& loader,
+    const std::filesystem::path& dataRoot,
+    const std::string& instanceIdentifier,
+    const std::string& logIdentifier)
+{
+    if (instanceIdentifier.empty() || logIdentifier.empty()) {
+        throw std::invalid_argument("Instance log content requires stable identifiers");
+    }
+    if (!loader) {
+        return std::nullopt;
+    }
+    auto snapshot = loader(dataRoot, instanceIdentifier, logIdentifier);
+    if (snapshot.has_value()) {
+        validateInstanceLogSnapshot(*snapshot);
+        if (snapshot->instanceIdentifier != instanceIdentifier || snapshot->logIdentifier != logIdentifier) {
+            throw std::invalid_argument("Instance log content identifiers must match the request");
+        }
+    }
+    return snapshot;
+}
+
+FrontendInstanceDetailMutationResult executeInstanceDetailMutation(
+    const FrontendRuntimeDependencies::InstanceDetailMutator& mutator,
+    const std::filesystem::path& dataRoot,
+    const std::string& instanceIdentifier,
+    const FrontendInstanceDetailMutationRequest& request)
+{
+    validateInstanceDetailRequest(instanceIdentifier, request);
+    if (!mutator) {
+        FrontendInstanceDetailMutationResult rejected;
+        rejected.kind = request.kind;
+        rejected.action = request.action;
+        rejected.instanceIdentifier = instanceIdentifier;
+        rejected.itemIdentifier = request.itemIdentifier;
+        rejected.localizationKey = "instance.detail.unavailable";
+        rejected.diagnosticText = "Instance detail mutation adapter is unavailable";
+        return rejected;
+    }
+
+    auto result = mutator(dataRoot, instanceIdentifier, request);
+    validateInstanceDetailMutationResult(request, result, instanceIdentifier);
     return result;
 }
 
@@ -779,6 +1112,48 @@ FrontendInstanceResourceMutationResult FrontendFacade::mutateInstanceResource(
     ensureRunning(m_lifecycleState);
     return executeInstanceResourceMutation(
         m_runtimeDependencies.mutateInstanceResource, m_dataRoot, instanceIdentifier, kind, request);
+}
+
+std::optional<std::vector<FrontendInstanceWorldSnapshot>> FrontendFacade::instanceWorlds(
+    const std::string& instanceIdentifier) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeInstanceWorlds(m_runtimeDependencies.loadInstanceWorlds, m_dataRoot, instanceIdentifier);
+}
+
+std::optional<std::vector<FrontendInstanceServerSnapshot>> FrontendFacade::instanceServers(
+    const std::string& instanceIdentifier) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeInstanceServers(m_runtimeDependencies.loadInstanceServers, m_dataRoot, instanceIdentifier);
+}
+
+std::optional<std::vector<FrontendInstanceScreenshotSnapshot>> FrontendFacade::instanceScreenshots(
+    const std::string& instanceIdentifier) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeInstanceScreenshots(m_runtimeDependencies.loadInstanceScreenshots, m_dataRoot, instanceIdentifier);
+}
+
+std::optional<std::vector<FrontendInstanceLogFileSnapshot>> FrontendFacade::instanceLogFiles(
+    const std::string& instanceIdentifier) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeInstanceLogFiles(m_runtimeDependencies.loadInstanceLogFiles, m_dataRoot, instanceIdentifier);
+}
+
+std::optional<FrontendInstanceLogSnapshot> FrontendFacade::instanceLog(
+    const std::string& instanceIdentifier, const std::string& logIdentifier) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeInstanceLog(m_runtimeDependencies.loadInstanceLog, m_dataRoot, instanceIdentifier, logIdentifier);
+}
+
+FrontendInstanceDetailMutationResult FrontendFacade::mutateInstanceDetail(
+    const std::string& instanceIdentifier, const FrontendInstanceDetailMutationRequest& request) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeInstanceDetailMutation(m_runtimeDependencies.mutateInstanceDetail, m_dataRoot, instanceIdentifier, request);
 }
 
 std::vector<FrontendInstanceChange> FrontendFacade::instanceChanges() const

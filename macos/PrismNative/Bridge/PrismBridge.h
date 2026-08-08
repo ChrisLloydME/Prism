@@ -51,6 +51,18 @@ typedef void (^PRInstanceResourcesCompletionHandler)(NSArray<PRInstanceResource 
                                                       PRBridgeError * _Nullable error);
 typedef void (^PRInstanceResourceMutationCompletionHandler)(PRInstanceResourceMutationResult * _Nullable result,
                                                              PRBridgeError * _Nullable error);
+typedef void (^PRInstanceWorldsCompletionHandler)(NSArray<PRInstanceWorld *> * _Nullable worlds,
+                                                  PRBridgeError * _Nullable error);
+typedef void (^PRInstanceServersCompletionHandler)(NSArray<PRInstanceServer *> * _Nullable servers,
+                                                   PRBridgeError * _Nullable error);
+typedef void (^PRInstanceScreenshotsCompletionHandler)(NSArray<PRInstanceScreenshot *> * _Nullable screenshots,
+                                                       PRBridgeError * _Nullable error);
+typedef void (^PRInstanceLogFilesCompletionHandler)(NSArray<PRInstanceLogFile *> * _Nullable logFiles,
+                                                    PRBridgeError * _Nullable error);
+typedef void (^PRInstanceLogCompletionHandler)(PRInstanceLogSnapshot * _Nullable snapshot,
+                                               PRBridgeError * _Nullable error);
+typedef void (^PRInstanceDetailMutationCompletionHandler)(PRInstanceDetailMutationResult * _Nullable result,
+                                                          PRBridgeError * _Nullable error);
 typedef void (^PRInstanceCommandCompletionHandler)(PRInstanceCommandResult * _Nullable result,
                                                     PRBridgeError * _Nullable error);
 typedef void (^PRInstanceNotesUpdateCompletionHandler)(PRInstanceNotesUpdateResult * _Nullable result,
@@ -129,6 +141,30 @@ typedef void (^PRInstanceSettingsUpdateCompletionHandler)(PRInstanceSettingsUpda
                                                                          sourceURL:(NSURL * _Nullable)sourceURL
                                                                          confirmed:(BOOL)confirmed
                                                                          completion:(PRInstanceResourceMutationCompletionHandler)completion;
+
+/// Loads the ordered world, server, screenshot, or log-file metadata for one
+/// instance. File paths, watchers, archive readers, and network pingers stay in
+/// the injected facade adapter; Swift receives immutable Foundation rows.
+- (nullable PRBridgeObservationToken *)loadInstanceWorldsWithIdentifier:(NSString *)identifier
+                                                               completion:(PRInstanceWorldsCompletionHandler)completion;
+- (nullable PRBridgeObservationToken *)loadInstanceServersWithIdentifier:(NSString *)identifier
+                                                                completion:(PRInstanceServersCompletionHandler)completion;
+- (nullable PRBridgeObservationToken *)loadInstanceScreenshotsWithIdentifier:(NSString *)identifier
+                                                                    completion:(PRInstanceScreenshotsCompletionHandler)completion;
+- (nullable PRBridgeObservationToken *)loadInstanceLogFilesWithIdentifier:(NSString *)identifier
+                                                                 completion:(PRInstanceLogFilesCompletionHandler)completion;
+
+/// Loads bounded content for one current or historical instance log file.
+- (nullable PRBridgeObservationToken *)loadInstanceLogWithIdentifier:(NSString *)identifier
+                                                         logIdentifier:(NSString *)logIdentifier
+                                                             completion:(PRInstanceLogCompletionHandler)completion;
+
+/// Applies one explicit list action. Delete requires `confirmed`; successful
+/// mutations are followed by a caller-requested reload rather than optimistic
+/// Swift edits.
+- (nullable PRBridgeObservationToken *)applyInstanceDetailActionWithIdentifier:(NSString *)identifier
+                                                                        request:(PRInstanceDetailMutationRequest *)request
+                                                                    completion:(PRInstanceDetailMutationCompletionHandler)completion;
 
 /// Loads one immutable task snapshot by stable identifier. Unknown tasks and
 /// lifecycle failures are returned as stable bridge errors; the completion

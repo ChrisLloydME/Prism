@@ -2468,3 +2468,1450 @@ final class PrismShellModel: ObservableObject {
         )
     }
 }
+
+enum PrismInstanceDetailKind: Int, CaseIterable, Equatable, Sendable {
+    case worlds
+    case servers
+    case screenshots
+    case logs
+
+    init?(bridgeKind: PRInstanceDetailKind) {
+        switch bridgeKind {
+        case .worlds:
+            self = .worlds
+        case .servers:
+            self = .servers
+        case .screenshots:
+            self = .screenshots
+        case .logs:
+            self = .logs
+        @unknown default:
+            return nil
+        }
+    }
+
+    var bridgeKind: PRInstanceDetailKind {
+        switch self {
+        case .worlds:
+            return .worlds
+        case .servers:
+            return .servers
+        case .screenshots:
+            return .screenshots
+        case .logs:
+            return .logs
+        }
+    }
+
+    var titleKey: String {
+        switch self {
+        case .worlds:
+            return "Worlds"
+        case .servers:
+            return "Servers"
+        case .screenshots:
+            return "Screenshots"
+        case .logs:
+            return "Logs"
+        }
+    }
+}
+
+enum PrismInstanceDetailAction: Int, Equatable, Sendable {
+    case add
+    case update
+    case delete
+    case moveUp
+    case moveDown
+    case `import`
+    case copy
+    case rename
+    case reveal
+    case resetIcon
+    case join
+    case refresh
+    case open
+    case copyImage
+    case copyFiles
+
+    init?(bridgeAction: PRInstanceDetailAction) {
+        switch bridgeAction {
+        case .add:
+            self = .add
+        case .update:
+            self = .update
+        case .delete:
+            self = .delete
+        case .moveUp:
+            self = .moveUp
+        case .moveDown:
+            self = .moveDown
+        case .import:
+            self = .import
+        case .copy:
+            self = .copy
+        case .rename:
+            self = .rename
+        case .reveal:
+            self = .reveal
+        case .resetIcon:
+            self = .resetIcon
+        case .join:
+            self = .join
+        case .refresh:
+            self = .refresh
+        case .open:
+            self = .open
+        case .copyImage:
+            self = .copyImage
+        case .copyFiles:
+            self = .copyFiles
+        @unknown default:
+            return nil
+        }
+    }
+
+    var bridgeAction: PRInstanceDetailAction {
+        switch self {
+        case .add:
+            return .add
+        case .update:
+            return .update
+        case .delete:
+            return .delete
+        case .moveUp:
+            return .moveUp
+        case .moveDown:
+            return .moveDown
+        case .import:
+            return .import
+        case .copy:
+            return .copy
+        case .rename:
+            return .rename
+        case .reveal:
+            return .reveal
+        case .resetIcon:
+            return .resetIcon
+        case .join:
+            return .join
+        case .refresh:
+            return .refresh
+        case .open:
+            return .open
+        case .copyImage:
+            return .copyImage
+        case .copyFiles:
+            return .copyFiles
+        }
+    }
+}
+
+enum PrismInstanceDetailMutationOutcome: Int, Equatable, Sendable {
+    case succeeded
+    case unknownInstance
+    case unknownItem
+    case rejected
+    case failed
+
+    init?(bridgeOutcome: PRInstanceDetailMutationOutcome) {
+        switch bridgeOutcome {
+        case .succeeded:
+            self = .succeeded
+        case .unknownInstance:
+            self = .unknownInstance
+        case .unknownItem:
+            self = .unknownItem
+        case .rejected:
+            self = .rejected
+        case .failed:
+            self = .failed
+        @unknown default:
+            return nil
+        }
+    }
+}
+
+enum PrismInstanceServerResourcePolicy: Int, CaseIterable, Equatable, Sendable {
+    case ask
+    case always
+    case never
+
+    init?(bridgePolicy: PRInstanceServerResourcePolicy) {
+        switch bridgePolicy {
+        case .ask:
+            self = .ask
+        case .always:
+            self = .always
+        case .never:
+            self = .never
+        @unknown default:
+            return nil
+        }
+    }
+
+    var bridgePolicy: PRInstanceServerResourcePolicy {
+        switch self {
+        case .ask:
+            return .ask
+        case .always:
+            return .always
+        case .never:
+            return .never
+        }
+    }
+
+    var titleKey: String {
+        switch self {
+        case .ask:
+            return "Ask"
+        case .always:
+            return "Always"
+        case .never:
+            return "Never"
+        }
+    }
+}
+
+enum PrismInstanceServerStatus: Int, Equatable, Sendable {
+    case unknown
+    case online
+    case offline
+    case failed
+
+    init?(bridgeStatus: PRInstanceServerStatus) {
+        switch bridgeStatus {
+        case .unknown:
+            self = .unknown
+        case .online:
+            self = .online
+        case .offline:
+            self = .offline
+        case .failed:
+            self = .failed
+        @unknown default:
+            return nil
+        }
+    }
+
+    var titleKey: String {
+        switch self {
+        case .unknown:
+            return "Status Unknown"
+        case .online:
+            return "Online"
+        case .offline:
+            return "Offline"
+        case .failed:
+            return "Ping Failed"
+        }
+    }
+}
+
+struct PrismInstanceDetailMutationIntent: Equatable, Sendable {
+    let kind: PrismInstanceDetailKind
+    let action: PrismInstanceDetailAction
+    let itemIdentifier: String
+    let sourceURL: URL?
+    let targetName: String
+    let name: String
+    let address: String
+    let resourcePolicy: PrismInstanceServerResourcePolicy
+    let confirmed: Bool
+    let position: Int
+
+    init(
+        kind: PrismInstanceDetailKind,
+        action: PrismInstanceDetailAction,
+        itemIdentifier: String = "",
+        sourceURL: URL? = nil,
+        targetName: String = "",
+        name: String = "",
+        address: String = "",
+        resourcePolicy: PrismInstanceServerResourcePolicy = .ask,
+        confirmed: Bool = false,
+        position: Int = -1
+    ) {
+        self.kind = kind
+        self.action = action
+        self.itemIdentifier = itemIdentifier
+        self.sourceURL = sourceURL
+        self.targetName = targetName
+        self.name = name
+        self.address = address
+        self.resourcePolicy = resourcePolicy
+        self.confirmed = confirmed
+        self.position = position
+    }
+
+    func bridgeRequest() -> PRInstanceDetailMutationRequest {
+        guard let request = PRInstanceDetailMutationRequest(
+            kind: kind.bridgeKind,
+            action: action.bridgeAction,
+            itemIdentifier: itemIdentifier,
+            sourceURL: sourceURL,
+            targetName: targetName,
+            name: name,
+            address: address,
+            resourcePolicy: resourcePolicy.bridgePolicy,
+            confirmed: confirmed,
+            position: position
+        ) else {
+            preconditionFailure("Native detail mutation intent could not cross the Foundation bridge")
+        }
+        return request
+    }
+}
+
+struct PrismInstanceDetailMutationFailure: Equatable, Sendable {
+    let kind: PrismInstanceDetailKind
+    let action: PrismInstanceDetailAction
+    let instanceIdentifier: String
+    let itemIdentifier: String
+    let localizationKey: String
+    let diagnosticText: String?
+    let partialChangesRolledBack: Bool
+    let recoveryAction: PrismInstanceDetailsRecoveryAction
+
+    var isRetryAvailable: Bool {
+        recoveryAction == .retry
+    }
+}
+
+enum PrismInstanceDetailMutationState: Equatable, Sendable {
+    case idle
+    case pending(PrismInstanceDetailMutationIntent)
+    case failed(PrismInstanceDetailMutationFailure)
+}
+
+struct PrismInstanceWorld: Identifiable, Equatable, Hashable, Sendable {
+    let id: String
+    let name: String
+    let folderName: String
+    let gameMode: String
+    let iconKey: String?
+    let warningDescription: String?
+    let lastPlayedUnixSeconds: Int64
+    let sizeBytes: UInt64
+    let seed: Int64?
+    let isArchive: Bool
+    let canBeRenamed: Bool
+    let canBeCopied: Bool
+    let canBeDeleted: Bool
+    let canBeJoined: Bool
+    let hasIcon: Bool
+
+    init?(bridgeWorld: PRInstanceWorld) {
+        let identifier = bridgeWorld.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = bridgeWorld.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let folderName = bridgeWorld.folderName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !identifier.isEmpty, !name.isEmpty, !folderName.isEmpty else {
+            return nil
+        }
+
+        self.id = identifier
+        self.name = name
+        self.folderName = folderName
+        self.gameMode = bridgeWorld.gameMode
+        self.iconKey = Self.normalizedOptional(bridgeWorld.iconKey)
+        self.warningDescription = Self.normalizedOptional(bridgeWorld.warningDescription)
+        self.lastPlayedUnixSeconds = Int64(bridgeWorld.lastPlayedUnixSeconds)
+        self.sizeBytes = bridgeWorld.sizeBytes
+        self.seed = bridgeWorld.seed?.int64Value
+        self.isArchive = bridgeWorld.archive
+        self.canBeRenamed = bridgeWorld.canBeRenamed
+        self.canBeCopied = bridgeWorld.canBeCopied
+        self.canBeDeleted = bridgeWorld.canBeDeleted
+        self.canBeJoined = bridgeWorld.canBeJoined
+        self.hasIcon = bridgeWorld.hasIcon
+    }
+
+    private static func normalizedOptional(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
+    }
+}
+
+struct PrismInstanceServer: Identifiable, Equatable, Hashable, Sendable {
+    let id: String
+    let name: String
+    let address: String
+    let resourcePolicy: PrismInstanceServerResourcePolicy
+    let status: PrismInstanceServerStatus
+    let onlinePlayers: Int64
+    let canBeEdited: Bool
+    let canBeDeleted: Bool
+    let canBeJoined: Bool
+
+    init?(bridgeServer: PRInstanceServer) {
+        let identifier = bridgeServer.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = bridgeServer.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let address = bridgeServer.address.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !identifier.isEmpty,
+              !name.isEmpty,
+              !address.isEmpty,
+              let resourcePolicy = PrismInstanceServerResourcePolicy(bridgePolicy: bridgeServer.resourcePolicy),
+              let status = PrismInstanceServerStatus(bridgeStatus: bridgeServer.status),
+              bridgeServer.onlinePlayers >= -1 else {
+            return nil
+        }
+
+        self.id = identifier
+        self.name = name
+        self.address = address
+        self.resourcePolicy = resourcePolicy
+        self.status = status
+        self.onlinePlayers = Int64(bridgeServer.onlinePlayers)
+        self.canBeEdited = bridgeServer.canBeEdited
+        self.canBeDeleted = bridgeServer.canBeDeleted
+        self.canBeJoined = bridgeServer.canBeJoined
+    }
+}
+
+struct PrismInstanceScreenshot: Identifiable, Equatable, Hashable, Sendable {
+    let id: String
+    let fileName: String
+    let displayName: String
+    let modifiedUnixSeconds: Int64
+    let sizeBytes: UInt64
+    let readable: Bool
+    let writable: Bool
+
+    init?(bridgeScreenshot: PRInstanceScreenshot) {
+        let identifier = bridgeScreenshot.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fileName = bridgeScreenshot.fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayName = bridgeScreenshot.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !identifier.isEmpty, !fileName.isEmpty, !displayName.isEmpty else {
+            return nil
+        }
+
+        self.id = identifier
+        self.fileName = fileName
+        self.displayName = displayName
+        self.modifiedUnixSeconds = Int64(bridgeScreenshot.modifiedUnixSeconds)
+        self.sizeBytes = bridgeScreenshot.sizeBytes
+        self.readable = bridgeScreenshot.readable
+        self.writable = bridgeScreenshot.writable
+    }
+}
+
+struct PrismInstanceLogFile: Identifiable, Equatable, Hashable, Sendable {
+    let id: String
+    let fileName: String
+    let displayName: String
+    let modifiedUnixSeconds: Int64
+    let sizeBytes: UInt64
+    let compressed: Bool
+    let isCurrent: Bool
+    let readable: Bool
+    let canBeDeleted: Bool
+
+    init?(bridgeLogFile: PRInstanceLogFile) {
+        let identifier = bridgeLogFile.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fileName = bridgeLogFile.fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayName = bridgeLogFile.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !identifier.isEmpty, !fileName.isEmpty, !displayName.isEmpty else {
+            return nil
+        }
+
+        self.id = identifier
+        self.fileName = fileName
+        self.displayName = displayName
+        self.modifiedUnixSeconds = Int64(bridgeLogFile.modifiedUnixSeconds)
+        self.sizeBytes = bridgeLogFile.sizeBytes
+        self.compressed = bridgeLogFile.compressed
+        self.isCurrent = bridgeLogFile.current
+        self.readable = bridgeLogFile.readable
+        self.canBeDeleted = bridgeLogFile.canBeDeleted
+    }
+}
+
+struct PrismInstanceLogPresentation: Identifiable, Equatable, Sendable {
+    let id: String
+    let instanceIdentifier: String
+    let entries: [PrismTaskLogEntry]
+    let droppedEntryCount: UInt64
+    let totalByteCount: UInt64
+    let isTruncated: Bool
+
+    var renderedText: String {
+        entries.map(\.text).joined(separator: "\n")
+    }
+
+    init?(bridgeSnapshot: PRInstanceLogSnapshot) {
+        let instanceIdentifier = bridgeSnapshot.instanceIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let logIdentifier = bridgeSnapshot.logIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !instanceIdentifier.isEmpty, !logIdentifier.isEmpty else {
+            return nil
+        }
+
+        let entries = bridgeSnapshot.entries.compactMap(PrismTaskLogEntry.init(bridgeEntry:))
+        let calculatedByteCount = entries.reduce(into: UInt64(0)) {
+            $0 += UInt64($1.text.utf8.count)
+        }
+        guard entries.count == bridgeSnapshot.entries.count,
+              Set(entries.map(\.id)).count == entries.count,
+              bridgeSnapshot.totalByteCount == calculatedByteCount,
+              bridgeSnapshot.truncated || (bridgeSnapshot.droppedEntryCount == 0 && entries.allSatisfy { !$0.isTruncated }) else {
+            return nil
+        }
+
+        self.id = logIdentifier
+        self.instanceIdentifier = instanceIdentifier
+        self.entries = entries
+        self.droppedEntryCount = bridgeSnapshot.droppedEntryCount
+        self.totalByteCount = bridgeSnapshot.totalByteCount
+        self.isTruncated = bridgeSnapshot.truncated
+    }
+}
+
+struct PrismInstanceDetailLoadFailure: Equatable, Sendable {
+    let kind: PrismInstanceDetailKind
+    let instanceIdentifier: String
+    let localizationKey: String
+    let substitutionValues: [String: String]
+    let diagnosticText: String?
+    let recoveryAction: PrismInstanceDetailsRecoveryAction
+
+    var isRetryAvailable: Bool {
+        recoveryAction == .retry
+    }
+}
+
+enum PrismInstanceWorldsState: Equatable, Sendable {
+    case loading(identifier: String)
+    case empty
+    case failed(PrismInstanceDetailLoadFailure)
+    case content([PrismInstanceWorld])
+}
+
+enum PrismInstanceServersState: Equatable, Sendable {
+    case loading(identifier: String)
+    case empty
+    case failed(PrismInstanceDetailLoadFailure)
+    case content([PrismInstanceServer])
+}
+
+enum PrismInstanceScreenshotsState: Equatable, Sendable {
+    case loading(identifier: String)
+    case empty
+    case failed(PrismInstanceDetailLoadFailure)
+    case content([PrismInstanceScreenshot])
+}
+
+enum PrismInstanceLogFilesState: Equatable, Sendable {
+    case loading(identifier: String)
+    case empty
+    case failed(PrismInstanceDetailLoadFailure)
+    case content([PrismInstanceLogFile])
+}
+
+enum PrismInstanceLogContentState: Equatable, Sendable {
+    case idle
+    case loading(logIdentifier: String)
+    case failed(PrismInstanceDetailLoadFailure)
+    case content(PrismInstanceLogPresentation)
+}
+
+private func prismInstanceDetailLoadFailure(
+    kind: PrismInstanceDetailKind,
+    error: PRBridgeError,
+    instanceIdentifier: String
+) -> PrismInstanceDetailLoadFailure? {
+    let identifier = instanceIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+    let localizationKey = error.localizationKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !identifier.isEmpty, !localizationKey.isEmpty else {
+        return nil
+    }
+
+    return PrismInstanceDetailLoadFailure(
+        kind: kind,
+        instanceIdentifier: identifier,
+        localizationKey: localizationKey,
+        substitutionValues: error.substitutionValues,
+        diagnosticText: error.diagnosticText,
+        recoveryAction: error.recoveryKind == .retry ? .retry : .none
+    )
+}
+
+private func prismInstanceDetailMutationFailure(
+    result: PRInstanceDetailMutationResult,
+    instanceIdentifier: String
+) -> PrismInstanceDetailMutationFailure? {
+    let identifier = instanceIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let kind = PrismInstanceDetailKind(bridgeKind: result.kind),
+          let action = PrismInstanceDetailAction(bridgeAction: result.action),
+          let outcome = PrismInstanceDetailMutationOutcome(bridgeOutcome: result.outcome),
+          !identifier.isEmpty,
+          result.instanceIdentifier == identifier,
+          outcome != .succeeded else {
+        return nil
+    }
+
+    let localizationKey = result.localizationKey?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    guard !localizationKey.isEmpty else {
+        return nil
+    }
+    return PrismInstanceDetailMutationFailure(
+        kind: kind,
+        action: action,
+        instanceIdentifier: identifier,
+        itemIdentifier: result.itemIdentifier,
+        localizationKey: localizationKey,
+        diagnosticText: result.diagnosticText,
+        partialChangesRolledBack: result.partialChangesRolledBack,
+        recoveryAction: .retry
+    )
+}
+
+@MainActor
+final class PrismInstanceWorldsModel: ObservableObject {
+    @Published private(set) var state: PrismInstanceWorldsState = .empty
+    @Published private(set) var searchText = ""
+    @Published private(set) var selectedWorldID: String?
+    @Published private(set) var pendingDeleteWorldID: String?
+    @Published private(set) var mutationState: PrismInstanceDetailMutationState = .idle
+
+    private let onLoad: ((String) -> Void)?
+    private let onMutate: ((String, PrismInstanceDetailMutationIntent) -> Void)?
+    private var activeIdentifier: String?
+    private var lastMutationIntent: PrismInstanceDetailMutationIntent?
+
+    init(
+        onLoad: ((String) -> Void)? = nil,
+        onMutate: ((String, PrismInstanceDetailMutationIntent) -> Void)? = nil
+    ) {
+        self.onLoad = onLoad
+        self.onMutate = onMutate
+    }
+
+    var worlds: [PrismInstanceWorld] {
+        guard case .content(let worlds) = state else { return [] }
+        return worlds
+    }
+
+    var visibleWorlds: [PrismInstanceWorld] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return worlds }
+        return worlds.filter {
+            [$0.id, $0.name, $0.folderName, $0.gameMode, $0.warningDescription ?? ""]
+                .contains { $0.localizedCaseInsensitiveContains(query) }
+        }
+    }
+
+    var loadFailure: PrismInstanceDetailLoadFailure? {
+        guard case .failed(let failure) = state else { return nil }
+        return failure
+    }
+
+    var mutationFailure: PrismInstanceDetailMutationFailure? {
+        guard case .failed(let failure) = mutationState else { return nil }
+        return failure
+    }
+
+    @discardableResult
+    func beginLoading(identifier: String) -> Bool {
+        let normalized = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return false }
+        activeIdentifier = normalized
+        state = .loading(identifier: normalized)
+        searchText = ""
+        selectedWorldID = nil
+        pendingDeleteWorldID = nil
+        mutationState = .idle
+        lastMutationIntent = nil
+        onLoad?(normalized)
+        return true
+    }
+
+    @discardableResult
+    func apply(worlds bridgeWorlds: [PRInstanceWorld]) -> Bool {
+        guard activeIdentifier != nil else { return false }
+        let converted = bridgeWorlds.compactMap(PrismInstanceWorld.init(bridgeWorld:))
+        guard converted.count == bridgeWorlds.count, Set(converted.map(\.id)).count == converted.count else { return false }
+        state = converted.isEmpty ? .empty : .content(converted)
+        selectedWorldID = nil
+        pendingDeleteWorldID = nil
+        mutationState = .idle
+        return true
+    }
+
+    @discardableResult
+    func apply(error: PRBridgeError, instanceIdentifier: String) -> Bool {
+        guard let failure = prismInstanceDetailLoadFailure(kind: .worlds, error: error, instanceIdentifier: instanceIdentifier),
+              activeIdentifier == nil || activeIdentifier == failure.instanceIdentifier else { return false }
+        activeIdentifier = failure.instanceIdentifier
+        state = .failed(failure)
+        selectedWorldID = nil
+        pendingDeleteWorldID = nil
+        return true
+    }
+
+    func setSearchText(_ value: String) {
+        searchText = value
+        if let selectedWorldID, !visibleWorlds.contains(where: { $0.id == selectedWorldID }) {
+            self.selectedWorldID = nil
+        }
+    }
+
+    func selectWorld(_ identifier: String?) {
+        guard let identifier, visibleWorlds.contains(where: { $0.id == identifier }) else {
+            selectedWorldID = nil
+            return
+        }
+        selectedWorldID = identifier
+    }
+
+    @discardableResult
+    func requestDelete(_ identifier: String) -> Bool {
+        guard worlds.first(where: { $0.id == identifier })?.canBeDeleted == true else { return false }
+        pendingDeleteWorldID = identifier
+        return true
+    }
+
+    func cancelDelete() {
+        pendingDeleteWorldID = nil
+    }
+
+    @discardableResult
+    func confirmDelete() -> Bool {
+        guard let identifier = pendingDeleteWorldID else { return false }
+        pendingDeleteWorldID = nil
+        return sendMutation(.init(kind: .worlds, action: .delete, itemIdentifier: identifier, confirmed: true))
+    }
+
+    @discardableResult
+    func importWorld(from url: URL) -> Bool {
+        guard url.isFileURL, !url.path.isEmpty, url.path.hasPrefix("/") else { return false }
+        return sendMutation(.init(kind: .worlds, action: .import, itemIdentifier: url.lastPathComponent, sourceURL: url))
+    }
+
+    @discardableResult
+    func rename(_ identifier: String, to targetName: String) -> Bool {
+        guard worlds.contains(where: { $0.id == identifier }), !targetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        return sendMutation(.init(kind: .worlds, action: .rename, itemIdentifier: identifier, targetName: targetName))
+    }
+
+    @discardableResult
+    func reveal(_ identifier: String) -> Bool {
+        guard worlds.contains(where: { $0.id == identifier }) else { return false }
+        return sendMutation(.init(kind: .worlds, action: .reveal, itemIdentifier: identifier))
+    }
+
+    @discardableResult
+    func resetIcon(_ identifier: String) -> Bool {
+        guard worlds.contains(where: { $0.id == identifier }) else { return false }
+        return sendMutation(.init(kind: .worlds, action: .resetIcon, itemIdentifier: identifier))
+    }
+
+    @discardableResult
+    func join(_ identifier: String) -> Bool {
+        guard worlds.first(where: { $0.id == identifier })?.canBeJoined == true else { return false }
+        return sendMutation(.init(kind: .worlds, action: .join, itemIdentifier: identifier))
+    }
+
+    @discardableResult
+    func apply(mutationResult result: PRInstanceDetailMutationResult, instanceIdentifier: String) -> Bool {
+        guard let kind = PrismInstanceDetailKind(bridgeKind: result.kind), kind == .worlds,
+              let action = PrismInstanceDetailAction(bridgeAction: result.action),
+              let outcome = PrismInstanceDetailMutationOutcome(bridgeOutcome: result.outcome),
+              let activeIdentifier, activeIdentifier == instanceIdentifier,
+              result.instanceIdentifier == activeIdentifier,
+              let intent = lastMutationIntent, intent.action == action,
+              intent.itemIdentifier.isEmpty || intent.itemIdentifier == result.itemIdentifier else { return false }
+        if outcome == .succeeded {
+            mutationState = .idle
+            lastMutationIntent = nil
+            return beginLoading(identifier: activeIdentifier)
+        }
+        guard let failure = prismInstanceDetailMutationFailure(result: result, instanceIdentifier: activeIdentifier) else { return false }
+        mutationState = .failed(failure)
+        return true
+    }
+
+    @discardableResult
+    func retry() -> Bool {
+        if case .failed(let failure) = state, failure.isRetryAvailable {
+            return beginLoading(identifier: failure.instanceIdentifier)
+        }
+        guard let intent = lastMutationIntent, let activeIdentifier,
+              case .failed(let failure) = mutationState, failure.isRetryAvailable else { return false }
+        mutationState = .pending(intent)
+        onMutate?(activeIdentifier, intent)
+        return true
+    }
+
+    func dismissMutationFailure() {
+        if case .failed = mutationState {
+            mutationState = .idle
+            lastMutationIntent = nil
+        }
+    }
+
+    func clear() {
+        activeIdentifier = nil
+        state = .empty
+        searchText = ""
+        selectedWorldID = nil
+        pendingDeleteWorldID = nil
+        mutationState = .idle
+        lastMutationIntent = nil
+    }
+
+    @discardableResult
+    private func sendMutation(_ intent: PrismInstanceDetailMutationIntent) -> Bool {
+        guard let activeIdentifier else { return false }
+        lastMutationIntent = intent
+        mutationState = .pending(intent)
+        onMutate?(activeIdentifier, intent)
+        return true
+    }
+}
+
+@MainActor
+final class PrismInstanceServersModel: ObservableObject {
+    @Published private(set) var state: PrismInstanceServersState = .empty
+    @Published private(set) var searchText = ""
+    @Published private(set) var selectedServerID: String?
+    @Published private(set) var pendingDeleteServerID: String?
+    @Published private(set) var mutationState: PrismInstanceDetailMutationState = .idle
+    @Published private(set) var draftName = ""
+    @Published private(set) var draftAddress = ""
+    @Published private(set) var draftResourcePolicy: PrismInstanceServerResourcePolicy = .ask
+
+    private let onLoad: ((String) -> Void)?
+    private let onMutate: ((String, PrismInstanceDetailMutationIntent) -> Void)?
+    private var activeIdentifier: String?
+    private var lastMutationIntent: PrismInstanceDetailMutationIntent?
+
+    init(
+        onLoad: ((String) -> Void)? = nil,
+        onMutate: ((String, PrismInstanceDetailMutationIntent) -> Void)? = nil
+    ) {
+        self.onLoad = onLoad
+        self.onMutate = onMutate
+    }
+
+    var servers: [PrismInstanceServer] {
+        guard case .content(let servers) = state else { return [] }
+        return servers
+    }
+
+    var visibleServers: [PrismInstanceServer] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return servers }
+        return servers.filter { [$0.id, $0.name, $0.address].contains { $0.localizedCaseInsensitiveContains(query) } }
+    }
+
+    var loadFailure: PrismInstanceDetailLoadFailure? {
+        guard case .failed(let failure) = state else { return nil }
+        return failure
+    }
+
+    var mutationFailure: PrismInstanceDetailMutationFailure? {
+        guard case .failed(let failure) = mutationState else { return nil }
+        return failure
+    }
+
+    @discardableResult
+    func beginLoading(identifier: String) -> Bool {
+        let normalized = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return false }
+        activeIdentifier = normalized
+        state = .loading(identifier: normalized)
+        searchText = ""
+        selectedServerID = nil
+        pendingDeleteServerID = nil
+        mutationState = .idle
+        lastMutationIntent = nil
+        clearDraft()
+        onLoad?(normalized)
+        return true
+    }
+
+    @discardableResult
+    func apply(servers bridgeServers: [PRInstanceServer]) -> Bool {
+        guard activeIdentifier != nil else { return false }
+        let converted = bridgeServers.compactMap(PrismInstanceServer.init(bridgeServer:))
+        guard converted.count == bridgeServers.count, Set(converted.map(\.id)).count == converted.count else { return false }
+        state = converted.isEmpty ? .empty : .content(converted)
+        selectedServerID = nil
+        pendingDeleteServerID = nil
+        mutationState = .idle
+        clearDraft()
+        return true
+    }
+
+    @discardableResult
+    func apply(error: PRBridgeError, instanceIdentifier: String) -> Bool {
+        guard let failure = prismInstanceDetailLoadFailure(kind: .servers, error: error, instanceIdentifier: instanceIdentifier),
+              activeIdentifier == nil || activeIdentifier == failure.instanceIdentifier else { return false }
+        activeIdentifier = failure.instanceIdentifier
+        state = .failed(failure)
+        selectedServerID = nil
+        pendingDeleteServerID = nil
+        clearDraft()
+        return true
+    }
+
+    func setSearchText(_ value: String) {
+        searchText = value
+        if let selectedServerID, !visibleServers.contains(where: { $0.id == selectedServerID }) {
+            self.selectedServerID = nil
+        }
+    }
+
+    func selectServer(_ identifier: String?) {
+        guard let identifier, let server = visibleServers.first(where: { $0.id == identifier }) else {
+            selectedServerID = nil
+            clearDraft()
+            return
+        }
+        selectedServerID = identifier
+        draftName = server.name
+        draftAddress = server.address
+        draftResourcePolicy = server.resourcePolicy
+    }
+
+    func setDraftName(_ value: String) { draftName = value }
+    func setDraftAddress(_ value: String) { draftAddress = value }
+    func setDraftResourcePolicy(_ value: PrismInstanceServerResourcePolicy) { draftResourcePolicy = value }
+
+    @discardableResult
+    func add() -> Bool {
+        guard !draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !draftAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        return sendMutation(.init(kind: .servers, action: .add, name: draftName, address: draftAddress, resourcePolicy: draftResourcePolicy))
+    }
+
+    @discardableResult
+    func updateSelected() -> Bool {
+        guard let identifier = selectedServerID,
+              servers.first(where: { $0.id == identifier })?.canBeEdited == true,
+              !draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !draftAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        return sendMutation(.init(kind: .servers, action: .update, itemIdentifier: identifier, name: draftName, address: draftAddress, resourcePolicy: draftResourcePolicy))
+    }
+
+    @discardableResult
+    func requestDelete(_ identifier: String) -> Bool {
+        guard servers.first(where: { $0.id == identifier })?.canBeDeleted == true else { return false }
+        pendingDeleteServerID = identifier
+        return true
+    }
+
+    func cancelDelete() { pendingDeleteServerID = nil }
+
+    @discardableResult
+    func confirmDelete() -> Bool {
+        guard let identifier = pendingDeleteServerID else { return false }
+        pendingDeleteServerID = nil
+        return sendMutation(.init(kind: .servers, action: .delete, itemIdentifier: identifier, confirmed: true))
+    }
+
+    @discardableResult
+    func moveUp(_ identifier: String) -> Bool { move(identifier, action: .moveUp) }
+
+    @discardableResult
+    func moveDown(_ identifier: String) -> Bool { move(identifier, action: .moveDown) }
+
+    @discardableResult
+    func refresh() -> Bool {
+        guard let activeIdentifier else { return false }
+        return beginLoading(identifier: activeIdentifier)
+    }
+
+    @discardableResult
+    func join(_ identifier: String) -> Bool {
+        guard servers.first(where: { $0.id == identifier })?.canBeJoined == true else { return false }
+        return sendMutation(.init(kind: .servers, action: .join, itemIdentifier: identifier))
+    }
+
+    @discardableResult
+    func apply(mutationResult result: PRInstanceDetailMutationResult, instanceIdentifier: String) -> Bool {
+        guard let kind = PrismInstanceDetailKind(bridgeKind: result.kind), kind == .servers,
+              let action = PrismInstanceDetailAction(bridgeAction: result.action),
+              let outcome = PrismInstanceDetailMutationOutcome(bridgeOutcome: result.outcome),
+              let activeIdentifier, activeIdentifier == instanceIdentifier,
+              result.instanceIdentifier == activeIdentifier,
+              let intent = lastMutationIntent,
+              intent.action == action,
+              intent.itemIdentifier.isEmpty || intent.itemIdentifier == result.itemIdentifier else { return false }
+        if outcome == .succeeded {
+            mutationState = .idle
+            lastMutationIntent = nil
+            return beginLoading(identifier: activeIdentifier)
+        }
+        guard let failure = prismInstanceDetailMutationFailure(result: result, instanceIdentifier: activeIdentifier) else { return false }
+        mutationState = .failed(failure)
+        return true
+    }
+
+    @discardableResult
+    func retry() -> Bool {
+        if case .failed(let failure) = state, failure.isRetryAvailable { return beginLoading(identifier: failure.instanceIdentifier) }
+        guard let intent = lastMutationIntent, let activeIdentifier,
+              case .failed(let failure) = mutationState, failure.isRetryAvailable else { return false }
+        mutationState = .pending(intent)
+        onMutate?(activeIdentifier, intent)
+        return true
+    }
+
+    func dismissMutationFailure() {
+        if case .failed = mutationState {
+            mutationState = .idle
+            lastMutationIntent = nil
+        }
+    }
+
+    func clear() {
+        activeIdentifier = nil
+        state = .empty
+        searchText = ""
+        selectedServerID = nil
+        pendingDeleteServerID = nil
+        mutationState = .idle
+        lastMutationIntent = nil
+        clearDraft()
+    }
+
+    @discardableResult
+    private func move(_ identifier: String, action: PrismInstanceDetailAction) -> Bool {
+        guard let position = servers.firstIndex(where: { $0.id == identifier }) else { return false }
+        return sendMutation(.init(kind: .servers, action: action, itemIdentifier: identifier, position: position))
+    }
+
+    @discardableResult
+    private func sendMutation(_ intent: PrismInstanceDetailMutationIntent) -> Bool {
+        guard let activeIdentifier else { return false }
+        lastMutationIntent = intent
+        mutationState = .pending(intent)
+        onMutate?(activeIdentifier, intent)
+        return true
+    }
+
+    private func clearDraft() {
+        draftName = ""
+        draftAddress = ""
+        draftResourcePolicy = .ask
+    }
+}
+
+@MainActor
+final class PrismInstanceScreenshotsModel: ObservableObject {
+    @Published private(set) var state: PrismInstanceScreenshotsState = .empty
+    @Published private(set) var searchText = ""
+    @Published private(set) var selectedScreenshotID: String?
+    @Published private(set) var pendingDeleteScreenshotID: String?
+    @Published private(set) var mutationState: PrismInstanceDetailMutationState = .idle
+
+    private let onLoad: ((String) -> Void)?
+    private let onMutate: ((String, PrismInstanceDetailMutationIntent) -> Void)?
+    private var activeIdentifier: String?
+    private var lastMutationIntent: PrismInstanceDetailMutationIntent?
+
+    init(
+        onLoad: ((String) -> Void)? = nil,
+        onMutate: ((String, PrismInstanceDetailMutationIntent) -> Void)? = nil
+    ) {
+        self.onLoad = onLoad
+        self.onMutate = onMutate
+    }
+
+    var screenshots: [PrismInstanceScreenshot] {
+        guard case .content(let screenshots) = state else { return [] }
+        return screenshots
+    }
+
+    var visibleScreenshots: [PrismInstanceScreenshot] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return screenshots }
+        return screenshots.filter { [$0.id, $0.fileName, $0.displayName].contains { $0.localizedCaseInsensitiveContains(query) } }
+    }
+
+    var loadFailure: PrismInstanceDetailLoadFailure? {
+        guard case .failed(let failure) = state else { return nil }
+        return failure
+    }
+
+    var mutationFailure: PrismInstanceDetailMutationFailure? {
+        guard case .failed(let failure) = mutationState else { return nil }
+        return failure
+    }
+
+    @discardableResult
+    func beginLoading(identifier: String) -> Bool {
+        let normalized = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return false }
+        activeIdentifier = normalized
+        state = .loading(identifier: normalized)
+        searchText = ""
+        selectedScreenshotID = nil
+        pendingDeleteScreenshotID = nil
+        mutationState = .idle
+        lastMutationIntent = nil
+        onLoad?(normalized)
+        return true
+    }
+
+    @discardableResult
+    func apply(screenshots bridgeScreenshots: [PRInstanceScreenshot]) -> Bool {
+        guard activeIdentifier != nil else { return false }
+        let converted = bridgeScreenshots.compactMap(PrismInstanceScreenshot.init(bridgeScreenshot:))
+        guard converted.count == bridgeScreenshots.count, Set(converted.map(\.id)).count == converted.count else { return false }
+        state = converted.isEmpty ? .empty : .content(converted)
+        selectedScreenshotID = nil
+        pendingDeleteScreenshotID = nil
+        mutationState = .idle
+        return true
+    }
+
+    @discardableResult
+    func apply(error: PRBridgeError, instanceIdentifier: String) -> Bool {
+        guard let failure = prismInstanceDetailLoadFailure(kind: .screenshots, error: error, instanceIdentifier: instanceIdentifier),
+              activeIdentifier == nil || activeIdentifier == failure.instanceIdentifier else { return false }
+        activeIdentifier = failure.instanceIdentifier
+        state = .failed(failure)
+        selectedScreenshotID = nil
+        pendingDeleteScreenshotID = nil
+        return true
+    }
+
+    func setSearchText(_ value: String) {
+        searchText = value
+        if let selectedScreenshotID, !visibleScreenshots.contains(where: { $0.id == selectedScreenshotID }) {
+            self.selectedScreenshotID = nil
+        }
+    }
+
+    func selectScreenshot(_ identifier: String?) {
+        guard let identifier, visibleScreenshots.contains(where: { $0.id == identifier }) else {
+            selectedScreenshotID = nil
+            return
+        }
+        selectedScreenshotID = identifier
+    }
+
+    @discardableResult
+    func requestDelete(_ identifier: String) -> Bool {
+        guard screenshots.first(where: { $0.id == identifier })?.writable == true else { return false }
+        pendingDeleteScreenshotID = identifier
+        return true
+    }
+
+    func cancelDelete() { pendingDeleteScreenshotID = nil }
+
+    @discardableResult
+    func confirmDelete() -> Bool {
+        guard let identifier = pendingDeleteScreenshotID else { return false }
+        pendingDeleteScreenshotID = nil
+        return sendMutation(.init(kind: .screenshots, action: .delete, itemIdentifier: identifier, confirmed: true))
+    }
+
+    @discardableResult
+    func rename(_ identifier: String, to targetName: String) -> Bool {
+        guard screenshots.contains(where: { $0.id == identifier }), !targetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        return sendMutation(.init(kind: .screenshots, action: .rename, itemIdentifier: identifier, targetName: targetName))
+    }
+
+    @discardableResult
+    func open(_ identifier: String) -> Bool { sendAction(.open, identifier: identifier) }
+
+    @discardableResult
+    func reveal(_ identifier: String) -> Bool { sendAction(.reveal, identifier: identifier) }
+
+    @discardableResult
+    func copyImage(_ identifier: String) -> Bool { sendAction(.copyImage, identifier: identifier) }
+
+    @discardableResult
+    func copyFiles(_ identifier: String) -> Bool { sendAction(.copyFiles, identifier: identifier) }
+
+    @discardableResult
+    func apply(mutationResult result: PRInstanceDetailMutationResult, instanceIdentifier: String) -> Bool {
+        guard let kind = PrismInstanceDetailKind(bridgeKind: result.kind), kind == .screenshots,
+              let action = PrismInstanceDetailAction(bridgeAction: result.action),
+              let outcome = PrismInstanceDetailMutationOutcome(bridgeOutcome: result.outcome),
+              let activeIdentifier, activeIdentifier == instanceIdentifier,
+              result.instanceIdentifier == activeIdentifier,
+              let intent = lastMutationIntent, intent.action == action,
+              intent.itemIdentifier.isEmpty || intent.itemIdentifier == result.itemIdentifier else { return false }
+        if outcome == .succeeded {
+            mutationState = .idle
+            lastMutationIntent = nil
+            return beginLoading(identifier: activeIdentifier)
+        }
+        guard let failure = prismInstanceDetailMutationFailure(result: result, instanceIdentifier: activeIdentifier) else { return false }
+        mutationState = .failed(failure)
+        return true
+    }
+
+    @discardableResult
+    func retry() -> Bool {
+        if case .failed(let failure) = state, failure.isRetryAvailable { return beginLoading(identifier: failure.instanceIdentifier) }
+        guard let intent = lastMutationIntent, let activeIdentifier,
+              case .failed(let failure) = mutationState, failure.isRetryAvailable else { return false }
+        mutationState = .pending(intent)
+        onMutate?(activeIdentifier, intent)
+        return true
+    }
+
+    func dismissMutationFailure() {
+        if case .failed = mutationState {
+            mutationState = .idle
+            lastMutationIntent = nil
+        }
+    }
+
+    func clear() {
+        activeIdentifier = nil
+        state = .empty
+        searchText = ""
+        selectedScreenshotID = nil
+        pendingDeleteScreenshotID = nil
+        mutationState = .idle
+        lastMutationIntent = nil
+    }
+
+    @discardableResult
+    private func sendAction(_ action: PrismInstanceDetailAction, identifier: String) -> Bool {
+        guard screenshots.contains(where: { $0.id == identifier }) else { return false }
+        return sendMutation(.init(kind: .screenshots, action: action, itemIdentifier: identifier))
+    }
+
+    @discardableResult
+    private func sendMutation(_ intent: PrismInstanceDetailMutationIntent) -> Bool {
+        guard let activeIdentifier else { return false }
+        lastMutationIntent = intent
+        mutationState = .pending(intent)
+        onMutate?(activeIdentifier, intent)
+        return true
+    }
+}
+
+@MainActor
+final class PrismInstanceLogsModel: ObservableObject {
+    @Published private(set) var state: PrismInstanceLogFilesState = .empty
+    @Published private(set) var searchText = ""
+    @Published private(set) var selectedLogID: String?
+    @Published private(set) var contentState: PrismInstanceLogContentState = .idle
+    @Published private(set) var pendingDeleteLogID: String?
+    @Published private(set) var mutationState: PrismInstanceDetailMutationState = .idle
+
+    private let onLoad: ((String) -> Void)?
+    private let onLoadContent: ((String, String) -> Void)?
+    private let onMutate: ((String, PrismInstanceDetailMutationIntent) -> Void)?
+    private var activeIdentifier: String?
+    private var lastMutationIntent: PrismInstanceDetailMutationIntent?
+
+    init(
+        onLoad: ((String) -> Void)? = nil,
+        onLoadContent: ((String, String) -> Void)? = nil,
+        onMutate: ((String, PrismInstanceDetailMutationIntent) -> Void)? = nil
+    ) {
+        self.onLoad = onLoad
+        self.onLoadContent = onLoadContent
+        self.onMutate = onMutate
+    }
+
+    var logFiles: [PrismInstanceLogFile] {
+        guard case .content(let logFiles) = state else { return [] }
+        return logFiles
+    }
+
+    var visibleLogFiles: [PrismInstanceLogFile] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return logFiles }
+        return logFiles.filter { [$0.id, $0.fileName, $0.displayName].contains { $0.localizedCaseInsensitiveContains(query) } }
+    }
+
+    var loadFailure: PrismInstanceDetailLoadFailure? {
+        guard case .failed(let failure) = state else { return nil }
+        return failure
+    }
+
+    var contentFailure: PrismInstanceDetailLoadFailure? {
+        guard case .failed(let failure) = contentState else { return nil }
+        return failure
+    }
+
+    var mutationFailure: PrismInstanceDetailMutationFailure? {
+        guard case .failed(let failure) = mutationState else { return nil }
+        return failure
+    }
+
+    @discardableResult
+    func beginLoading(identifier: String) -> Bool {
+        let normalized = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return false }
+        activeIdentifier = normalized
+        state = .loading(identifier: normalized)
+        searchText = ""
+        selectedLogID = nil
+        contentState = .idle
+        pendingDeleteLogID = nil
+        mutationState = .idle
+        lastMutationIntent = nil
+        onLoad?(normalized)
+        return true
+    }
+
+    @discardableResult
+    func apply(logFiles bridgeLogFiles: [PRInstanceLogFile]) -> Bool {
+        guard activeIdentifier != nil else { return false }
+        let converted = bridgeLogFiles.compactMap(PrismInstanceLogFile.init(bridgeLogFile:))
+        guard converted.count == bridgeLogFiles.count, Set(converted.map(\.id)).count == converted.count else { return false }
+        state = converted.isEmpty ? .empty : .content(converted)
+        selectedLogID = nil
+        contentState = .idle
+        pendingDeleteLogID = nil
+        mutationState = .idle
+        return true
+    }
+
+    @discardableResult
+    func apply(error: PRBridgeError, instanceIdentifier: String) -> Bool {
+        guard let failure = prismInstanceDetailLoadFailure(kind: .logs, error: error, instanceIdentifier: instanceIdentifier),
+              activeIdentifier == nil || activeIdentifier == failure.instanceIdentifier else { return false }
+        activeIdentifier = failure.instanceIdentifier
+        state = .failed(failure)
+        selectedLogID = nil
+        contentState = .idle
+        pendingDeleteLogID = nil
+        return true
+    }
+
+    func setSearchText(_ value: String) {
+        searchText = value
+        if let selectedLogID, !visibleLogFiles.contains(where: { $0.id == selectedLogID }) {
+            self.selectedLogID = nil
+            contentState = .idle
+        }
+    }
+
+    @discardableResult
+    func selectLog(_ identifier: String?) -> Bool {
+        guard let identifier, let logFile = visibleLogFiles.first(where: { $0.id == identifier }) else {
+            selectedLogID = nil
+            contentState = .idle
+            return false
+        }
+        selectedLogID = logFile.id
+        contentState = .loading(logIdentifier: logFile.id)
+        guard let activeIdentifier else { return false }
+        onLoadContent?(activeIdentifier, logFile.id)
+        return true
+    }
+
+    @discardableResult
+    func apply(content snapshot: PRInstanceLogSnapshot) -> Bool {
+        guard let activeIdentifier,
+              snapshot.instanceIdentifier == activeIdentifier,
+              let selectedLogID,
+              snapshot.logIdentifier == selectedLogID,
+              let presentation = PrismInstanceLogPresentation(bridgeSnapshot: snapshot) else { return false }
+        contentState = .content(presentation)
+        return true
+    }
+
+    @discardableResult
+    func apply(contentError error: PRBridgeError, instanceIdentifier: String, logIdentifier: String) -> Bool {
+        let identifier = instanceIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let logIdentifier = logIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let failure = prismInstanceDetailLoadFailure(kind: .logs, error: error, instanceIdentifier: identifier),
+              !logIdentifier.isEmpty,
+              activeIdentifier == identifier else { return false }
+        contentState = .failed(failure)
+        return true
+    }
+
+    @discardableResult
+    func requestDelete(_ identifier: String) -> Bool {
+        guard logFiles.first(where: { $0.id == identifier })?.canBeDeleted == true else { return false }
+        pendingDeleteLogID = identifier
+        return true
+    }
+
+    func cancelDelete() { pendingDeleteLogID = nil }
+
+    @discardableResult
+    func confirmDelete() -> Bool {
+        guard let identifier = pendingDeleteLogID else { return false }
+        pendingDeleteLogID = nil
+        return sendMutation(.init(kind: .logs, action: .delete, itemIdentifier: identifier, confirmed: true))
+    }
+
+    @discardableResult
+    func reveal(_ identifier: String) -> Bool {
+        guard logFiles.contains(where: { $0.id == identifier }) else { return false }
+        return sendMutation(.init(kind: .logs, action: .reveal, itemIdentifier: identifier))
+    }
+
+    @discardableResult
+    func open(_ identifier: String) -> Bool {
+        guard logFiles.contains(where: { $0.id == identifier }) else { return false }
+        return sendMutation(.init(kind: .logs, action: .open, itemIdentifier: identifier))
+    }
+
+    @discardableResult
+    func refresh() -> Bool {
+        guard let activeIdentifier else { return false }
+        return beginLoading(identifier: activeIdentifier)
+    }
+
+    @discardableResult
+    func apply(mutationResult result: PRInstanceDetailMutationResult, instanceIdentifier: String) -> Bool {
+        guard let kind = PrismInstanceDetailKind(bridgeKind: result.kind), kind == .logs,
+              let action = PrismInstanceDetailAction(bridgeAction: result.action),
+              let outcome = PrismInstanceDetailMutationOutcome(bridgeOutcome: result.outcome),
+              let activeIdentifier, activeIdentifier == instanceIdentifier,
+              result.instanceIdentifier == activeIdentifier,
+              let intent = lastMutationIntent, intent.action == action,
+              intent.itemIdentifier.isEmpty || intent.itemIdentifier == result.itemIdentifier else { return false }
+        if outcome == .succeeded {
+            mutationState = .idle
+            lastMutationIntent = nil
+            return beginLoading(identifier: activeIdentifier)
+        }
+        guard let failure = prismInstanceDetailMutationFailure(result: result, instanceIdentifier: activeIdentifier) else { return false }
+        mutationState = .failed(failure)
+        return true
+    }
+
+    @discardableResult
+    func retry() -> Bool {
+        if case .failed(let failure) = state, failure.isRetryAvailable { return beginLoading(identifier: failure.instanceIdentifier) }
+        guard let intent = lastMutationIntent, let activeIdentifier,
+              case .failed(let failure) = mutationState, failure.isRetryAvailable else { return false }
+        mutationState = .pending(intent)
+        onMutate?(activeIdentifier, intent)
+        return true
+    }
+
+    func dismissMutationFailure() {
+        if case .failed = mutationState {
+            mutationState = .idle
+            lastMutationIntent = nil
+        }
+    }
+
+    func clear() {
+        activeIdentifier = nil
+        state = .empty
+        searchText = ""
+        selectedLogID = nil
+        contentState = .idle
+        pendingDeleteLogID = nil
+        mutationState = .idle
+        lastMutationIntent = nil
+    }
+
+    @discardableResult
+    private func sendMutation(_ intent: PrismInstanceDetailMutationIntent) -> Bool {
+        guard let activeIdentifier else { return false }
+        lastMutationIntent = intent
+        mutationState = .pending(intent)
+        onMutate?(activeIdentifier, intent)
+        return true
+    }
+}

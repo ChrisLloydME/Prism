@@ -8,6 +8,10 @@ struct ContentView: View {
     @StateObject private var instanceSettingsModel = PrismInstanceSettingsModel()
     @StateObject private var instanceComponentsModel = PrismInstanceComponentsModel()
     @StateObject private var instanceResourcesModel = PrismInstanceResourcesModel()
+    @StateObject private var worldsModel = PrismInstanceWorldsModel()
+    @StateObject private var serversModel = PrismInstanceServersModel()
+    @StateObject private var screenshotsModel = PrismInstanceScreenshotsModel()
+    @StateObject private var instanceLogsModel = PrismInstanceLogsModel()
     @StateObject private var logModel = PrismTaskLogPresentationModel()
     @ObservedObject private var commandModel: PrismCommandModel
     @ObservedObject private var taskModel: PrismTaskPresentationModel
@@ -66,7 +70,11 @@ struct ContentView: View {
                         model: instanceDetailsModel,
                         settingsModel: instanceSettingsModel,
                         componentsModel: instanceComponentsModel,
-                        resourcesModel: instanceResourcesModel
+                        resourcesModel: instanceResourcesModel,
+                        worldsModel: worldsModel,
+                        serversModel: serversModel,
+                        screenshotsModel: screenshotsModel,
+                        logsModel: instanceLogsModel
                     )
                 } else {
                     PrismShellDetailView(
@@ -377,6 +385,10 @@ private struct PrismInstanceDetailsView: View {
     @ObservedObject var settingsModel: PrismInstanceSettingsModel
     @ObservedObject var componentsModel: PrismInstanceComponentsModel
     @ObservedObject var resourcesModel: PrismInstanceResourcesModel
+    @ObservedObject var worldsModel: PrismInstanceWorldsModel
+    @ObservedObject var serversModel: PrismInstanceServersModel
+    @ObservedObject var screenshotsModel: PrismInstanceScreenshotsModel
+    @ObservedObject var logsModel: PrismInstanceLogsModel
 
     var body: some View {
         switch model.state {
@@ -457,6 +469,38 @@ private struct PrismInstanceDetailsView: View {
                     .accessibilityLabel(Text("Open Mods and Pack Resources"))
                     .help(Text("Manage mods and pack resources with confirmed actions."))
                     .accessibilityIdentifier("prism.instance-details.resources-link")
+                    NavigationLink {
+                        PrismInstanceWorldsView(model: worldsModel)
+                    } label: {
+                        Label("Worlds", systemImage: "globe.americas")
+                    }
+                    .accessibilityLabel(Text("Open Worlds"))
+                    .help(Text("Review and manage saved worlds for this instance."))
+                    .accessibilityIdentifier("prism.instance-details.worlds-link")
+                    NavigationLink {
+                        PrismInstanceServersView(model: serversModel)
+                    } label: {
+                        Label("Servers", systemImage: "network")
+                    }
+                    .accessibilityLabel(Text("Open Servers"))
+                    .help(Text("Review saved servers and their resource policies."))
+                    .accessibilityIdentifier("prism.instance-details.servers-link")
+                    NavigationLink {
+                        PrismInstanceScreenshotsView(model: screenshotsModel)
+                    } label: {
+                        Label("Screenshots", systemImage: "photo.on.rectangle")
+                    }
+                    .accessibilityLabel(Text("Open Screenshots"))
+                    .help(Text("Review screenshots stored for this instance."))
+                    .accessibilityIdentifier("prism.instance-details.screenshots-link")
+                    NavigationLink {
+                        PrismInstanceLogsView(model: logsModel)
+                    } label: {
+                        Label("Logs", systemImage: "doc.text.magnifyingglass")
+                    }
+                    .accessibilityLabel(Text("Open Logs"))
+                    .help(Text("Review current and historical instance logs."))
+                    .accessibilityIdentifier("prism.instance-details.logs-link")
                 }
 
                 Section("Notes") {
@@ -1149,6 +1193,629 @@ private struct PrismShellDetailView: View {
             )
             .accessibilityIdentifier("prism.instance-library.content-state")
         }
+    }
+}
+
+@MainActor
+private struct PrismInstanceDetailLoadFailureView: View {
+    let titleKey: String
+    let systemImage: String
+    let failure: PrismInstanceDetailLoadFailure
+    let onRetry: () -> Void
+
+    var body: some View {
+        ContentUnavailableView {
+            Label(LocalizedStringKey(titleKey), systemImage: systemImage)
+        } description: {
+            Text(LocalizedStringKey(failure.localizationKey))
+        } actions: {
+            if failure.isRetryAvailable {
+                Button {
+                    onRetry()
+                } label: {
+                    Text(LocalizedStringKey(failure.recoveryAction.titleKey))
+                }
+                .accessibilityLabel(Text(LocalizedStringKey(failure.recoveryAction.accessibilityLabelKey)))
+                .help(Text(LocalizedStringKey(failure.recoveryAction.helpKey)))
+            }
+        }
+        .accessibilityIdentifier("prism.instance-detail.failed-state")
+    }
+}
+
+@MainActor
+struct PrismInstanceWorldsView: View {
+    @ObservedObject var model: PrismInstanceWorldsModel
+    @State private var isImporterPresented = false
+    @State private var renameTargetID: String?
+    @State private var renameText = ""
+
+    private var tableSelection: Binding<Set<String>> {
+        Binding(
+            get: { model.selectedWorldID.map { [$0] } ?? [] },
+            set: { model.selectWorld($0.first) }
+        )
+    }
+
+    var body: some View {
+        Group {
+            switch model.state {
+            case .loading:
+                ProgressView("Loading Worlds")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityLabel(Text("Loading Worlds"))
+                    .accessibilityIdentifier("prism.instance-worlds.loading-state")
+            case .empty:
+                ContentUnavailableView(
+                    "No Worlds",
+                    systemImage: "globe.americas",
+                    description: Text("This instance has no saved worlds to display.")
+                )
+                .accessibilityIdentifier("prism.instance-worlds.empty-state")
+            case .failed(let failure):
+                PrismInstanceDetailLoadFailureView(
+                    titleKey: "Worlds Unavailable",
+                    systemImage: "exclamationmark.triangle",
+                    failure: failure,
+                    onRetry: { _ = model.retry() }
+                )
+            case .content:
+                Table(model.visibleWorlds, selection: tableSelection) {
+                    TableColumn("Name") { world in
+                        HStack(spacing: 6) {
+                            if world.warningDescription != nil {
+                                Image(systemName: "exclamationmark.triangle")
+                                    .accessibilityLabel(Text("World Warning"))
+                            }
+                            Text(world.name)
+                        }
+                        .accessibilityLabel(Text(world.name))
+                        .accessibilityValue(Text(world.warningDescription ?? "World is ready."))
+                        .accessibilityIdentifier("prism.instance-world.\(world.id).name")
+                    }
+                    TableColumn("Game Mode") { world in
+                        Text(world.gameMode.isEmpty ? "Not Available" : world.gameMode)
+                            .accessibilityLabel(Text("Game Mode"))
+                            .accessibilityValue(Text(world.gameMode.isEmpty ? "Not Available" : world.gameMode))
+                            .accessibilityIdentifier("prism.instance-world.\(world.id).game-mode")
+                    }
+                    TableColumn("Last Played") { world in
+                        Text(world.lastPlayedUnixSeconds == 0 ? "Not Available" : String(world.lastPlayedUnixSeconds))
+                            .textSelection(.enabled)
+                            .accessibilityLabel(Text("Last Played"))
+                            .accessibilityIdentifier("prism.instance-world.\(world.id).last-played")
+                    }
+                    TableColumn("Size") { world in
+                        Text("\(world.sizeBytes) bytes")
+                            .accessibilityLabel(Text("World Size"))
+                            .accessibilityValue(Text("\(world.sizeBytes) bytes"))
+                            .accessibilityIdentifier("prism.instance-world.\(world.id).size")
+                    }
+                }
+                .searchable(
+                    text: Binding(get: { model.searchText }, set: { model.setSearchText($0) }),
+                    prompt: Text("Search Worlds")
+                )
+                .accessibilityIdentifier("prism.instance-worlds.table")
+            }
+        }
+        .navigationTitle("Worlds")
+        .toolbar {
+            ToolbarItemGroup {
+                Button {
+                    isImporterPresented = true
+                } label: {
+                    Label("Import World", systemImage: "plus")
+                }
+                .help(Text("Import a world archive through the system file panel."))
+                .accessibilityIdentifier("prism.instance-worlds.import")
+
+                if let selectedWorldID = model.selectedWorldID,
+                   let selectedWorld = model.worlds.first(where: { $0.id == selectedWorldID }) {
+                    Button {
+                        _ = model.reveal(selectedWorldID)
+                    } label: {
+                        Label("Reveal in Finder", systemImage: "folder")
+                    }
+                    .disabled(selectedWorld.isArchive)
+                    .accessibilityIdentifier("prism.instance-worlds.reveal")
+
+                    Button {
+                        renameText = selectedWorld.name
+                        renameTargetID = selectedWorldID
+                    } label: {
+                        Label("Rename World", systemImage: "pencil")
+                    }
+                    .disabled(!selectedWorld.canBeRenamed)
+                    .accessibilityIdentifier("prism.instance-worlds.rename")
+
+                    Button(role: .destructive) {
+                        _ = model.requestDelete(selectedWorldID)
+                    } label: {
+                        Label("Delete World", systemImage: "trash")
+                    }
+                    .disabled(!selectedWorld.canBeDeleted)
+                    .accessibilityIdentifier("prism.instance-worlds.delete")
+                }
+            }
+        }
+        .fileImporter(
+            isPresented: $isImporterPresented,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: false
+        ) { result in
+            if case .success(let urls) = result, let url = urls.first {
+                _ = model.importWorld(from: url)
+            }
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let url = urls.first else { return false }
+            return model.importWorld(from: url)
+        }
+        .alert(
+            "Rename World",
+            isPresented: Binding(
+                get: { renameTargetID != nil },
+                set: { if !$0 { renameTargetID = nil } }
+            )
+        ) {
+            TextField("New World Name", text: $renameText)
+            Button("Rename") {
+                if let renameTargetID {
+                    _ = model.rename(renameTargetID, to: renameText)
+                }
+                self.renameTargetID = nil
+            }
+            Button("Cancel", role: .cancel) {
+                renameTargetID = nil
+            }
+        } message: {
+            Text("Choose a name for the saved world.")
+        }
+        .confirmationDialog(
+            "Confirm World Removal",
+            isPresented: Binding(
+                get: { model.pendingDeleteWorldID != nil },
+                set: { if !$0 { model.cancelDelete() } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) { _ = model.confirmDelete() }
+            Button("Cancel", role: .cancel) { model.cancelDelete() }
+        } message: {
+            Text("This may permanently remove the selected world from the instance.")
+        }
+        .alert(
+            "World Action Failed",
+            isPresented: Binding(
+                get: { model.mutationFailure != nil },
+                set: { if !$0 { model.dismissMutationFailure() } }
+            )
+        ) {
+            if model.mutationFailure?.isRetryAvailable == true {
+                Button("Retry") { _ = model.retry() }
+            }
+            Button("Dismiss", role: .cancel) { model.dismissMutationFailure() }
+        } message: {
+            if let failure = model.mutationFailure {
+                Text(LocalizedStringKey(failure.localizationKey))
+            }
+        }
+        .accessibilityIdentifier("prism.instance-worlds")
+    }
+}
+
+@MainActor
+struct PrismInstanceServersView: View {
+    @ObservedObject var model: PrismInstanceServersModel
+
+    private var tableSelection: Binding<Set<String>> {
+        Binding(
+            get: { model.selectedServerID.map { [$0] } ?? [] },
+            set: { model.selectServer($0.first) }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            switch model.state {
+            case .loading:
+                ProgressView("Loading Servers")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityLabel(Text("Loading Servers"))
+                    .accessibilityIdentifier("prism.instance-servers.loading-state")
+            case .empty:
+                ContentUnavailableView(
+                    "No Servers",
+                    systemImage: "network",
+                    description: Text("This instance has no saved servers to display.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("prism.instance-servers.empty-state")
+            case .failed(let failure):
+                PrismInstanceDetailLoadFailureView(
+                    titleKey: "Servers Unavailable",
+                    systemImage: "exclamationmark.triangle",
+                    failure: failure,
+                    onRetry: { _ = model.retry() }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .content:
+                Table(model.visibleServers, selection: tableSelection) {
+                    TableColumn("Name") { server in
+                        Text(server.name)
+                            .accessibilityLabel(Text(server.name))
+                            .accessibilityValue(Text(LocalizedStringKey(server.status.titleKey)))
+                            .accessibilityIdentifier("prism.instance-server.\(server.id).name")
+                    }
+                    TableColumn("Address") { server in
+                        Text(server.address)
+                            .textSelection(.enabled)
+                            .accessibilityLabel(Text("Server Address"))
+                            .accessibilityValue(Text(server.address))
+                            .accessibilityIdentifier("prism.instance-server.\(server.id).address")
+                    }
+                    TableColumn("Status") { server in
+                        Text(LocalizedStringKey(server.status.titleKey))
+                            .accessibilityLabel(Text("Server Status"))
+                            .accessibilityValue(Text(LocalizedStringKey(server.status.titleKey)))
+                            .accessibilityIdentifier("prism.instance-server.\(server.id).status")
+                    }
+                    TableColumn("Resources") { server in
+                        Text(LocalizedStringKey(server.resourcePolicy.titleKey))
+                            .accessibilityLabel(Text("Server Resource Policy"))
+                            .accessibilityValue(Text(LocalizedStringKey(server.resourcePolicy.titleKey)))
+                            .accessibilityIdentifier("prism.instance-server.\(server.id).resources")
+                    }
+                }
+                .searchable(
+                    text: Binding(get: { model.searchText }, set: { model.setSearchText($0) }),
+                    prompt: Text("Search Servers")
+                )
+                .accessibilityIdentifier("prism.instance-servers.table")
+            }
+
+            Form {
+                Section("Server Details") {
+                    TextField("Name", text: Binding(get: { model.draftName }, set: { model.setDraftName($0) }))
+                        .accessibilityIdentifier("prism.instance-servers.name-field")
+                    TextField("Address", text: Binding(get: { model.draftAddress }, set: { model.setDraftAddress($0) }))
+                        .textContentType(.URL)
+                        .accessibilityIdentifier("prism.instance-servers.address-field")
+                    Picker(
+                        "Resource Policy",
+                        selection: Binding(get: { model.draftResourcePolicy }, set: { model.setDraftResourcePolicy($0) })
+                    ) {
+                        ForEach(PrismInstanceServerResourcePolicy.allCases, id: \.self) { policy in
+                            Text(LocalizedStringKey(policy.titleKey)).tag(policy)
+                        }
+                    }
+                    .accessibilityIdentifier("prism.instance-servers.resource-policy")
+                }
+            }
+            .formStyle(.grouped)
+            .frame(maxHeight: 180)
+        }
+        .navigationTitle("Servers")
+        .toolbar {
+            ToolbarItemGroup {
+                Button("Add Server", systemImage: "plus") { _ = model.add() }
+                    .accessibilityIdentifier("prism.instance-servers.add")
+                Button("Save Server", systemImage: "square.and.arrow.down") { _ = model.updateSelected() }
+                    .disabled(model.selectedServerID == nil)
+                    .accessibilityIdentifier("prism.instance-servers.update")
+                Button("Refresh", systemImage: "arrow.clockwise") { _ = model.refresh() }
+                    .accessibilityIdentifier("prism.instance-servers.refresh")
+                if let selectedServerID = model.selectedServerID {
+                    Button("Move Up", systemImage: "chevron.up") { _ = model.moveUp(selectedServerID) }
+                        .accessibilityIdentifier("prism.instance-servers.move-up")
+                    Button("Move Down", systemImage: "chevron.down") { _ = model.moveDown(selectedServerID) }
+                        .accessibilityIdentifier("prism.instance-servers.move-down")
+                    Button("Delete Server", systemImage: "trash", role: .destructive) {
+                        _ = model.requestDelete(selectedServerID)
+                    }
+                    .accessibilityIdentifier("prism.instance-servers.delete")
+                }
+            }
+        }
+        .confirmationDialog(
+            "Confirm Server Removal",
+            isPresented: Binding(
+                get: { model.pendingDeleteServerID != nil },
+                set: { if !$0 { model.cancelDelete() } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) { _ = model.confirmDelete() }
+            Button("Cancel", role: .cancel) { model.cancelDelete() }
+        } message: {
+            Text("This may permanently remove the selected server entry.")
+        }
+        .alert(
+            "Server Action Failed",
+            isPresented: Binding(
+                get: { model.mutationFailure != nil },
+                set: { if !$0 { model.dismissMutationFailure() } }
+            )
+        ) {
+            if model.mutationFailure?.isRetryAvailable == true { Button("Retry") { _ = model.retry() } }
+            Button("Dismiss", role: .cancel) { model.dismissMutationFailure() }
+        } message: {
+            if let failure = model.mutationFailure { Text(LocalizedStringKey(failure.localizationKey)) }
+        }
+        .accessibilityIdentifier("prism.instance-servers")
+    }
+}
+
+@MainActor
+struct PrismInstanceScreenshotsView: View {
+    @ObservedObject var model: PrismInstanceScreenshotsModel
+
+    private var tableSelection: Binding<Set<String>> {
+        Binding(
+            get: { model.selectedScreenshotID.map { [$0] } ?? [] },
+            set: { model.selectScreenshot($0.first) }
+        )
+    }
+
+    var body: some View {
+        Group {
+            switch model.state {
+            case .loading:
+                ProgressView("Loading Screenshots")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityLabel(Text("Loading Screenshots"))
+                    .accessibilityIdentifier("prism.instance-screenshots.loading-state")
+            case .empty:
+                ContentUnavailableView(
+                    "No Screenshots",
+                    systemImage: "photo.on.rectangle",
+                    description: Text("This instance has no screenshots to display.")
+                )
+                .accessibilityIdentifier("prism.instance-screenshots.empty-state")
+            case .failed(let failure):
+                PrismInstanceDetailLoadFailureView(
+                    titleKey: "Screenshots Unavailable",
+                    systemImage: "exclamationmark.triangle",
+                    failure: failure,
+                    onRetry: { _ = model.retry() }
+                )
+            case .content:
+                Table(model.visibleScreenshots, selection: tableSelection) {
+                    TableColumn("Name") { screenshot in
+                        Text(screenshot.displayName)
+                            .accessibilityLabel(Text(screenshot.displayName))
+                            .accessibilityIdentifier("prism.instance-screenshot.\(screenshot.id).name")
+                    }
+                    TableColumn("File Name") { screenshot in
+                        Text(screenshot.fileName)
+                            .textSelection(.enabled)
+                            .accessibilityLabel(Text("File Name"))
+                            .accessibilityValue(Text(screenshot.fileName))
+                            .accessibilityIdentifier("prism.instance-screenshot.\(screenshot.id).file-name")
+                    }
+                    TableColumn("Size") { screenshot in
+                        Text("\(screenshot.sizeBytes) bytes")
+                            .accessibilityLabel(Text("Screenshot Size"))
+                            .accessibilityValue(Text("\(screenshot.sizeBytes) bytes"))
+                            .accessibilityIdentifier("prism.instance-screenshot.\(screenshot.id).size")
+                    }
+                    TableColumn("Access") { screenshot in
+                        Text(screenshot.readable && screenshot.writable ? "Readable and Writable" : "Limited Access")
+                            .accessibilityLabel(Text("Screenshot Access"))
+                            .accessibilityIdentifier("prism.instance-screenshot.\(screenshot.id).access")
+                    }
+                }
+                .searchable(
+                    text: Binding(get: { model.searchText }, set: { model.setSearchText($0) }),
+                    prompt: Text("Search Screenshots")
+                )
+                .accessibilityIdentifier("prism.instance-screenshots.table")
+            }
+        }
+        .navigationTitle("Screenshots")
+        .toolbar {
+            ToolbarItemGroup {
+                if let selectedScreenshotID = model.selectedScreenshotID {
+                    Button("Open", systemImage: "arrow.up.forward.app") { _ = model.open(selectedScreenshotID) }
+                        .accessibilityIdentifier("prism.instance-screenshots.open")
+                    Button("Reveal", systemImage: "folder") { _ = model.reveal(selectedScreenshotID) }
+                        .accessibilityIdentifier("prism.instance-screenshots.reveal")
+                    Button("Copy Image", systemImage: "doc.on.doc") { _ = model.copyImage(selectedScreenshotID) }
+                        .accessibilityIdentifier("prism.instance-screenshots.copy-image")
+                    Button("Copy File", systemImage: "doc.on.clipboard") { _ = model.copyFiles(selectedScreenshotID) }
+                        .accessibilityIdentifier("prism.instance-screenshots.copy-files")
+                    Button("Delete", systemImage: "trash", role: .destructive) {
+                        _ = model.requestDelete(selectedScreenshotID)
+                    }
+                    .accessibilityIdentifier("prism.instance-screenshots.delete")
+                }
+            }
+        }
+        .confirmationDialog(
+            "Confirm Screenshot Removal",
+            isPresented: Binding(
+                get: { model.pendingDeleteScreenshotID != nil },
+                set: { if !$0 { model.cancelDelete() } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) { _ = model.confirmDelete() }
+            Button("Cancel", role: .cancel) { model.cancelDelete() }
+        } message: {
+            Text("This may permanently remove the selected screenshot file.")
+        }
+        .alert(
+            "Screenshot Action Failed",
+            isPresented: Binding(
+                get: { model.mutationFailure != nil },
+                set: { if !$0 { model.dismissMutationFailure() } }
+            )
+        ) {
+            if model.mutationFailure?.isRetryAvailable == true { Button("Retry") { _ = model.retry() } }
+            Button("Dismiss", role: .cancel) { model.dismissMutationFailure() }
+        } message: {
+            if let failure = model.mutationFailure { Text(LocalizedStringKey(failure.localizationKey)) }
+        }
+        .accessibilityIdentifier("prism.instance-screenshots")
+    }
+}
+
+@MainActor
+struct PrismInstanceLogsView: View {
+    @ObservedObject var model: PrismInstanceLogsModel
+
+    private var tableSelection: Binding<Set<String>> {
+        Binding(
+            get: { model.selectedLogID.map { [$0] } ?? [] },
+            set: { _ = model.selectLog($0.first) }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            switch model.state {
+            case .loading:
+                ProgressView("Loading Logs")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityLabel(Text("Loading Logs"))
+                    .accessibilityIdentifier("prism.instance-logs.loading-state")
+            case .empty:
+                ContentUnavailableView(
+                    "No Logs",
+                    systemImage: "doc.text.magnifyingglass",
+                    description: Text("This instance has no current or historical logs to display.")
+                )
+                .accessibilityIdentifier("prism.instance-logs.empty-state")
+            case .failed(let failure):
+                PrismInstanceDetailLoadFailureView(
+                    titleKey: "Logs Unavailable",
+                    systemImage: "exclamationmark.triangle",
+                    failure: failure,
+                    onRetry: { _ = model.retry() }
+                )
+            case .content:
+                Table(model.visibleLogFiles, selection: tableSelection) {
+                    TableColumn("File") { logFile in
+                        Label {
+                            Text(logFile.displayName)
+                        } icon: {
+                            Image(systemName: logFile.compressed ? "archivebox" : "doc.text")
+                        }
+                        .accessibilityLabel(Text(logFile.displayName))
+                        .accessibilityValue(Text(logFile.isCurrent ? "Current log" : "Historical log"))
+                        .accessibilityIdentifier("prism.instance-log-file.\(logFile.id).name")
+                    }
+                    TableColumn("Size") { logFile in
+                        Text("\(logFile.sizeBytes) bytes")
+                            .accessibilityLabel(Text("Log Size"))
+                            .accessibilityValue(Text("\(logFile.sizeBytes) bytes"))
+                            .accessibilityIdentifier("prism.instance-log-file.\(logFile.id).size")
+                    }
+                    TableColumn("Access") { logFile in
+                        Text(logFile.readable ? "Readable" : "Unreadable")
+                            .accessibilityLabel(Text("Log Access"))
+                            .accessibilityIdentifier("prism.instance-log-file.\(logFile.id).access")
+                    }
+                }
+                .searchable(
+                    text: Binding(get: { model.searchText }, set: { model.setSearchText($0) }),
+                    prompt: Text("Search Logs")
+                )
+                .frame(minHeight: 220)
+                .accessibilityIdentifier("prism.instance-logs.table")
+            }
+
+            switch model.contentState {
+            case .idle:
+                ContentUnavailableView(
+                    "Select a Log",
+                    systemImage: "text.alignleft",
+                    description: Text("Select a current or historical log to view its bounded contents.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("prism.instance-logs.content-empty-state")
+            case .loading:
+                ProgressView("Loading Log Contents")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityIdentifier("prism.instance-logs.content-loading-state")
+            case .failed(let failure):
+                PrismInstanceDetailLoadFailureView(
+                    titleKey: "Log Contents Unavailable",
+                    systemImage: "exclamationmark.triangle",
+                    failure: failure,
+                    onRetry: { if let selectedLogID = model.selectedLogID { _ = model.selectLog(selectedLogID) } }
+                )
+            case .content(let log):
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Log Contents", systemImage: "text.alignleft")
+                        .accessibilityLabel(Text("Log Contents"))
+                        .accessibilityValue(Text(log.isTruncated ? "Log is truncated." : "Log is complete."))
+                    if log.isTruncated {
+                        Text("Older log entries were omitted.")
+                            .font(.caption)
+                            .accessibilityIdentifier("prism.instance-logs.content-truncated")
+                    }
+                    if log.entries.isEmpty {
+                        ContentUnavailableView(
+                            "No Log Entries",
+                            systemImage: "text.alignleft",
+                            description: Text("No output has been recorded for this log.")
+                        )
+                    } else {
+                        PrismTaskLogTextView(text: log.renderedText)
+                            .frame(minHeight: 160, idealHeight: 260)
+                            .accessibilityLabel(Text("Instance Log Output"))
+                            .accessibilityIdentifier("prism.instance-logs.content-output")
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .accessibilityIdentifier("prism.instance-logs.content")
+            }
+        }
+        .navigationTitle("Logs")
+        .toolbar {
+            ToolbarItemGroup {
+                Button("Refresh", systemImage: "arrow.clockwise") { _ = model.refresh() }
+                    .accessibilityIdentifier("prism.instance-logs.refresh")
+                if let selectedLogID = model.selectedLogID {
+                    Button("Open", systemImage: "arrow.up.forward.app") { _ = model.open(selectedLogID) }
+                        .accessibilityIdentifier("prism.instance-logs.open")
+                    Button("Reveal", systemImage: "folder") { _ = model.reveal(selectedLogID) }
+                        .accessibilityIdentifier("prism.instance-logs.reveal")
+                    Button("Delete", systemImage: "trash", role: .destructive) {
+                        _ = model.requestDelete(selectedLogID)
+                    }
+                    .accessibilityIdentifier("prism.instance-logs.delete")
+                }
+            }
+        }
+        .confirmationDialog(
+            "Confirm Log Removal",
+            isPresented: Binding(
+                get: { model.pendingDeleteLogID != nil },
+                set: { if !$0 { model.cancelDelete() } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) { _ = model.confirmDelete() }
+            Button("Cancel", role: .cancel) { model.cancelDelete() }
+        } message: {
+            Text("This may permanently remove the selected historical log file.")
+        }
+        .alert(
+            "Log Action Failed",
+            isPresented: Binding(
+                get: { model.mutationFailure != nil },
+                set: { if !$0 { model.dismissMutationFailure() } }
+            )
+        ) {
+            if model.mutationFailure?.isRetryAvailable == true { Button("Retry") { _ = model.retry() } }
+            Button("Dismiss", role: .cancel) { model.dismissMutationFailure() }
+        } message: {
+            if let failure = model.mutationFailure { Text(LocalizedStringKey(failure.localizationKey)) }
+        }
+        .accessibilityIdentifier("prism.instance-logs")
     }
 }
 

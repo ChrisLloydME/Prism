@@ -1685,4 +1685,282 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     }]);
 }
 
+- (void)testInstanceDetailListsLogsAndConfirmedActionsStayFoundationOnly
+{
+    const std::string fixtureRoot = self.fixtureRootURL.path.UTF8String;
+    auto rootMatches = std::make_shared<std::atomic<bool>>(true);
+    auto mutationCalls = std::make_shared<std::vector<std::string>>();
+
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.loadInstanceWorlds = [rootMatches, fixtureRoot](const std::filesystem::path& root,
+                                                                  const std::string& identifier)
+        -> std::optional<std::vector<FrontendInstanceWorldSnapshot>> {
+        *rootMatches = *rootMatches && root == std::filesystem::path(fixtureRoot).lexically_normal();
+        if (identifier != "fixture.one") {
+            return std::nullopt;
+        }
+        return std::vector<FrontendInstanceWorldSnapshot>{
+            { "world.one", "Fixture World", "world", "Survival", "grass", "Archive warning", 123, 2048,
+              42, true, true, true, true, true, true, true },
+            { "world.two", "Second World", "world-two", "Creative", "", "", 0, 512, 0, false, false, true,
+              true, false, false },
+        };
+    };
+    dependencies.loadInstanceServers = [rootMatches, fixtureRoot](const std::filesystem::path& root,
+                                                                    const std::string& identifier)
+        -> std::optional<std::vector<FrontendInstanceServerSnapshot>> {
+        *rootMatches = *rootMatches && root == std::filesystem::path(fixtureRoot).lexically_normal();
+        if (identifier != "fixture.one") {
+            return std::nullopt;
+        }
+        return std::vector<FrontendInstanceServerSnapshot>{
+            { "server.one", "Fixture Server", "fixture.example:25565", FrontendServerResourcePolicy::Ask,
+              FrontendServerStatus::Online, 4, true, true, true },
+        };
+    };
+    dependencies.loadInstanceScreenshots = [rootMatches, fixtureRoot](const std::filesystem::path& root,
+                                                                        const std::string& identifier)
+        -> std::optional<std::vector<FrontendInstanceScreenshotSnapshot>> {
+        *rootMatches = *rootMatches && root == std::filesystem::path(fixtureRoot).lexically_normal();
+        if (identifier != "fixture.one") {
+            return std::nullopt;
+        }
+        return std::vector<FrontendInstanceScreenshotSnapshot>{
+            { "shot.one", "2026-08-09.png", "2026-08-09", 456, 4096, true, true },
+        };
+    };
+    dependencies.loadInstanceLogFiles = [rootMatches, fixtureRoot](const std::filesystem::path& root,
+                                                                     const std::string& identifier)
+        -> std::optional<std::vector<FrontendInstanceLogFileSnapshot>> {
+        *rootMatches = *rootMatches && root == std::filesystem::path(fixtureRoot).lexically_normal();
+        if (identifier != "fixture.one") {
+            return std::nullopt;
+        }
+        return std::vector<FrontendInstanceLogFileSnapshot>{
+            { "latest", "latest.log", "Latest", 789, 35, false, true, true, false },
+            { "previous", "previous.log.gz", "Previous", 700, 128, true, false, true, true },
+        };
+    };
+    dependencies.loadInstanceLog = [rootMatches, fixtureRoot](const std::filesystem::path& root,
+                                                               const std::string& identifier,
+                                                               const std::string& logIdentifier)
+        -> std::optional<FrontendInstanceLogSnapshot> {
+        *rootMatches = *rootMatches && root == std::filesystem::path(fixtureRoot).lexically_normal();
+        if (identifier != "fixture.one" || logIdentifier != "latest") {
+            return std::nullopt;
+        }
+        return FrontendInstanceLogSnapshot{
+            "fixture.one",
+            "latest",
+            { { 1, "first fixture line", false }, { 2, "second fixture line", false } },
+            0,
+            37,
+            false,
+        };
+    };
+    dependencies.mutateInstanceDetail = [rootMatches, mutationCalls, fixtureRoot](
+                                           const std::filesystem::path& root,
+                                           const std::string& identifier,
+                                           const FrontendInstanceDetailMutationRequest& request) {
+        *rootMatches = *rootMatches && root == std::filesystem::path(fixtureRoot).lexically_normal();
+        mutationCalls->push_back(identifier + ":" + std::to_string(static_cast<int>(request.kind)) + ":"
+                                 + std::to_string(static_cast<int>(request.action)) + ":" + request.itemIdentifier);
+        return FrontendInstanceDetailMutationResult{
+            request.kind,
+            request.action,
+            FrontendInstanceDetailMutationOutcome::Succeeded,
+            identifier,
+            request.itemIdentifier,
+            "instance.detail.succeeded",
+            {},
+            false,
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    XCTestExpectation *worldsCompletion = [self expectationWithDescription:@"World list completed"];
+    __block NSArray<PRInstanceWorld *> *worlds = nil;
+    __block PRBridgeError *worldsError = nil;
+    __block BOOL worldsOnMain = NO;
+    PRBridgeObservationToken *worldsToken = [bridge loadInstanceWorldsWithIdentifier:@" fixture.one "
+                                                                            completion:^(NSArray<PRInstanceWorld *> *received,
+                                                                                         PRBridgeError *error) {
+        worlds = received;
+        worldsError = error;
+        worldsOnMain = [NSThread isMainThread];
+        [worldsCompletion fulfill];
+    }];
+    XCTAssertNotNil(worldsToken);
+    [self waitForExpectations:@[ worldsCompletion ] timeout:2.0];
+    XCTAssertTrue(worldsOnMain);
+    XCTAssertNil(worldsError);
+    XCTAssertEqual(worlds.count, (NSUInteger)2);
+    XCTAssertEqualObjects(worlds[0].identifier, @"world.one");
+    XCTAssertEqualObjects(worlds[0].folderName, @"world");
+    XCTAssertEqualObjects(worlds[0].seed, @42);
+    XCTAssertTrue(worlds[0].archive);
+    XCTAssertEqualObjects(worlds[1].name, @"Second World");
+
+    XCTestExpectation *serversCompletion = [self expectationWithDescription:@"Server list completed"];
+    __block NSArray<PRInstanceServer *> *servers = nil;
+    __block PRBridgeError *serversError = nil;
+    PRBridgeObservationToken *serversToken = [bridge loadInstanceServersWithIdentifier:@"fixture.one"
+                                                                              completion:^(NSArray<PRInstanceServer *> *received,
+                                                                                           PRBridgeError *error) {
+        servers = received;
+        serversError = error;
+        [serversCompletion fulfill];
+    }];
+    XCTAssertNotNil(serversToken);
+    [self waitForExpectations:@[ serversCompletion ] timeout:2.0];
+    XCTAssertNil(serversError);
+    XCTAssertEqual(servers.count, (NSUInteger)1);
+    XCTAssertEqual(servers[0].status, PRInstanceServerStatusOnline);
+    XCTAssertEqual(servers[0].onlinePlayers, (NSInteger)4);
+
+    XCTestExpectation *screenshotsCompletion = [self expectationWithDescription:@"Screenshot list completed"];
+    __block NSArray<PRInstanceScreenshot *> *screenshots = nil;
+    PRBridgeObservationToken *screenshotsToken =
+        [bridge loadInstanceScreenshotsWithIdentifier:@"fixture.one"
+                                            completion:^(NSArray<PRInstanceScreenshot *> *received, PRBridgeError *) {
+        screenshots = received;
+        [screenshotsCompletion fulfill];
+    }];
+    XCTAssertNotNil(screenshotsToken);
+    [self waitForExpectations:@[ screenshotsCompletion ] timeout:2.0];
+    XCTAssertEqual(screenshots.count, (NSUInteger)1);
+    XCTAssertEqualObjects(screenshots[0].fileName, @"2026-08-09.png");
+    XCTAssertTrue(screenshots[0].readable);
+
+    XCTestExpectation *logFilesCompletion = [self expectationWithDescription:@"Log-file list completed"];
+    __block NSArray<PRInstanceLogFile *> *logFiles = nil;
+    PRBridgeObservationToken *logFilesToken =
+        [bridge loadInstanceLogFilesWithIdentifier:@"fixture.one"
+                                          completion:^(NSArray<PRInstanceLogFile *> *received, PRBridgeError *) {
+        logFiles = received;
+        [logFilesCompletion fulfill];
+    }];
+    XCTAssertNotNil(logFilesToken);
+    [self waitForExpectations:@[ logFilesCompletion ] timeout:2.0];
+    XCTAssertEqual(logFiles.count, (NSUInteger)2);
+    XCTAssertTrue(logFiles[0].current);
+    XCTAssertTrue(logFiles[1].compressed);
+    XCTAssertTrue(logFiles[1].canBeDeleted);
+
+    XCTestExpectation *logCompletion = [self expectationWithDescription:@"Log content completed"];
+    __block PRInstanceLogSnapshot *logSnapshot = nil;
+    __block PRBridgeError *logError = nil;
+    PRBridgeObservationToken *logToken = [bridge loadInstanceLogWithIdentifier:@"fixture.one"
+                                                                    logIdentifier:@"latest"
+                                                                        completion:^(PRInstanceLogSnapshot *received,
+                                                                                     PRBridgeError *error) {
+        logSnapshot = received;
+        logError = error;
+        [logCompletion fulfill];
+    }];
+    XCTAssertNotNil(logToken);
+    [self waitForExpectations:@[ logCompletion ] timeout:2.0];
+    XCTAssertNil(logError);
+    XCTAssertEqualObjects(logSnapshot.instanceIdentifier, @"fixture.one");
+    XCTAssertEqualObjects(logSnapshot.logIdentifier, @"latest");
+    XCTAssertEqual(logSnapshot.entries.count, (NSUInteger)2);
+    XCTAssertEqualObjects(logSnapshot.entries[0].text, @"first fixture line");
+    XCTAssertEqual(logSnapshot.totalByteCount, (uint64_t)37);
+
+    PRInstanceDetailMutationRequest *unconfirmedDelete =
+        [[PRInstanceDetailMutationRequest alloc] initWithKind:PRInstanceDetailKindWorlds
+                                                        action:PRInstanceDetailActionDelete
+                                               itemIdentifier:@"world.one"
+                                                    sourceURL:nil
+                                                   targetName:@""
+                                                          name:@""
+                                                       address:@""
+                                                resourcePolicy:PRInstanceServerResourcePolicyAsk
+                                                     confirmed:NO
+                                                      position:-1];
+    XCTestExpectation *rejectedCompletion = [self expectationWithDescription:@"Unconfirmed delete rejected"];
+    __block PRBridgeError *rejectedError = nil;
+    PRBridgeObservationToken *rejectedToken =
+        [bridge applyInstanceDetailActionWithIdentifier:@"fixture.one"
+                                                 request:unconfirmedDelete
+                                             completion:^(__unused PRInstanceDetailMutationResult *result,
+                                                         PRBridgeError *error) {
+        rejectedError = error;
+        [rejectedCompletion fulfill];
+    }];
+    XCTAssertNotNil(rejectedToken);
+    [self waitForExpectations:@[ rejectedCompletion ] timeout:2.0];
+    XCTAssertEqual(rejectedError.code, PRBridgeErrorCodeInvalidInput);
+    XCTAssertEqual(mutationCalls->size(), (size_t)0);
+
+    PRInstanceDetailMutationRequest *confirmedDelete =
+        [[PRInstanceDetailMutationRequest alloc] initWithKind:PRInstanceDetailKindWorlds
+                                                        action:PRInstanceDetailActionDelete
+                                               itemIdentifier:@"world.one"
+                                                    sourceURL:nil
+                                                   targetName:@""
+                                                          name:@""
+                                                       address:@""
+                                                resourcePolicy:PRInstanceServerResourcePolicyAsk
+                                                     confirmed:YES
+                                                      position:-1];
+    XCTestExpectation *mutationCompletion = [self expectationWithDescription:@"Confirmed delete completed"];
+    __block PRInstanceDetailMutationResult *mutationResult = nil;
+    PRBridgeObservationToken *mutationToken =
+        [bridge applyInstanceDetailActionWithIdentifier:@"fixture.one"
+                                                 request:confirmedDelete
+                                             completion:^(PRInstanceDetailMutationResult *result, PRBridgeError *) {
+        mutationResult = result;
+        [mutationCompletion fulfill];
+    }];
+    XCTAssertNotNil(mutationToken);
+    [self waitForExpectations:@[ mutationCompletion ] timeout:2.0];
+    XCTAssertEqual(mutationResult.outcome, PRInstanceDetailMutationOutcomeSucceeded);
+    XCTAssertEqualObjects(mutationResult.itemIdentifier, @"world.one");
+    XCTAssertEqual(mutationCalls->size(), (size_t)1);
+    XCTAssertTrue(rootMatches->load());
+}
+
+- (void)testInstanceWorldCancellationSuppressesQueuedCompletion
+{
+    dispatch_semaphore_t loaderEntered = dispatch_semaphore_create(0);
+    dispatch_semaphore_t releaseLoader = dispatch_semaphore_create(0);
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.loadInstanceWorlds = [loaderEntered, releaseLoader](const std::filesystem::path&,
+                                                                       const std::string&)
+        -> std::optional<std::vector<FrontendInstanceWorldSnapshot>> {
+        dispatch_semaphore_signal(loaderEntered);
+        dispatch_semaphore_wait(releaseLoader, DISPATCH_TIME_FOREVER);
+        return std::vector<FrontendInstanceWorldSnapshot>{
+            { "world.cancelled", "Cancelled World", "world", "Survival", "", "", 0, 0, 0, false, true,
+              true, true, false, false },
+        };
+    };
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    __block NSUInteger completionCount = 0;
+    PRBridgeObservationToken *token = [bridge loadInstanceWorldsWithIdentifier:@"fixture.one"
+                                                                     completion:^(NSArray<PRInstanceWorld *> *, PRBridgeError *) {
+        completionCount += 1;
+    }];
+    XCTAssertNotNil(token);
+    XCTAssertEqual(dispatch_semaphore_wait(loaderEntered, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC)), 0);
+    XCTAssertTrue([token cancel]);
+    dispatch_semaphore_signal(releaseLoader);
+
+    XCTestExpectation *drained = [self expectationWithDescription:@"Cancelled world request drained"];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [drained fulfill];
+    });
+    [self waitForExpectations:@[ drained ] timeout:2.0];
+    XCTAssertEqual(completionCount, (NSUInteger)0);
+}
+
 @end

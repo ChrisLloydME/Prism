@@ -117,6 +117,116 @@ final class PrismShellTests: XCTestCase {
         )
     }
 
+    private func makeInstanceWorld(
+        identifier: String,
+        name: String,
+        folderName: String,
+        gameMode: String = "Survival",
+        iconKey: String? = nil,
+        warningDescription: String? = nil,
+        lastPlayedUnixSeconds: Int = 0,
+        sizeBytes: UInt64 = 0,
+        seed: Int64? = nil,
+        isArchive: Bool = false,
+        canBeRenamed: Bool = true,
+        canBeCopied: Bool = true,
+        canBeDeleted: Bool = true,
+        canBeJoined: Bool = true,
+        hasIcon: Bool = false
+    ) throws -> PRInstanceWorld {
+        try XCTUnwrap(
+            PRInstanceWorld(
+                identifier: identifier,
+                name: name,
+                folderName: folderName,
+                gameMode: gameMode,
+                iconKey: iconKey,
+                warningDescription: warningDescription,
+                lastPlayedUnixSeconds: lastPlayedUnixSeconds,
+                sizeBytes: sizeBytes,
+                seed: seed.map(NSNumber.init(value:)),
+                isArchive: isArchive,
+                canBeRenamed: canBeRenamed,
+                canBeCopied: canBeCopied,
+                canBeDeleted: canBeDeleted,
+                canBeJoined: canBeJoined,
+                hasIcon: hasIcon
+            )
+        )
+    }
+
+    private func makeInstanceServer(
+        identifier: String,
+        name: String,
+        address: String,
+        resourcePolicy: PRInstanceServerResourcePolicy = .ask,
+        status: PRInstanceServerStatus = .unknown,
+        onlinePlayers: Int = -1,
+        canBeEdited: Bool = true,
+        canBeDeleted: Bool = true,
+        canBeJoined: Bool = true
+    ) throws -> PRInstanceServer {
+        try XCTUnwrap(
+            PRInstanceServer(
+                identifier: identifier,
+                name: name,
+                address: address,
+                resourcePolicy: resourcePolicy,
+                status: status,
+                onlinePlayers: onlinePlayers,
+                canBeEdited: canBeEdited,
+                canBeDeleted: canBeDeleted,
+                canBeJoined: canBeJoined
+            )
+        )
+    }
+
+    private func makeInstanceScreenshot(
+        identifier: String,
+        fileName: String,
+        displayName: String,
+        modifiedUnixSeconds: Int = 0,
+        sizeBytes: UInt64 = 0,
+        readable: Bool = true,
+        writable: Bool = true
+    ) throws -> PRInstanceScreenshot {
+        try XCTUnwrap(
+            PRInstanceScreenshot(
+                identifier: identifier,
+                fileName: fileName,
+                displayName: displayName,
+                modifiedUnixSeconds: modifiedUnixSeconds,
+                sizeBytes: sizeBytes,
+                readable: readable,
+                writable: writable
+            )
+        )
+    }
+
+    private func makeInstanceLogFile(
+        identifier: String,
+        fileName: String,
+        displayName: String,
+        compressed: Bool = false,
+        current: Bool = false,
+        readable: Bool = true,
+        canBeDeleted: Bool = true
+    ) throws -> PRInstanceLogFile {
+        try XCTUnwrap(
+            PRInstanceLogFile(
+                identifier: identifier,
+                fileName: fileName,
+                displayName: displayName,
+                modifiedUnixSeconds: 1,
+                sizeBytes: 64,
+                compressed: compressed,
+                current: current,
+                readable: readable,
+                canBeDeleted: canBeDeleted
+            )
+        )
+    }
+
     func testSidebarManifestHasStableSelectionAndAccessibilityMetadata() {
         let items = PrismShellSidebarItem.allCases
 
@@ -707,6 +817,337 @@ final class PrismShellTests: XCTestCase {
         XCTAssertFalse(shellModelSource.contains("QDialog"))
         XCTAssertFalse(shellModelSource.contains("Unmanaged"))
         XCTAssertFalse(shellModelSource.contains("UnsafeMutable"))
+    }
+
+    func testInstanceWorldsAndServersModelsPreserveOrderAndRequireConfirmedActions() throws {
+        var worldLoads: [String] = []
+        var worldMutations: [(String, PrismInstanceDetailMutationIntent)] = []
+        let worldsModel = PrismInstanceWorldsModel(
+            onLoad: { worldLoads.append($0) },
+            onMutate: { worldMutations.append(($0, $1)) }
+        )
+
+        XCTAssertTrue(worldsModel.beginLoading(identifier: " fixture.one "))
+        XCTAssertEqual(worldLoads, ["fixture.one"])
+        let worldZeta = try makeInstanceWorld(
+            identifier: "world.zeta",
+            name: "Zeta",
+            folderName: "zeta",
+            iconKey: " icon.zeta ",
+            warningDescription: " Warning ",
+            lastPlayedUnixSeconds: 100,
+            sizeBytes: 4_096,
+            seed: 123,
+            hasIcon: true
+        )
+        let worldArchive = try makeInstanceWorld(
+            identifier: "world.archive",
+            name: "Archive",
+            folderName: "archive.zip",
+            gameMode: "",
+            isArchive: true,
+            canBeRenamed: false,
+            canBeDeleted: false,
+            canBeJoined: false
+        )
+
+        XCTAssertTrue(worldsModel.apply(worlds: [worldZeta, worldArchive]))
+        XCTAssertEqual(worldsModel.worlds.map(\.id), ["world.zeta", "world.archive"])
+        XCTAssertEqual(worldsModel.worlds[0].iconKey, "icon.zeta")
+        XCTAssertEqual(worldsModel.worlds[0].warningDescription, "Warning")
+        XCTAssertEqual(worldsModel.worlds[0].seed, 123)
+        XCTAssertTrue(worldsModel.worlds[1].isArchive)
+        worldsModel.selectWorld("world.zeta")
+        worldsModel.setSearchText("warning")
+        XCTAssertEqual(worldsModel.visibleWorlds.map(\.id), ["world.zeta"])
+        worldsModel.setSearchText("archive")
+        XCTAssertNil(worldsModel.selectedWorldID)
+        worldsModel.setSearchText("")
+
+        XCTAssertTrue(worldsModel.importWorld(from: URL(fileURLWithPath: "/tmp/world-import.zip")))
+        XCTAssertEqual(worldMutations.last?.1.action, .import)
+        XCTAssertEqual(worldMutations.last?.1.sourceURL?.path, "/tmp/world-import.zip")
+        XCTAssertTrue(worldsModel.apply(worlds: [worldZeta, worldArchive]))
+
+        XCTAssertTrue(worldsModel.requestDelete("world.zeta"))
+        XCTAssertEqual(worldsModel.pendingDeleteWorldID, "world.zeta")
+        XCTAssertTrue(worldsModel.confirmDelete())
+        XCTAssertEqual(worldMutations.last?.1.action, .delete)
+        XCTAssertTrue(worldMutations.last?.1.confirmed == true)
+        XCTAssertEqual(worldsModel.worlds.map(\.id), ["world.zeta", "world.archive"])
+
+        let rejectedDelete = try XCTUnwrap(
+            PRInstanceDetailMutationResult(
+                kind: .worlds,
+                action: .delete,
+                outcome: .rejected,
+                instanceIdentifier: "fixture.one",
+                itemIdentifier: "world.zeta",
+                localizationKey: "instance.world.deleteRejected",
+                diagnosticText: "fixture deletion rejected",
+                partialChangesRolledBack: true
+            )
+        )
+        XCTAssertTrue(worldsModel.apply(mutationResult: rejectedDelete, instanceIdentifier: "fixture.one"))
+        XCTAssertEqual(worldsModel.mutationFailure?.localizationKey, "instance.world.deleteRejected")
+        XCTAssertTrue(worldsModel.mutationFailure?.partialChangesRolledBack == true)
+        XCTAssertTrue(worldsModel.retry())
+        XCTAssertEqual(worldMutations.last?.1.action, .delete)
+
+        var serverLoads: [String] = []
+        var serverMutations: [(String, PrismInstanceDetailMutationIntent)] = []
+        let serversModel = PrismInstanceServersModel(
+            onLoad: { serverLoads.append($0) },
+            onMutate: { serverMutations.append(($0, $1)) }
+        )
+        XCTAssertTrue(serversModel.beginLoading(identifier: "fixture.one"))
+        let serverA = try makeInstanceServer(
+            identifier: "server.a",
+            name: "Alpha",
+            address: "alpha.example:25565",
+            resourcePolicy: .always,
+            status: .online,
+            onlinePlayers: 4
+        )
+        let serverB = try makeInstanceServer(
+            identifier: "server.b",
+            name: "Beta",
+            address: "beta.example:25565",
+            status: .offline,
+            canBeDeleted: false
+        )
+        XCTAssertTrue(serversModel.apply(servers: [serverA, serverB]))
+        XCTAssertEqual(serversModel.servers.map(\.id), ["server.a", "server.b"])
+        XCTAssertEqual(serversModel.servers[0].resourcePolicy, .always)
+        XCTAssertEqual(serversModel.servers[0].status, .online)
+        XCTAssertEqual(serversModel.servers[1].onlinePlayers, -1)
+        serversModel.selectServer("server.a")
+        XCTAssertEqual(serversModel.draftName, "Alpha")
+        serversModel.setDraftName("Alpha Updated")
+        serversModel.setDraftAddress("updated.example:25565")
+        serversModel.setDraftResourcePolicy(.never)
+        XCTAssertTrue(serversModel.updateSelected())
+        XCTAssertEqual(serverMutations.last?.1.action, .update)
+        XCTAssertEqual(serverMutations.last?.1.itemIdentifier, "server.a")
+        XCTAssertEqual(serverMutations.last?.1.name, "Alpha Updated")
+        XCTAssertEqual(serverMutations.last?.1.resourcePolicy, .never)
+        XCTAssertEqual(serversModel.servers.map(\.id), ["server.a", "server.b"])
+
+        let updated = try XCTUnwrap(
+            PRInstanceDetailMutationResult(
+                kind: .servers,
+                action: .update,
+                outcome: .succeeded,
+                instanceIdentifier: "fixture.one",
+                itemIdentifier: "server.a",
+                localizationKey: "instance.server.updated",
+                diagnosticText: nil,
+                partialChangesRolledBack: false
+            )
+        )
+        XCTAssertTrue(serversModel.apply(mutationResult: updated, instanceIdentifier: "fixture.one"))
+        XCTAssertEqual(serversModel.state, .loading(identifier: "fixture.one"))
+        XCTAssertEqual(serverLoads, ["fixture.one", "fixture.one"])
+
+        XCTAssertTrue(serversModel.apply(servers: [serverA, serverB]))
+        XCTAssertTrue(serversModel.moveDown("server.a"))
+        XCTAssertEqual(serverMutations.last?.1.action, .moveDown)
+        XCTAssertEqual(serverMutations.last?.1.position, 0)
+        XCTAssertTrue(serversModel.requestDelete("server.a"))
+        XCTAssertTrue(serversModel.confirmDelete())
+        XCTAssertEqual(serverMutations.last?.1.action, .delete)
+        XCTAssertTrue(serverMutations.last?.1.confirmed == true)
+        XCTAssertFalse(serversModel.requestDelete("server.b"))
+    }
+
+    func testInstanceScreenshotsAndLogsModelsRouteSystemActionsAndBoundedContent() throws {
+        var screenshotMutations: [PrismInstanceDetailMutationIntent] = []
+        let screenshotsModel = PrismInstanceScreenshotsModel(
+            onMutate: { screenshotMutations.append($1) }
+        )
+        XCTAssertTrue(screenshotsModel.beginLoading(identifier: "fixture.one"))
+        let screenshotOne = try makeInstanceScreenshot(
+            identifier: "shot.one",
+            fileName: "shot-one.png",
+            displayName: "Shot One",
+            modifiedUnixSeconds: 10,
+            sizeBytes: 128
+        )
+        let screenshotReadOnly = try makeInstanceScreenshot(
+            identifier: "shot.readonly",
+            fileName: "shot-readonly.png",
+            displayName: "Read Only",
+            readable: true,
+            writable: false
+        )
+        XCTAssertTrue(screenshotsModel.apply(screenshots: [screenshotOne, screenshotReadOnly]))
+        screenshotsModel.selectScreenshot("shot.one")
+        screenshotsModel.setSearchText("shot-one")
+        XCTAssertEqual(screenshotsModel.visibleScreenshots.map(\.id), ["shot.one"])
+        XCTAssertTrue(screenshotsModel.copyImage("shot.one"))
+        XCTAssertEqual(screenshotMutations.last?.action, .copyImage)
+        XCTAssertTrue(screenshotsModel.copyFiles("shot.one"))
+        XCTAssertEqual(screenshotMutations.last?.action, .copyFiles)
+        XCTAssertTrue(screenshotsModel.open("shot.one"))
+        XCTAssertEqual(screenshotMutations.last?.action, .open)
+        XCTAssertFalse(screenshotsModel.requestDelete("shot.readonly"))
+        screenshotsModel.setSearchText("")
+        XCTAssertTrue(screenshotsModel.requestDelete("shot.one"))
+        XCTAssertTrue(screenshotsModel.confirmDelete())
+        XCTAssertEqual(screenshotMutations.last?.action, .delete)
+        XCTAssertTrue(screenshotMutations.last?.confirmed == true)
+
+        var logLoads: [String] = []
+        var logContentLoads: [(String, String)] = []
+        var logMutations: [PrismInstanceDetailMutationIntent] = []
+        let logsModel = PrismInstanceLogsModel(
+            onLoad: { logLoads.append($0) },
+            onLoadContent: { logContentLoads.append(($0, $1)) },
+            onMutate: { logMutations.append($1) }
+        )
+        XCTAssertTrue(logsModel.beginLoading(identifier: " fixture.one "))
+        let currentLog = try makeInstanceLogFile(
+            identifier: "log.current",
+            fileName: "latest.log",
+            displayName: "Latest",
+            current: true,
+            canBeDeleted: false
+        )
+        let historicalLog = try makeInstanceLogFile(
+            identifier: "log.old",
+            fileName: "2026-08-08.log.gz",
+            displayName: "Previous",
+            compressed: true
+        )
+        XCTAssertTrue(logsModel.apply(logFiles: [currentLog, historicalLog]))
+        XCTAssertEqual(logsModel.logFiles.map(\.id), ["log.current", "log.old"])
+        XCTAssertTrue(logsModel.selectLog("log.current"))
+        XCTAssertEqual(logContentLoads.map { "\($0.0):\($0.1)" }, ["fixture.one:log.current"])
+        let firstEntry = try XCTUnwrap(PRTaskLogEntry(sequence: 1, text: "first", truncated: false))
+        let secondEntry = try XCTUnwrap(PRTaskLogEntry(sequence: 2, text: "second", truncated: true))
+        let snapshot = try XCTUnwrap(
+            PRInstanceLogSnapshot(
+                instanceIdentifier: "fixture.one",
+                logIdentifier: "log.current",
+                entries: [firstEntry, secondEntry],
+                droppedEntryCount: 1,
+                totalByteCount: 11,
+                truncated: true
+            )
+        )
+        XCTAssertTrue(logsModel.apply(content: snapshot))
+        if case .content(let log) = logsModel.contentState {
+            XCTAssertEqual(log.renderedText, "first\nsecond")
+            XCTAssertEqual(log.droppedEntryCount, 1)
+            XCTAssertTrue(log.isTruncated)
+        } else {
+            XCTFail("Expected bounded log content")
+        }
+        XCTAssertFalse(
+            logsModel.apply(
+                content: try XCTUnwrap(
+                    PRInstanceLogSnapshot(
+                        instanceIdentifier: "fixture.one",
+                        logIdentifier: "log.other",
+                        entries: [firstEntry],
+                        droppedEntryCount: 0,
+                        totalByteCount: 5,
+                        truncated: false
+                    )
+                )
+            )
+        )
+        XCTAssertFalse(logsModel.requestDelete("log.current"))
+        XCTAssertTrue(logsModel.selectLog("log.old"))
+        XCTAssertTrue(logsModel.requestDelete("log.old"))
+        XCTAssertTrue(logsModel.confirmDelete())
+        XCTAssertEqual(logMutations.last?.action, .delete)
+        XCTAssertTrue(logMutations.last?.confirmed == true)
+        XCTAssertEqual(logLoads, ["fixture.one"])
+    }
+
+    func testInstanceDetailSourcesUseNativeTablesAccessibilityAndFoundationBoundary() throws {
+        let contentSource = try contentSource()
+        let shellModelSource = try shellModelSource()
+        let bridgeHeaderSource = try bridgeHeaderSource()
+        let bridgeModelsSource = try bridgeModelsSource()
+
+        for requiredToken in [
+            "PrismInstanceWorldsView",
+            "PrismInstanceServersView",
+            "PrismInstanceScreenshotsView",
+            "PrismInstanceLogsView",
+            "Table(model.visibleWorlds, selection:",
+            "Table(model.visibleServers, selection:",
+            "Table(model.visibleScreenshots, selection:",
+            "Table(model.visibleLogFiles, selection:",
+            ".fileImporter(",
+            ".dropDestination(for: URL.self)",
+            ".confirmationDialog(",
+            "role: .destructive",
+            "PrismTaskLogTextView(text: log.renderedText)",
+            "prism.instance-worlds.table",
+            "prism.instance-servers.table",
+            "prism.instance-screenshots.table",
+            "prism.instance-logs.table",
+            ".accessibilityIdentifier("
+        ] {
+            XCTAssertTrue(contentSource.contains(requiredToken), "Missing native detail UI API: \(requiredToken)")
+        }
+
+        for requiredToken in [
+            "PrismInstanceWorldsModel",
+            "PrismInstanceServersModel",
+            "PrismInstanceScreenshotsModel",
+            "PrismInstanceLogsModel",
+            "PrismInstanceDetailMutationIntent",
+            "PrismInstanceDetailMutationFailure",
+            "confirmed: true",
+            "partialChangesRolledBack",
+            "PRInstanceLogSnapshot",
+            "totalByteCount",
+            "func selectLog(_ identifier: String?)",
+            "func retry() -> Bool"
+        ] {
+            XCTAssertTrue(shellModelSource.contains(requiredToken), "Missing detail state contract: \(requiredToken)")
+        }
+
+        for requiredToken in [
+            "loadInstanceWorldsWithIdentifier",
+            "loadInstanceServersWithIdentifier",
+            "loadInstanceScreenshotsWithIdentifier",
+            "loadInstanceLogFilesWithIdentifier",
+            "loadInstanceLogWithIdentifier",
+            "applyInstanceDetailActionWithIdentifier",
+            "PRInstanceDetailMutationRequest"
+        ] {
+            XCTAssertTrue(bridgeHeaderSource.contains(requiredToken), "Missing bridge detail API: \(requiredToken)")
+        }
+        for requiredToken in [
+            "PRInstanceDetailKind",
+            "PRInstanceWorld",
+            "PRInstanceServer",
+            "PRInstanceScreenshot",
+            "PRInstanceLogFile",
+            "PRInstanceLogSnapshot",
+            "PRInstanceDetailMutationResult",
+            "PRTaskLogEntry"
+        ] {
+            XCTAssertTrue(bridgeModelsSource.contains(requiredToken), "Missing Foundation DTO: \(requiredToken)")
+        }
+
+        XCTAssertFalse(contentSource.contains("Canvas("))
+        XCTAssertFalse(contentSource.contains("draw("))
+        XCTAssertFalse(contentSource.contains("Path("))
+        XCTAssertFalse(contentSource.contains("NSBezierPath"))
+        XCTAssertFalse(shellModelSource.contains("QWidget"))
+        XCTAssertFalse(shellModelSource.contains("QDialog"))
+        XCTAssertFalse(shellModelSource.contains("Unmanaged"))
+        XCTAssertFalse(shellModelSource.contains("UnsafeMutable"))
+        XCTAssertFalse(bridgeHeaderSource.contains("QWidget"))
+        XCTAssertFalse(bridgeHeaderSource.contains("QDialog"))
+        XCTAssertFalse(bridgeModelsSource.contains("QWidget"))
+        XCTAssertFalse(bridgeModelsSource.contains("QDialog"))
     }
 
     func testInstanceSettingsModelConfirmsEditsAndPreservesDraftOnRejectedOrFailedSave() throws {
@@ -1603,6 +2044,15 @@ final class PrismShellTests: XCTestCase {
             .deletingLastPathComponent()
         let sourceURL = sourceRoot
             .appendingPathComponent("PrismNative/Bridge/PrismBridgeModels.h")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private func bridgeHeaderSource() throws -> String {
+        let sourceRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = sourceRoot
+            .appendingPathComponent("PrismNative/Bridge/PrismBridge.h")
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }

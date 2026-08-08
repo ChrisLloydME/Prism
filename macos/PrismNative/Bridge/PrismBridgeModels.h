@@ -4,6 +4,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+@class PRTaskLogEntry;
+
 typedef NS_ENUM(NSInteger, PRTaskState) {
     PRTaskStateQueued = 0,
     PRTaskStateRunning,
@@ -201,6 +203,238 @@ typedef NS_ENUM(NSInteger, PRInstanceResourceMutationOutcome) {
 @property(nonatomic, assign, readonly) PRInstanceResourceKind kind;
 @property(nonatomic, assign, readonly) PRInstanceResourceAction action;
 @property(nonatomic, assign, readonly) PRInstanceResourceMutationOutcome outcome;
+@property(nonatomic, copy, readonly, nullable) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL partialChangesRolledBack;
+
+@end
+
+typedef NS_ENUM(NSInteger, PRInstanceDetailKind) {
+    PRInstanceDetailKindWorlds = 0,
+    PRInstanceDetailKindServers,
+    PRInstanceDetailKindScreenshots,
+    PRInstanceDetailKindLogs,
+};
+
+typedef NS_ENUM(NSInteger, PRInstanceDetailAction) {
+    PRInstanceDetailActionAdd = 0,
+    PRInstanceDetailActionUpdate,
+    PRInstanceDetailActionDelete,
+    PRInstanceDetailActionMoveUp,
+    PRInstanceDetailActionMoveDown,
+    PRInstanceDetailActionImport,
+    PRInstanceDetailActionCopy,
+    PRInstanceDetailActionRename,
+    PRInstanceDetailActionReveal,
+    PRInstanceDetailActionResetIcon,
+    PRInstanceDetailActionJoin,
+    PRInstanceDetailActionRefresh,
+    PRInstanceDetailActionOpen,
+    PRInstanceDetailActionCopyImage,
+    PRInstanceDetailActionCopyFiles,
+};
+
+typedef NS_ENUM(NSInteger, PRInstanceDetailMutationOutcome) {
+    PRInstanceDetailMutationOutcomeSucceeded = 0,
+    PRInstanceDetailMutationOutcomeUnknownInstance,
+    PRInstanceDetailMutationOutcomeUnknownItem,
+    PRInstanceDetailMutationOutcomeRejected,
+    PRInstanceDetailMutationOutcomeFailed,
+};
+
+typedef NS_ENUM(NSInteger, PRInstanceServerResourcePolicy) {
+    PRInstanceServerResourcePolicyAsk = 0,
+    PRInstanceServerResourcePolicyAlways,
+    PRInstanceServerResourcePolicyNever,
+};
+
+typedef NS_ENUM(NSInteger, PRInstanceServerStatus) {
+    PRInstanceServerStatusUnknown = 0,
+    PRInstanceServerStatusOnline,
+    PRInstanceServerStatusOffline,
+    PRInstanceServerStatusFailed,
+};
+
+/// Immutable world row metadata. Timestamp and byte values stay unformatted
+/// so Swift can apply locale-aware presentation.
+@interface PRInstanceWorld : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithIdentifier:(NSString *)identifier
+                                        name:(NSString *)name
+                                  folderName:(NSString *)folderName
+                                    gameMode:(NSString *)gameMode
+                                    iconKey:(nullable NSString *)iconKey
+                          warningDescription:(nullable NSString *)warningDescription
+                       lastPlayedUnixSeconds:(NSInteger)lastPlayedUnixSeconds
+                                   sizeBytes:(uint64_t)sizeBytes
+                                        seed:(nullable NSNumber *)seed
+                                   isArchive:(BOOL)isArchive
+                              canBeRenamed:(BOOL)canBeRenamed
+                               canBeCopied:(BOOL)canBeCopied
+                              canBeDeleted:(BOOL)canBeDeleted
+                                canBeJoined:(BOOL)canBeJoined
+                                  hasIcon:(BOOL)hasIcon NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, copy, readonly) NSString *name;
+@property(nonatomic, copy, readonly) NSString *folderName;
+@property(nonatomic, copy, readonly) NSString *gameMode;
+@property(nonatomic, copy, readonly, nullable) NSString *iconKey;
+@property(nonatomic, copy, readonly, nullable) NSString *warningDescription;
+@property(nonatomic, assign, readonly) NSInteger lastPlayedUnixSeconds;
+@property(nonatomic, assign, readonly) uint64_t sizeBytes;
+@property(nonatomic, strong, readonly, nullable) NSNumber *seed;
+@property(nonatomic, assign, readonly) BOOL archive;
+@property(nonatomic, assign, readonly) BOOL canBeRenamed;
+@property(nonatomic, assign, readonly) BOOL canBeCopied;
+@property(nonatomic, assign, readonly) BOOL canBeDeleted;
+@property(nonatomic, assign, readonly) BOOL canBeJoined;
+@property(nonatomic, assign, readonly) BOOL hasIcon;
+
+@end
+
+/// Immutable server row metadata with status and resource-download policy.
+@interface PRInstanceServer : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithIdentifier:(NSString *)identifier
+                                        name:(NSString *)name
+                                     address:(NSString *)address
+                              resourcePolicy:(PRInstanceServerResourcePolicy)resourcePolicy
+                                      status:(PRInstanceServerStatus)status
+                               onlinePlayers:(NSInteger)onlinePlayers
+                               canBeEdited:(BOOL)canBeEdited
+                              canBeDeleted:(BOOL)canBeDeleted
+                                canBeJoined:(BOOL)canBeJoined NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, copy, readonly) NSString *name;
+@property(nonatomic, copy, readonly) NSString *address;
+@property(nonatomic, assign, readonly) PRInstanceServerResourcePolicy resourcePolicy;
+@property(nonatomic, assign, readonly) PRInstanceServerStatus status;
+@property(nonatomic, assign, readonly) NSInteger onlinePlayers;
+@property(nonatomic, assign, readonly) BOOL canBeEdited;
+@property(nonatomic, assign, readonly) BOOL canBeDeleted;
+@property(nonatomic, assign, readonly) BOOL canBeJoined;
+
+@end
+
+/// Immutable screenshot file metadata; image bytes remain a system action.
+@interface PRInstanceScreenshot : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithIdentifier:(NSString *)identifier
+                                    fileName:(NSString *)fileName
+                                displayName:(NSString *)displayName
+                       modifiedUnixSeconds:(NSInteger)modifiedUnixSeconds
+                                   sizeBytes:(uint64_t)sizeBytes
+                                    readable:(BOOL)readable
+                                    writable:(BOOL)writable NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, copy, readonly) NSString *fileName;
+@property(nonatomic, copy, readonly) NSString *displayName;
+@property(nonatomic, assign, readonly) NSInteger modifiedUnixSeconds;
+@property(nonatomic, assign, readonly) uint64_t sizeBytes;
+@property(nonatomic, assign, readonly) BOOL readable;
+@property(nonatomic, assign, readonly) BOOL writable;
+
+@end
+
+/// Immutable current or historical log file metadata.
+@interface PRInstanceLogFile : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithIdentifier:(NSString *)identifier
+                                    fileName:(NSString *)fileName
+                                displayName:(NSString *)displayName
+                       modifiedUnixSeconds:(NSInteger)modifiedUnixSeconds
+                                   sizeBytes:(uint64_t)sizeBytes
+                                  compressed:(BOOL)compressed
+                                     current:(BOOL)current
+                                    readable:(BOOL)readable
+                              canBeDeleted:(BOOL)canBeDeleted NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, copy, readonly) NSString *fileName;
+@property(nonatomic, copy, readonly) NSString *displayName;
+@property(nonatomic, assign, readonly) NSInteger modifiedUnixSeconds;
+@property(nonatomic, assign, readonly) uint64_t sizeBytes;
+@property(nonatomic, assign, readonly) BOOL compressed;
+@property(nonatomic, assign, readonly) BOOL current;
+@property(nonatomic, assign, readonly) BOOL readable;
+@property(nonatomic, assign, readonly) BOOL canBeDeleted;
+
+@end
+
+/// Bounded instance log content. Entries reuse the validated immutable line
+/// DTO; the log identity remains separate from task identity.
+@interface PRInstanceLogSnapshot : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithInstanceIdentifier:(NSString *)instanceIdentifier
+                                       logIdentifier:(NSString *)logIdentifier
+                                             entries:(NSArray<PRTaskLogEntry *> *)entries
+                                  droppedEntryCount:(uint64_t)droppedEntryCount
+                                       totalByteCount:(uint64_t)totalByteCount
+                                           truncated:(BOOL)truncated NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *instanceIdentifier;
+@property(nonatomic, copy, readonly) NSString *logIdentifier;
+@property(nonatomic, copy, readonly) NSArray<PRTaskLogEntry *> *entries;
+@property(nonatomic, assign, readonly) uint64_t droppedEntryCount;
+@property(nonatomic, assign, readonly) uint64_t totalByteCount;
+@property(nonatomic, assign, readonly) BOOL truncated;
+
+@end
+
+/// Foundation-only request for one M6-W5 list action.
+@interface PRInstanceDetailMutationRequest : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithKind:(PRInstanceDetailKind)kind
+                                action:(PRInstanceDetailAction)action
+                       itemIdentifier:(NSString *)itemIdentifier
+                            sourceURL:(nullable NSURL *)sourceURL
+                           targetName:(NSString *)targetName
+                                  name:(NSString *)name
+                               address:(NSString *)address
+                        resourcePolicy:(PRInstanceServerResourcePolicy)resourcePolicy
+                             confirmed:(BOOL)confirmed
+                              position:(NSInteger)position NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, assign, readonly) PRInstanceDetailKind kind;
+@property(nonatomic, assign, readonly) PRInstanceDetailAction action;
+@property(nonatomic, copy, readonly) NSString *itemIdentifier;
+@property(nonatomic, copy, readonly, nullable) NSURL *sourceURL;
+@property(nonatomic, copy, readonly) NSString *targetName;
+@property(nonatomic, copy, readonly) NSString *name;
+@property(nonatomic, copy, readonly) NSString *address;
+@property(nonatomic, assign, readonly) PRInstanceServerResourcePolicy resourcePolicy;
+@property(nonatomic, assign, readonly) BOOL confirmed;
+@property(nonatomic, assign, readonly) NSInteger position;
+
+@end
+
+/// Immutable outcome for a world/server/screenshot/log mutation request.
+@interface PRInstanceDetailMutationResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithKind:(PRInstanceDetailKind)kind
+                                action:(PRInstanceDetailAction)action
+                              outcome:(PRInstanceDetailMutationOutcome)outcome
+                    instanceIdentifier:(NSString *)instanceIdentifier
+                         itemIdentifier:(NSString *)itemIdentifier
+                        localizationKey:(nullable NSString *)localizationKey
+                         diagnosticText:(nullable NSString *)diagnosticText
+              partialChangesRolledBack:(BOOL)partialChangesRolledBack NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, assign, readonly) PRInstanceDetailKind kind;
+@property(nonatomic, assign, readonly) PRInstanceDetailAction action;
+@property(nonatomic, assign, readonly) PRInstanceDetailMutationOutcome outcome;
+@property(nonatomic, copy, readonly) NSString *instanceIdentifier;
+@property(nonatomic, copy, readonly) NSString *itemIdentifier;
 @property(nonatomic, copy, readonly, nullable) NSString *localizationKey;
 @property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
 @property(nonatomic, assign, readonly) BOOL partialChangesRolledBack;

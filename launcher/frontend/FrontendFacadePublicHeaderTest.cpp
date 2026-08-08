@@ -31,6 +31,14 @@ static_assert(static_cast<std::uint8_t>(FrontendInstanceResourceAction::Enable) 
 static_assert(static_cast<std::uint8_t>(FrontendInstanceResourceAction::Reveal) == 4);
 static_assert(static_cast<std::uint8_t>(FrontendInstanceResourceMutationOutcome::Succeeded) == 0);
 static_assert(static_cast<std::uint8_t>(FrontendInstanceResourceMutationOutcome::Failed) == 4);
+static_assert(static_cast<std::uint8_t>(FrontendInstanceDetailKind::Worlds) == 0);
+static_assert(static_cast<std::uint8_t>(FrontendInstanceDetailKind::Logs) == 3);
+static_assert(static_cast<std::uint8_t>(FrontendInstanceDetailAction::Add) == 0);
+static_assert(static_cast<std::uint8_t>(FrontendInstanceDetailAction::CopyFiles) == 14);
+static_assert(static_cast<std::uint8_t>(FrontendInstanceDetailMutationOutcome::Succeeded) == 0);
+static_assert(static_cast<std::uint8_t>(FrontendInstanceDetailMutationOutcome::Failed) == 4);
+static_assert(static_cast<std::uint8_t>(FrontendServerResourcePolicy::Ask) == 0);
+static_assert(static_cast<std::uint8_t>(FrontendServerStatus::Online) == 1);
 static_assert(static_cast<std::uint8_t>(FrontendInstanceSettingsUpdateOutcome::Succeeded) == 0);
 static_assert(static_cast<std::uint8_t>(FrontendInstanceSettingsUpdateOutcome::UnknownInstance) == 1);
 static_assert(static_cast<std::uint8_t>(FrontendInstanceSettingsUpdateOutcome::Rejected) == 2);
@@ -73,6 +81,28 @@ int main()
         "fixture rejection",
         false,
     };
+    const FrontendInstanceWorldSnapshot world{ "world-contract", "World Contract", "world", "Survival", "", "", 0, 0,
+                                               0, false, false, true, true, true, false, false };
+    const FrontendInstanceServerSnapshot server{ "server-contract", "Server Contract", "server.example",
+                                                  FrontendServerResourcePolicy::Ask, FrontendServerStatus::Unknown, -1,
+                                                  true, true, false };
+    const FrontendInstanceScreenshotSnapshot screenshot{ "screenshot-contract", "fixture.png", "Fixture", 0, 0, true, true };
+    const FrontendInstanceLogFileSnapshot logFile{ "log-contract", "latest.log", "Latest", 0, 0, false, true, true, false };
+    const FrontendInstanceLogSnapshot instanceLog{ "header-contract", "log-contract", {}, 0, 0, false };
+    FrontendInstanceDetailMutationRequest detailRequest;
+    detailRequest.kind = FrontendInstanceDetailKind::Worlds;
+    detailRequest.action = FrontendInstanceDetailAction::Reveal;
+    detailRequest.itemIdentifier = world.id;
+    const FrontendInstanceDetailMutationResult detailResult{
+        FrontendInstanceDetailKind::Worlds,
+        FrontendInstanceDetailAction::Reveal,
+        FrontendInstanceDetailMutationOutcome::Rejected,
+        "header-contract",
+        world.id,
+        "instance.detail.rejected",
+        "fixture rejection",
+        false,
+    };
     FrontendInstanceSettingsSnapshot settings;
     settings.id = "header-contract";
     const FrontendInstanceChange change{ FrontendInstanceChangeKind::Added, snapshot };
@@ -81,6 +111,9 @@ int main()
     return snapshot.hasStableIdentifier() && details.hasStableIdentifier() && component.hasStableIdentifier()
             && resource.hasStableIdentifier() && mutationRequest.resourceIdentifier == resource.id
             && mutationResult.instanceIdentifier == "header-contract"
+            && world.hasStableIdentifier() && server.hasStableIdentifier() && screenshot.hasStableIdentifier()
+            && logFile.hasStableIdentifier() && instanceLog.instanceIdentifier == "header-contract"
+            && detailRequest.itemIdentifier == world.id && detailResult.itemIdentifier == world.id
             && details.notesEditable
             && settings.hasStableIdentifier()
             && change.instance.id == snapshot.id && logSnapshot.hasStableIdentifier()
