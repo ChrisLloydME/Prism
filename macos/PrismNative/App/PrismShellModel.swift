@@ -74,6 +74,267 @@ struct PrismInstanceDetails: Identifiable, Equatable, Sendable {
     }
 }
 
+enum PrismInstanceComponentProblemSeverity: Int, Equatable, Sendable {
+    case none
+    case warning
+    case error
+
+    init?(bridgeSeverity: PRInstanceComponentProblemSeverity) {
+        switch bridgeSeverity {
+        case .none:
+            self = .none
+        case .warning:
+            self = .warning
+        case .error:
+            self = .error
+        @unknown default:
+            return nil
+        }
+    }
+
+    var systemImage: String? {
+        switch self {
+        case .none:
+            return nil
+        case .warning:
+            return "exclamationmark.triangle"
+        case .error:
+            return "xmark.octagon"
+        }
+    }
+
+    var accessibilityLabelKey: String {
+        switch self {
+        case .none:
+            return "No Component Problems"
+        case .warning:
+            return "Component Warning"
+        case .error:
+            return "Component Error"
+        }
+    }
+}
+
+struct PrismInstanceComponent: Identifiable, Equatable, Hashable, Sendable {
+    let id: String
+    let name: String
+    let version: String
+    let enabled: Bool
+    let canBeDisabled: Bool
+    let dependencyOnly: Bool
+    let important: Bool
+    let custom: Bool
+    let problemSeverity: PrismInstanceComponentProblemSeverity
+    let problemDescriptions: [String]
+
+    init?(bridgeComponent: PRInstanceComponent) {
+        let identifier = bridgeComponent.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = bridgeComponent.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let version = bridgeComponent.version.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !identifier.isEmpty,
+              !name.isEmpty,
+              let problemSeverity = PrismInstanceComponentProblemSeverity(
+                bridgeSeverity: bridgeComponent.problemSeverity),
+              bridgeComponent.canBeDisabled || bridgeComponent.enabled else {
+            return nil
+        }
+
+        self.id = identifier
+        self.name = name
+        self.version = version
+        self.enabled = bridgeComponent.enabled
+        self.canBeDisabled = bridgeComponent.canBeDisabled
+        self.dependencyOnly = bridgeComponent.dependencyOnly
+        self.important = bridgeComponent.important
+        self.custom = bridgeComponent.custom
+        self.problemSeverity = problemSeverity
+        self.problemDescriptions = bridgeComponent.problemDescriptions
+    }
+
+    var displayVersion: String {
+        version.isEmpty ? "Not Available" : version
+    }
+
+    var stateKey: String {
+        if !canBeDisabled || important || dependencyOnly {
+            return custom ? "Custom Required" : "Required"
+        }
+        if custom {
+            return enabled ? "Custom Enabled" : "Custom Disabled"
+        }
+        return enabled ? "Enabled" : "Disabled"
+    }
+
+    var accessibilityValueKey: String {
+        switch problemSeverity {
+        case .none:
+            return stateKey
+        case .warning:
+            return "Component Has a Warning"
+        case .error:
+            return "Component Has an Error"
+        }
+    }
+}
+
+struct PrismInstanceComponentsFailure: Equatable, Sendable {
+    let instanceIdentifier: String
+    let localizationKey: String
+    let substitutionValues: [String: String]
+    let diagnosticText: String?
+    let recoveryAction: PrismInstanceDetailsRecoveryAction
+    let partialChangesRolledBack: Bool
+
+    var isRetryAvailable: Bool {
+        recoveryAction == .retry
+    }
+}
+
+enum PrismInstanceComponentsState: Equatable, Sendable {
+    case loading(identifier: String)
+    case empty
+    case failed(PrismInstanceComponentsFailure)
+    case content([PrismInstanceComponent])
+}
+
+@MainActor
+final class PrismInstanceComponentsModel: ObservableObject {
+    @Published private(set) var state: PrismInstanceComponentsState = .empty
+    @Published private(set) var searchText = ""
+    @Published private(set) var selectedComponentID: String?
+
+    private let onLoad: ((String) -> Void)?
+    private var activeIdentifier: String?
+
+    init(onLoad: ((String) -> Void)? = nil) {
+        self.onLoad = onLoad
+    }
+
+    var components: [PrismInstanceComponent] {
+        guard case .content(let components) = state else {
+            return []
+        }
+        return components
+    }
+
+    var visibleComponents: [PrismInstanceComponent] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else {
+            return components
+        }
+
+        return components.filter { component in
+            let searchableValues = [
+                component.id,
+                component.name,
+                component.version,
+                component.displayVersion,
+                component.problemDescriptions.joined(separator: " "),
+            ]
+            return searchableValues.contains { $0.lowercased().contains(query) }
+        }
+    }
+
+    var failure: PrismInstanceComponentsFailure? {
+        guard case .failed(let failure) = state else {
+            return nil
+        }
+        return failure
+    }
+
+    @discardableResult
+    func beginLoading(identifier: String) -> Bool {
+        let normalizedIdentifier = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedIdentifier.isEmpty else {
+            return false
+        }
+
+        activeIdentifier = normalizedIdentifier
+        state = .loading(identifier: normalizedIdentifier)
+        searchText = ""
+        selectedComponentID = nil
+        onLoad?(normalizedIdentifier)
+        return true
+    }
+
+    @discardableResult
+    func apply(components bridgeComponents: [PRInstanceComponent]) -> Bool {
+        guard activeIdentifier != nil else {
+            return false
+        }
+
+        var converted: [PrismInstanceComponent] = []
+        var identifiers = Set<String>()
+        for bridgeComponent in bridgeComponents {
+            guard let component = PrismInstanceComponent(bridgeComponent: bridgeComponent),
+                  identifiers.insert(component.id).inserted else {
+                return false
+            }
+            converted.append(component)
+        }
+
+        selectedComponentID = nil
+        state = converted.isEmpty ? .empty : .content(converted)
+        return true
+    }
+
+    @discardableResult
+    func apply(error: PRBridgeError, instanceIdentifier: String) -> Bool {
+        let normalizedIdentifier = instanceIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let localizationKey = error.localizationKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedIdentifier.isEmpty,
+              !localizationKey.isEmpty,
+              activeIdentifier == nil || activeIdentifier == normalizedIdentifier else {
+            return false
+        }
+
+        activeIdentifier = normalizedIdentifier
+        selectedComponentID = nil
+        state = .failed(
+            PrismInstanceComponentsFailure(
+                instanceIdentifier: normalizedIdentifier,
+                localizationKey: localizationKey,
+                substitutionValues: error.substitutionValues,
+                diagnosticText: error.diagnosticText,
+                recoveryAction: error.recoveryKind == .retry ? .retry : .none,
+                partialChangesRolledBack: error.partialChangesRolledBack
+            )
+        )
+        return true
+    }
+
+    func setSearchText(_ searchText: String) {
+        self.searchText = searchText
+        if let selectedComponentID, !visibleComponents.contains(where: { $0.id == selectedComponentID }) {
+            self.selectedComponentID = nil
+        }
+    }
+
+    func selectComponent(_ identifier: String?) {
+        guard let identifier,
+              visibleComponents.contains(where: { $0.id == identifier }) else {
+            selectedComponentID = nil
+            return
+        }
+        selectedComponentID = identifier
+    }
+
+    @discardableResult
+    func retry() -> Bool {
+        guard case .failed(let failure) = state, failure.isRetryAvailable else {
+            return false
+        }
+        return beginLoading(identifier: failure.instanceIdentifier)
+    }
+
+    func clear() {
+        activeIdentifier = nil
+        state = .empty
+        searchText = ""
+        selectedComponentID = nil
+    }
+}
+
 enum PrismInstanceDetailsRecoveryAction: String, Equatable, Sendable {
     case retry
     case none

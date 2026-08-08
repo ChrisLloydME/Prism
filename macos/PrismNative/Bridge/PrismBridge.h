@@ -45,6 +45,8 @@ typedef void (^PRInstanceChangesCompletionHandler)(NSArray<PRInstanceChange *> *
                                                     PRBridgeError * _Nullable error);
 typedef void (^PRInstanceDetailsCompletionHandler)(PRInstanceDetails * _Nullable details,
                                                     PRBridgeError * _Nullable error);
+typedef void (^PRInstanceComponentsCompletionHandler)(NSArray<PRInstanceComponent *> * _Nullable components,
+                                                       PRBridgeError * _Nullable error);
 typedef void (^PRInstanceCommandCompletionHandler)(PRInstanceCommandResult * _Nullable result,
                                                     PRBridgeError * _Nullable error);
 typedef void (^PRInstanceNotesUpdateCompletionHandler)(PRInstanceNotesUpdateResult * _Nullable result,
@@ -100,6 +102,12 @@ typedef void (^PRInstanceSettingsUpdateCompletionHandler)(PRInstanceSettingsUpda
 /// Loads immutable metadata and notes for one stable instance identifier.
 - (nullable PRBridgeObservationToken *)loadInstanceDetailsWithIdentifier:(NSString *)identifier
                                                                  completion:(PRInstanceDetailsCompletionHandler)completion;
+
+/// Loads the ordered, immutable version/component list for one stable
+/// instance identifier. The adapter preserves PackProfile order; no Qt model
+/// or file ownership crosses the bridge.
+- (nullable PRBridgeObservationToken *)loadInstanceComponentsWithIdentifier:(NSString *)identifier
+                                                                   completion:(PRInstanceComponentsCompletionHandler)completion;
 
 /// Loads one immutable task snapshot by stable identifier. Unknown tasks and
 /// lifecycle failures are returned as stable bridge errors; the completion

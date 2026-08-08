@@ -35,6 +35,26 @@ struct FrontendInstanceDetailsSnapshot final {
     bool hasStableIdentifier() const noexcept { return !id.empty(); }
 };
 
+enum class FrontendInstanceComponentProblemSeverity : std::uint8_t { None, Warning, Error };
+
+/// Ordered, immutable component data for the native instance version list.
+/// The order is meaningful to PackProfile and must be preserved by adapters.
+/// File paths, Qt models, and component ownership remain outside this value.
+struct FrontendInstanceComponentSnapshot final {
+    std::string id;
+    std::string name;
+    std::string version;
+    bool enabled = true;
+    bool canBeDisabled = false;
+    bool dependencyOnly = false;
+    bool important = false;
+    bool custom = false;
+    FrontendInstanceComponentProblemSeverity problemSeverity = FrontendInstanceComponentProblemSeverity::None;
+    std::vector<std::string> problemDescriptions;
+
+    bool hasStableIdentifier() const noexcept { return !id.empty(); }
+};
+
 enum class FrontendInstanceChangeKind : std::uint8_t { Added, Updated, Removed };
 
 enum class FrontendLifecycleState : std::uint8_t { Running, ShuttingDown, Stopped };
@@ -196,6 +216,8 @@ struct FrontendRuntimeDependencies final {
     using InstanceSnapshotLoader = std::function<std::vector<FrontendInstanceSnapshot>(const std::filesystem::path&)>;
     using InstanceDetailsLoader =
         std::function<std::optional<FrontendInstanceDetailsSnapshot>(const std::filesystem::path&, const std::string&)>;
+    using InstanceComponentsLoader = std::function<std::optional<std::vector<FrontendInstanceComponentSnapshot>>(
+        const std::filesystem::path&, const std::string&)>;
     using InstanceChangeLoader = std::function<std::vector<FrontendInstanceChange>(const std::filesystem::path&)>;
     using InstanceCommand = std::function<FrontendInstanceCommandResult(const std::filesystem::path&, const std::string&)>;
     using InstanceNotesUpdater = std::function<FrontendInstanceNotesUpdateResult(
@@ -215,6 +237,7 @@ struct FrontendRuntimeDependencies final {
     Shutdown shutdown;
     InstanceSnapshotLoader loadInstanceSnapshots;
     InstanceDetailsLoader loadInstanceDetails;
+    InstanceComponentsLoader loadInstanceComponents;
     InstanceChangeLoader loadInstanceChanges;
     InstanceCommand launchInstance;
     InstanceCommand stopInstance;
@@ -253,6 +276,8 @@ class FrontendFacade final {
     bool shutdown() noexcept;
     std::vector<FrontendInstanceSnapshot> instanceSnapshots() const;
     std::optional<FrontendInstanceDetailsSnapshot> instanceDetails(const std::string& instanceIdentifier) const;
+    std::optional<std::vector<FrontendInstanceComponentSnapshot>> instanceComponents(
+        const std::string& instanceIdentifier) const;
     std::vector<FrontendInstanceChange> instanceChanges() const;
     FrontendInstanceCommandResult launchInstance(const std::string& instanceIdentifier) const;
     FrontendInstanceCommandResult stopInstance(const std::string& instanceIdentifier) const;

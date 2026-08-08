@@ -93,6 +93,40 @@ typedef NS_ENUM(NSInteger, PRInstanceNotesUpdateOutcome) {
 
 @end
 
+typedef NS_ENUM(NSInteger, PRInstanceComponentProblemSeverity) {
+    PRInstanceComponentProblemSeverityNone = 0,
+    PRInstanceComponentProblemSeverityWarning,
+    PRInstanceComponentProblemSeverityError,
+};
+
+/// Immutable ordered component data for the native version list.
+@interface PRInstanceComponent : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithIdentifier:(NSString *)identifier
+                                        name:(NSString *)name
+                                     version:(NSString *)version
+                                     enabled:(BOOL)enabled
+                              canBeDisabled:(BOOL)canBeDisabled
+                              dependencyOnly:(BOOL)dependencyOnly
+                                   important:(BOOL)important
+                                      custom:(BOOL)custom
+                            problemSeverity:(PRInstanceComponentProblemSeverity)problemSeverity
+                          problemDescriptions:(NSArray<NSString *> *)problemDescriptions NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, copy, readonly) NSString *name;
+@property(nonatomic, copy, readonly) NSString *version;
+@property(nonatomic, assign, readonly) BOOL enabled;
+@property(nonatomic, assign, readonly) BOOL canBeDisabled;
+@property(nonatomic, assign, readonly) BOOL dependencyOnly;
+@property(nonatomic, assign, readonly) BOOL important;
+@property(nonatomic, assign, readonly) BOOL custom;
+@property(nonatomic, assign, readonly) PRInstanceComponentProblemSeverity problemSeverity;
+@property(nonatomic, copy, readonly) NSArray<NSString *> *problemDescriptions;
+
+@end
+
 /// Immutable result for a fixture-safe launch or stop intent.
 @interface PRInstanceCommandResult : NSObject
 

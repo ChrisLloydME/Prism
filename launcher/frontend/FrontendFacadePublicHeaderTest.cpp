@@ -21,6 +21,9 @@ static_assert(static_cast<std::uint8_t>(FrontendInstanceNotesUpdateOutcome::Reje
 static_assert(static_cast<std::uint8_t>(FrontendInstanceJoinTarget::None) == 0);
 static_assert(static_cast<std::uint8_t>(FrontendInstanceJoinTarget::Server) == 1);
 static_assert(static_cast<std::uint8_t>(FrontendInstanceJoinTarget::World) == 2);
+static_assert(static_cast<std::uint8_t>(FrontendInstanceComponentProblemSeverity::None) == 0);
+static_assert(static_cast<std::uint8_t>(FrontendInstanceComponentProblemSeverity::Warning) == 1);
+static_assert(static_cast<std::uint8_t>(FrontendInstanceComponentProblemSeverity::Error) == 2);
 static_assert(static_cast<std::uint8_t>(FrontendInstanceSettingsUpdateOutcome::Succeeded) == 0);
 static_assert(static_cast<std::uint8_t>(FrontendInstanceSettingsUpdateOutcome::UnknownInstance) == 1);
 static_assert(static_cast<std::uint8_t>(FrontendInstanceSettingsUpdateOutcome::Rejected) == 2);
@@ -45,12 +48,16 @@ int main()
 {
     const FrontendInstanceSnapshot snapshot{ "header-contract", "Header Contract", "", "" };
     const FrontendInstanceDetailsSnapshot details{ "header-contract", "Header Contract", "", "", "Minecraft", "", true };
+    const FrontendInstanceComponentSnapshot component{ "component-contract", "Component Contract", "1.0", true,
+                                                       false, false, true, false,
+                                                       FrontendInstanceComponentProblemSeverity::None, {} };
     FrontendInstanceSettingsSnapshot settings;
     settings.id = "header-contract";
     const FrontendInstanceChange change{ FrontendInstanceChangeKind::Added, snapshot };
     const FrontendLogSnapshot logSnapshot{ "header-contract", {}, 0, 0, false };
     const FrontendRuntimeDependencies dependencies;
-    return snapshot.hasStableIdentifier() && details.hasStableIdentifier() && details.notesEditable
+    return snapshot.hasStableIdentifier() && details.hasStableIdentifier() && component.hasStableIdentifier()
+            && details.notesEditable
             && settings.hasStableIdentifier()
             && change.instance.id == snapshot.id && logSnapshot.hasStableIdentifier()
             && !dependencies.isComplete()

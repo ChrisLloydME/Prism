@@ -356,6 +356,156 @@ FrontendRuntimeDependencies baseFixtureDependencies()
                                                "rejected-instance:Rejected notes" }));
 }
 
+- (void)testFacadeComponentsPreservePackProfileOrderAndConvertProblemState
+{
+    auto loadedRootMatches = std::make_shared<std::atomic<bool>>(true);
+    auto componentCalls = std::make_shared<std::vector<std::string>>();
+    const std::string fixtureRoot = self.fixtureRootURL.path.UTF8String;
+
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.loadInstanceComponents = [loadedRootMatches, componentCalls, fixtureRoot](
+                                               const std::filesystem::path& root,
+                                               const std::string& identifier)
+        -> std::optional<std::vector<FrontendInstanceComponentSnapshot>> {
+        *loadedRootMatches = *loadedRootMatches && root == std::filesystem::path(fixtureRoot).lexically_normal();
+        componentCalls->push_back(identifier);
+        if (identifier == "empty-instance") {
+            return std::vector<FrontendInstanceComponentSnapshot>{};
+        }
+        if (identifier != "fixture.one") {
+            return std::nullopt;
+        }
+        return std::vector<FrontendInstanceComponentSnapshot>{
+            { "net.minecraft", "Minecraft", "1.20.1", true, false, false, true, false,
+              FrontendInstanceComponentProblemSeverity::None, {} },
+            { "net.fabricmc.fabric-loader", "Fabric Loader", "0.15.11", true, true, false, false, false,
+              FrontendInstanceComponentProblemSeverity::Warning, { "Fixture metadata is stale." } },
+            { "fixture.custom", "Custom Fixture", "1", false, true, false, false, true,
+              FrontendInstanceComponentProblemSeverity::Error, { "Custom component is not loaded." } },
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    XCTestExpectation *completion = [self expectationWithDescription:@"Facade components completed"];
+    __block NSArray<PRInstanceComponent *> *receivedComponents = nil;
+    __block PRBridgeError *receivedError = nil;
+    __block BOOL callbackRanOnMainThread = NO;
+    PRBridgeObservationToken *token = [bridge loadInstanceComponentsWithIdentifier:@" fixture.one "
+                                                                              completion:^(NSArray<PRInstanceComponent *> *components,
+                                                                                           PRBridgeError *error) {
+        callbackRanOnMainThread = [NSThread isMainThread];
+        receivedComponents = components;
+        receivedError = error;
+        [completion fulfill];
+    }];
+    XCTAssertNotNil(token);
+    [self waitForExpectations:@[ completion ] timeout:2.0];
+    XCTAssertTrue(callbackRanOnMainThread);
+    XCTAssertNil(receivedError);
+    XCTAssertTrue(token.isCancelled);
+    XCTAssertEqual(receivedComponents.count, (NSUInteger)3);
+    XCTAssertEqualObjects(receivedComponents[0].identifier, @"net.minecraft");
+    XCTAssertEqualObjects(receivedComponents[0].version, @"1.20.1");
+    XCTAssertTrue(receivedComponents[0].important);
+    XCTAssertTrue(receivedComponents[1].canBeDisabled);
+    XCTAssertEqual(receivedComponents[1].problemSeverity, PRInstanceComponentProblemSeverityWarning);
+    XCTAssertEqualObjects(receivedComponents[1].problemDescriptions.firstObject, @"Fixture metadata is stale.");
+    XCTAssertTrue(receivedComponents[2].custom);
+    XCTAssertFalse(receivedComponents[2].enabled);
+    XCTAssertEqual(receivedComponents[2].problemSeverity, PRInstanceComponentProblemSeverityError);
+
+    XCTestExpectation *emptyCompletion = [self expectationWithDescription:@"Empty components completed"];
+    receivedComponents = nil;
+    receivedError = nil;
+    PRBridgeObservationToken *emptyToken = [bridge loadInstanceComponentsWithIdentifier:@"empty-instance"
+                                                                                completion:^(NSArray<PRInstanceComponent *> *components,
+                                                                                             PRBridgeError *error) {
+        receivedComponents = components;
+        receivedError = error;
+        [emptyCompletion fulfill];
+    }];
+    XCTAssertNotNil(emptyToken);
+    [self waitForExpectations:@[ emptyCompletion ] timeout:2.0];
+    XCTAssertNil(receivedError);
+    XCTAssertNotNil(receivedComponents);
+    XCTAssertEqual(receivedComponents.count, (NSUInteger)0);
+
+    XCTestExpectation *missingCompletion = [self expectationWithDescription:@"Missing components completed"];
+    receivedComponents = nil;
+    receivedError = nil;
+    PRBridgeObservationToken *missingToken = [bridge loadInstanceComponentsWithIdentifier:@"unknown-instance"
+                                                                                  completion:^(NSArray<PRInstanceComponent *> *components,
+                                                                                               PRBridgeError *error) {
+        receivedComponents = components;
+        receivedError = error;
+        [missingCompletion fulfill];
+    }];
+    XCTAssertNotNil(missingToken);
+    [self waitForExpectations:@[ missingCompletion ] timeout:2.0];
+    XCTAssertNil(receivedComponents);
+    XCTAssertEqual(receivedError.code, PRBridgeErrorCodeDataUnavailable);
+    XCTAssertEqual(receivedError.recoveryKind, PRBridgeErrorRecoveryKindRetry);
+
+    XCTestExpectation *invalidCompletion = [self expectationWithDescription:@"Invalid components completed"];
+    receivedComponents = nil;
+    receivedError = nil;
+    PRBridgeObservationToken *invalidToken = [bridge loadInstanceComponentsWithIdentifier:@"   "
+                                                                                   completion:^(NSArray<PRInstanceComponent *> *components,
+                                                                                                PRBridgeError *error) {
+        receivedComponents = components;
+        receivedError = error;
+        [invalidCompletion fulfill];
+    }];
+    XCTAssertNotNil(invalidToken);
+    [self waitForExpectations:@[ invalidCompletion ] timeout:2.0];
+    XCTAssertNil(receivedComponents);
+    XCTAssertEqual(receivedError.code, PRBridgeErrorCodeInvalidInput);
+
+    XCTAssertTrue(*loadedRootMatches);
+    XCTAssertEqual(*componentCalls,
+                   (std::vector<std::string>{ "fixture.one", "empty-instance", "unknown-instance" }));
+}
+
+- (void)testFacadeComponentLoadCancellationSuppressesQueuedCompletion
+{
+    dispatch_semaphore_t loaderEntered = dispatch_semaphore_create(0);
+    dispatch_semaphore_t releaseLoader = dispatch_semaphore_create(0);
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.loadInstanceComponents = [loaderEntered, releaseLoader](
+                                               const std::filesystem::path&,
+                                               const std::string&)
+        -> std::optional<std::vector<FrontendInstanceComponentSnapshot>> {
+        dispatch_semaphore_signal(loaderEntered);
+        dispatch_semaphore_wait(releaseLoader, DISPATCH_TIME_FOREVER);
+        return std::vector<FrontendInstanceComponentSnapshot>{
+            { "fixture.component", "Fixture Component", "1", true, false, false, true, false,
+              FrontendInstanceComponentProblemSeverity::None, {} },
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    XCTestExpectation *completion = [self expectationWithDescription:@"Cancelled component completion"];
+    completion.inverted = YES;
+    PRBridgeObservationToken *token = [bridge loadInstanceComponentsWithIdentifier:@"fixture.one"
+                                                                              completion:^(__unused NSArray<PRInstanceComponent *> *components,
+                                                                                           __unused PRBridgeError *error) {
+        [completion fulfill];
+    }];
+    XCTAssertNotNil(token);
+    XCTAssertEqual(dispatch_semaphore_wait(loaderEntered, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)), 0);
+    XCTAssertTrue([token cancel]);
+    dispatch_semaphore_signal(releaseLoader);
+    [self waitForExpectations:@[ completion ] timeout:0.2];
+}
+
 - (void)testFacadeSettingsAreConvertedAndConfirmedOnMainActor
 {
     auto loadedRootMatches = std::make_shared<std::atomic<bool>>(true);

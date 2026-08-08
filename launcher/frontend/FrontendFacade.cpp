@@ -41,6 +41,29 @@ void validateInstanceDetailsSnapshot(const FrontendInstanceDetailsSnapshot& snap
     }
 }
 
+bool isKnownInstanceComponentProblemSeverity(FrontendInstanceComponentProblemSeverity severity) noexcept
+{
+    switch (severity) {
+        case FrontendInstanceComponentProblemSeverity::None:
+        case FrontendInstanceComponentProblemSeverity::Warning:
+        case FrontendInstanceComponentProblemSeverity::Error:
+            return true;
+    }
+    return false;
+}
+
+void validateInstanceComponents(const std::vector<FrontendInstanceComponentSnapshot>& components)
+{
+    std::set<std::string> identifiers;
+    for (const auto& component : components) {
+        if (!component.hasStableIdentifier() || component.name.empty()
+            || !isKnownInstanceComponentProblemSeverity(component.problemSeverity)
+            || (!component.canBeDisabled && !component.enabled) || !identifiers.insert(component.id).second) {
+            throw std::invalid_argument("Instance components require unique identifiers and valid state");
+        }
+    }
+}
+
 bool isKnownInstanceJoinTarget(FrontendInstanceJoinTarget target) noexcept
 {
     switch (target) {
@@ -404,6 +427,25 @@ std::optional<FrontendInstanceDetailsSnapshot> executeInstanceDetails(
     return details;
 }
 
+std::optional<std::vector<FrontendInstanceComponentSnapshot>> executeInstanceComponents(
+    const FrontendRuntimeDependencies::InstanceComponentsLoader& loader,
+    const std::filesystem::path& dataRoot,
+    const std::string& instanceIdentifier)
+{
+    if (instanceIdentifier.empty()) {
+        throw std::invalid_argument("Instance components require a stable identifier");
+    }
+    if (!loader) {
+        return std::nullopt;
+    }
+
+    auto components = loader(dataRoot, instanceIdentifier);
+    if (components.has_value()) {
+        validateInstanceComponents(*components);
+    }
+    return components;
+}
+
 FrontendInstanceNotesUpdateResult executeInstanceNotesUpdate(
     const FrontendRuntimeDependencies::InstanceNotesUpdater& updater,
     const std::filesystem::path& dataRoot,
@@ -581,6 +623,13 @@ std::optional<FrontendInstanceDetailsSnapshot> FrontendFacade::instanceDetails(c
 {
     ensureRunning(m_lifecycleState);
     return executeInstanceDetails(m_runtimeDependencies.loadInstanceDetails, m_dataRoot, instanceIdentifier);
+}
+
+std::optional<std::vector<FrontendInstanceComponentSnapshot>> FrontendFacade::instanceComponents(
+    const std::string& instanceIdentifier) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeInstanceComponents(m_runtimeDependencies.loadInstanceComponents, m_dataRoot, instanceIdentifier);
 }
 
 std::vector<FrontendInstanceChange> FrontendFacade::instanceChanges() const

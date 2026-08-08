@@ -228,6 +228,60 @@ int main()
     const bool missingDetailsPortsAreSafe = !emptyFacade.instanceDetails("fixture-one").has_value()
         && emptyFacade.updateInstanceNotes("fixture-one", "fixture notes").outcome == FrontendInstanceNotesUpdateOutcome::Rejected;
 
+    std::vector<std::string> componentCalls;
+    bool componentRootMatches = true;
+    auto componentDependencies = makeFixtureDependencies();
+    componentDependencies.loadInstanceComponents = [&](const std::filesystem::path& root, const std::string& identifier)
+        -> std::optional<std::vector<FrontendInstanceComponentSnapshot>> {
+        componentRootMatches = componentRootMatches && root == fixtureRoot.lexically_normal();
+        componentCalls.push_back(identifier);
+        if (identifier == "empty-instance") {
+            return std::vector<FrontendInstanceComponentSnapshot>{};
+        }
+        if (identifier != "fixture-one") {
+            return std::nullopt;
+        }
+        return std::vector<FrontendInstanceComponentSnapshot>{
+            { "net.minecraft", "Minecraft", "1.20.1", true, false, false, true, false,
+              FrontendInstanceComponentProblemSeverity::None, {} },
+            { "net.fabricmc.fabric-loader", "Fabric Loader", "0.15.11", true, true, false, false, false,
+              FrontendInstanceComponentProblemSeverity::Warning, { "Fixture metadata is stale." } },
+            { "fixture.custom", "Custom Fixture", "1", false, true, false, false, true,
+              FrontendInstanceComponentProblemSeverity::Error, { "Custom component is not loaded." } },
+        };
+    };
+    FrontendFacade componentFacade(fixtureRoot / "nested" / "..", std::move(componentDependencies));
+    const auto loadedComponents = componentFacade.instanceComponents("fixture-one");
+    const auto emptyComponents = componentFacade.instanceComponents("empty-instance");
+    const auto missingComponents = componentFacade.instanceComponents("unknown-instance");
+    const bool componentContract = loadedComponents.has_value() && loadedComponents->size() == 3
+        && (*loadedComponents)[0].id == "net.minecraft" && (*loadedComponents)[0].important
+        && (*loadedComponents)[1].canBeDisabled && (*loadedComponents)[1].problemSeverity
+            == FrontendInstanceComponentProblemSeverity::Warning
+        && (*loadedComponents)[2].custom && !(*loadedComponents)[2].enabled
+        && (*loadedComponents)[2].problemDescriptions.size() == 1 && emptyComponents.has_value()
+        && emptyComponents->empty() && !missingComponents.has_value() && componentRootMatches
+        && componentCalls == std::vector<std::string>{ "fixture-one", "empty-instance", "unknown-instance" };
+    const bool rejectedInvalidComponentIdentifier = throwsInvalidArgument([&componentFacade] {
+        (void) componentFacade.instanceComponents("");
+    });
+    const bool missingComponentPortIsSafe = !emptyFacade.instanceComponents("fixture-one").has_value();
+
+    auto invalidComponentDependencies = makeFixtureDependencies();
+    invalidComponentDependencies.loadInstanceComponents = [](const std::filesystem::path&, const std::string&)
+        -> std::optional<std::vector<FrontendInstanceComponentSnapshot>> {
+        return std::vector<FrontendInstanceComponentSnapshot>{
+            { "duplicate", "First", "1", true, false, false, false, false,
+              FrontendInstanceComponentProblemSeverity::None, {} },
+            { "duplicate", "Second", "2", true, false, false, false, false,
+              FrontendInstanceComponentProblemSeverity::None, {} },
+        };
+    };
+    FrontendFacade invalidComponentFacade(fixtureRoot, std::move(invalidComponentDependencies));
+    const bool rejectedInvalidComponents = throwsInvalidArgument([&invalidComponentFacade] {
+        (void) invalidComponentFacade.instanceComponents("fixture-one");
+    });
+
     std::vector<std::string> settingsLoadCalls;
     std::vector<std::string> settingsUpdateCalls;
     bool settingsRootMatches = true;
@@ -698,6 +752,10 @@ int main()
         && throwsLogicError([&settingsFacade, &requestedSettings] {
                (void) settingsFacade.updateInstanceSettings("fixture-one", requestedSettings);
            });
+    const bool rejectedPostShutdownComponentsWork = componentFacade.shutdown()
+        && throwsLogicError([&componentFacade] {
+               (void) componentFacade.instanceComponents("fixture-one");
+           });
 
     std::filesystem::remove(fixtureMarker, error);
     std::filesystem::remove(fixtureRoot, error);
@@ -711,7 +769,9 @@ int main()
                && missingTaskPortsAreSafe && rejectedPostShutdownTaskWork && rejectedInvalidTaskProgress
                && rejectedInvalidTaskSubtasks && rejectedInvalidTaskTerminalResult && rejectedInvalidSnapshot
                && rejectedInvalidDetails
-               && rejectedInvalidChange && logPrivacyAndBounds && longLogIsTruncated && missingLogPortIsSafe
+               && rejectedInvalidChange && componentContract && rejectedInvalidComponentIdentifier
+               && missingComponentPortIsSafe && rejectedInvalidComponents && rejectedPostShutdownComponentsWork
+               && logPrivacyAndBounds && longLogIsTruncated && missingLogPortIsSafe
                && rejectedEmptyRoot && rejectedRelativeRoot && rejectedIncompleteDependencies
                && lifecycleContract && callbacksRanExactlyOnce && destructorShutdownContract && !error
         ? 0

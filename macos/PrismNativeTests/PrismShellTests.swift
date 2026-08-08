@@ -57,6 +57,34 @@ final class PrismShellTests: XCTestCase {
         )
     }
 
+    private func makeInstanceComponent(
+        identifier: String,
+        name: String,
+        version: String,
+        enabled: Bool = true,
+        canBeDisabled: Bool = true,
+        dependencyOnly: Bool = false,
+        important: Bool = false,
+        custom: Bool = false,
+        problemSeverity: PRInstanceComponentProblemSeverity = .none,
+        problemDescriptions: [String] = []
+    ) throws -> PRInstanceComponent {
+        try XCTUnwrap(
+            PRInstanceComponent(
+                identifier: identifier,
+                name: name,
+                version: version,
+                enabled: enabled,
+                canBeDisabled: canBeDisabled,
+                dependencyOnly: dependencyOnly,
+                important: important,
+                custom: custom,
+                problemSeverity: problemSeverity,
+                problemDescriptions: problemDescriptions
+            )
+        )
+    }
+
     func testSidebarManifestHasStableSelectionAndAccessibilityMetadata() {
         let items = PrismShellSidebarItem.allCases
 
@@ -273,6 +301,161 @@ final class PrismShellTests: XCTestCase {
                 )
             )
         )
+    }
+
+    func testInstanceComponentsModelPreservesOrderAndFiltersVersionFields() throws {
+        var loadedIdentifiers: [String] = []
+        let model = PrismInstanceComponentsModel(onLoad: { loadedIdentifiers.append($0) })
+
+        XCTAssertTrue(model.beginLoading(identifier: " fixture.one "))
+        XCTAssertEqual(model.state, .loading(identifier: "fixture.one"))
+        XCTAssertEqual(loadedIdentifiers, ["fixture.one"])
+
+        let minecraft = try makeInstanceComponent(
+            identifier: "net.minecraft",
+            name: "Minecraft",
+            version: "1.20.1",
+            canBeDisabled: false,
+            important: true
+        )
+        let fabric = try makeInstanceComponent(
+            identifier: "net.fabricmc.fabric-loader",
+            name: "Fabric Loader",
+            version: "0.15.11",
+            problemSeverity: .warning,
+            problemDescriptions: ["Fixture metadata is stale."]
+        )
+        let custom = try makeInstanceComponent(
+            identifier: "fixture.custom",
+            name: "Custom Fixture",
+            version: "1",
+            enabled: false,
+            custom: true,
+            problemSeverity: .error,
+            problemDescriptions: ["Custom component is not loaded."]
+        )
+
+        XCTAssertTrue(model.apply(components: [minecraft, fabric, custom]))
+        XCTAssertEqual(model.components.map(\.id), ["net.minecraft", "net.fabricmc.fabric-loader", "fixture.custom"])
+        XCTAssertEqual(model.components[0].stateKey, "Required")
+        XCTAssertEqual(model.components[1].accessibilityValueKey, "Component Has a Warning")
+        XCTAssertEqual(model.components[2].displayVersion, "1")
+        XCTAssertEqual(model.components[2].stateKey, "Custom Disabled")
+
+        model.setSearchText("fabric")
+        XCTAssertEqual(model.visibleComponents.map(\.id), ["net.fabricmc.fabric-loader"])
+        model.setSearchText("stale")
+        XCTAssertEqual(model.visibleComponents.map(\.id), ["net.fabricmc.fabric-loader"])
+        model.selectComponent("net.fabricmc.fabric-loader")
+        XCTAssertEqual(model.selectedComponentID, "net.fabricmc.fabric-loader")
+        model.setSearchText("minecraft")
+        XCTAssertNil(model.selectedComponentID)
+
+        model.setSearchText("")
+        XCTAssertTrue(model.apply(components: []))
+        XCTAssertEqual(model.state, .empty)
+
+        XCTAssertTrue(model.beginLoading(identifier: "fixture.one"))
+        XCTAssertFalse(model.apply(components: [fabric, fabric]))
+        XCTAssertEqual(model.state, .loading(identifier: "fixture.one"))
+    }
+
+    func testInstanceComponentsModelSupportsRetryAndRejectsStaleOrInvalidResults() throws {
+        var loadRequests: [String] = []
+        let model = PrismInstanceComponentsModel(onLoad: { loadRequests.append($0) })
+        XCTAssertTrue(model.beginLoading(identifier: "fixture.one"))
+
+        let error = try XCTUnwrap(
+            PRBridgeError(
+                code: .dataUnavailable,
+                localizationKey: "instance.components.unavailable",
+                substitutionValues: ["instanceIdentifier": "fixture.one"],
+                diagnosticText: "fixture components unavailable",
+                recoveryKind: .retry,
+                partialChangesRolledBack: false
+            )
+        )
+        XCTAssertTrue(model.apply(error: error, instanceIdentifier: " fixture.one "))
+        XCTAssertEqual(model.failure?.localizationKey, "instance.components.unavailable")
+        XCTAssertTrue(model.failure?.isRetryAvailable == true)
+        XCTAssertTrue(model.retry())
+        XCTAssertEqual(model.state, .loading(identifier: "fixture.one"))
+        XCTAssertEqual(loadRequests, ["fixture.one", "fixture.one"])
+
+        let component = try makeInstanceComponent(
+            identifier: "fixture.component",
+            name: "Fixture Component",
+            version: "1",
+            canBeDisabled: false,
+            important: true
+        )
+        XCTAssertTrue(model.apply(components: [component]))
+        XCTAssertFalse(model.retry())
+        let invalidComponent = try XCTUnwrap(
+            PRInstanceComponent(
+                identifier: " ",
+                name: "Invalid",
+                version: "1",
+                enabled: true,
+                canBeDisabled: true,
+                dependencyOnly: false,
+                important: false,
+                custom: false,
+                problemSeverity: .none,
+                problemDescriptions: []
+            )
+        )
+        XCTAssertFalse(model.apply(components: [invalidComponent]))
+        XCTAssertEqual(model.components.map(\.id), ["fixture.component"])
+        XCTAssertFalse(model.apply(error: error, instanceIdentifier: "other.instance"))
+    }
+
+    func testInstanceComponentsSourceUsesNativeTableSearchAndRecoveryAPIs() throws {
+        let contentSource = try contentSource()
+        let shellModelSource = try shellModelSource()
+
+        for requiredToken in [
+            "PrismInstanceComponentsView",
+            "Table(model.visibleComponents)",
+            "TableColumn(\"Name\")",
+            "TableColumn(\"Version\")",
+            "TableColumn(\"State\")",
+            ".searchable(",
+            "ContentUnavailableView",
+            "ProgressView(\"Loading Versions and Components\")",
+            "prism.instance-components.table",
+            ".accessibilityLabel(",
+            ".accessibilityValue(",
+            ".help("
+        ] {
+            XCTAssertTrue(contentSource.contains(requiredToken), "Missing native component table API: \(requiredToken)")
+        }
+
+        for requiredToken in [
+            "PrismInstanceComponent",
+            "PrismInstanceComponentsModel",
+            "PRInstanceComponent",
+            "PrismInstanceComponentsState",
+            "PrismInstanceComponentsFailure",
+            "beginLoading(identifier:",
+            "apply(components bridgeComponents:",
+            "visibleComponents",
+            "retry()",
+            "problemSeverity",
+            "problemDescriptions"
+        ] {
+            XCTAssertTrue(shellModelSource.contains(requiredToken), "Missing component state contract: \(requiredToken)")
+        }
+
+        XCTAssertTrue(contentSource.contains("Versions and Components"))
+        XCTAssertTrue(contentSource.contains("prism.instance-details.components-link"))
+        XCTAssertFalse(contentSource.contains("Canvas("))
+        XCTAssertFalse(contentSource.contains("draw("))
+        XCTAssertFalse(contentSource.contains("Path("))
+        XCTAssertFalse(shellModelSource.contains("QWidget"))
+        XCTAssertFalse(shellModelSource.contains("QDialog"))
+        XCTAssertFalse(shellModelSource.contains("Unmanaged"))
+        XCTAssertFalse(shellModelSource.contains("UnsafeMutable"))
     }
 
     func testInstanceSettingsModelConfirmsEditsAndPreservesDraftOnRejectedOrFailedSave() throws {

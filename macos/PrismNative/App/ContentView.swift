@@ -5,6 +5,7 @@ struct ContentView: View {
     @StateObject private var shellModel = PrismShellModel()
     @StateObject private var instanceDetailsModel = PrismInstanceDetailsModel()
     @StateObject private var instanceSettingsModel = PrismInstanceSettingsModel()
+    @StateObject private var instanceComponentsModel = PrismInstanceComponentsModel()
     @StateObject private var logModel = PrismTaskLogPresentationModel()
     @ObservedObject private var commandModel: PrismCommandModel
     @ObservedObject private var taskModel: PrismTaskPresentationModel
@@ -59,7 +60,11 @@ struct ContentView: View {
                     PrismTaskLogFailureView(failure: logFailure, onRetry: { _ = logModel.retry() })
                 }
                 if instanceDetailsModel.showsDetail {
-                    PrismInstanceDetailsView(model: instanceDetailsModel, settingsModel: instanceSettingsModel)
+                    PrismInstanceDetailsView(
+                        model: instanceDetailsModel,
+                        settingsModel: instanceSettingsModel,
+                        componentsModel: instanceComponentsModel
+                    )
                 } else {
                     PrismShellDetailView(
                         state: shellModel.detailState,
@@ -367,6 +372,7 @@ private extension PrismInstanceDetailsModel {
 private struct PrismInstanceDetailsView: View {
     @ObservedObject var model: PrismInstanceDetailsModel
     @ObservedObject var settingsModel: PrismInstanceSettingsModel
+    @ObservedObject var componentsModel: PrismInstanceComponentsModel
 
     var body: some View {
         switch model.state {
@@ -431,6 +437,14 @@ private struct PrismInstanceDetailsView: View {
                     .accessibilityLabel(Text("Open Instance Settings"))
                     .help(Text("Edit standard settings for this instance."))
                     .accessibilityIdentifier("prism.instance-details.settings-link")
+                    NavigationLink {
+                        PrismInstanceComponentsView(model: componentsModel)
+                    } label: {
+                        Label("Versions and Components", systemImage: "shippingbox")
+                    }
+                    .accessibilityLabel(Text("Open Versions and Components"))
+                    .help(Text("Review the ordered versions and components for this instance."))
+                    .accessibilityIdentifier("prism.instance-details.components-link")
                 }
 
                 Section("Notes") {
@@ -486,6 +500,82 @@ private struct PrismInstanceDetailsView: View {
             .formStyle(.grouped)
             .navigationTitle(details.name)
             .accessibilityIdentifier("prism.instance-details.form")
+        }
+    }
+}
+
+@MainActor
+struct PrismInstanceComponentsView: View {
+    @ObservedObject var model: PrismInstanceComponentsModel
+
+    var body: some View {
+        switch model.state {
+        case .loading:
+            ProgressView("Loading Versions and Components")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityLabel(Text("Loading Versions and Components"))
+                .accessibilityIdentifier("prism.instance-components.loading-state")
+        case .empty:
+            ContentUnavailableView(
+                "No Versions or Components",
+                systemImage: "shippingbox",
+                description: Text("This instance has no version or component entries to display.")
+            )
+            .accessibilityIdentifier("prism.instance-components.empty-state")
+        case .failed(let failure):
+            ContentUnavailableView {
+                Label(LocalizedStringKey(failure.localizationKey), systemImage: "exclamationmark.triangle")
+            } description: {
+                Text(LocalizedStringKey(failure.localizationKey))
+            } actions: {
+                if failure.isRetryAvailable {
+                    Button {
+                        _ = model.retry()
+                    } label: {
+                        Text(LocalizedStringKey(failure.recoveryAction.titleKey))
+                    }
+                    .accessibilityLabel(Text(LocalizedStringKey(failure.recoveryAction.accessibilityLabelKey)))
+                    .help(Text(LocalizedStringKey(failure.recoveryAction.helpKey)))
+                }
+            }
+            .accessibilityIdentifier("prism.instance-components.failed-state")
+        case .content:
+            Table(model.visibleComponents) {
+                TableColumn("Name") { component in
+                    HStack(spacing: 6) {
+                        if let systemImage = component.problemSeverity.systemImage {
+                            Image(systemName: systemImage)
+                                .accessibilityLabel(Text(LocalizedStringKey(component.problemSeverity.accessibilityLabelKey)))
+                        }
+                        Text(component.name)
+                    }
+                    .accessibilityLabel(Text(component.name))
+                    .accessibilityValue(Text(LocalizedStringKey(component.accessibilityValueKey)))
+                    .accessibilityIdentifier("prism.instance-component.\(component.id).name")
+                }
+                TableColumn("Version") { component in
+                    Text(component.displayVersion)
+                        .textSelection(.enabled)
+                        .accessibilityLabel(Text("Version"))
+                        .accessibilityValue(Text(component.displayVersion))
+                        .accessibilityIdentifier("prism.instance-component.\(component.id).version")
+                }
+                TableColumn("State") { component in
+                    Text(LocalizedStringKey(component.stateKey))
+                        .accessibilityLabel(Text("Component State"))
+                        .accessibilityValue(Text(LocalizedStringKey(component.stateKey)))
+                        .accessibilityIdentifier("prism.instance-component.\(component.id).state")
+                }
+            }
+            .searchable(
+                text: Binding(
+                    get: { model.searchText },
+                    set: { model.setSearchText($0) }
+                ),
+                prompt: Text("Search Versions and Components")
+            )
+            .navigationTitle("Versions and Components")
+            .accessibilityIdentifier("prism.instance-components.table")
         }
     }
 }
