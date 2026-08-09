@@ -2210,7 +2210,7 @@ Verification and storage: `rg` source-composition, native-boundary, retained-cal
 
 Risk and limits: this audit is not permission to remove Qt callers or claim feature-complete production behavior. The largest remaining risk is the gap between the extensive fixture contracts and the absent live adapter/composition layer; the next unit may address packaging/resource ownership only within the native target and must not hide that gap. M10-W3 through M10-W6 remain queued until their stated predecessors and parity evidence are complete.
 
-Commit: pending; this entry is finalized by the commit for M10-W1.
+Commit: `a6c1d5614` (audit); this entry is finalized in the follow-up ledger commit.
 
 Next after completion: `M10-W2`, move packaging, resources, versioning, icons, entitlements, and update metadata to the native target without changing the Bundle ID.
 
@@ -2320,6 +2320,7 @@ Prerequisite: M10-W5 complete. Next after completion: none; only then can the mi
 | `818b18a1b` | Added the bounded native authentication QR content path, E2 exception record, R1-R4 disposition, and safe-state blocker evidence; M9-W4 is not complete | Debug build; direct M9-W4 XCTest 2/2; Debug Bundle ID `com.lloydME.Prism`; universal Debug app; Objective-C/Objective-C++ syntax; native boundary/content scans; full Debug 164/165 with the existing task-log failure; Release/Xcode worker recovery required; `git diff --check` |
 | `5eea92583` | S0-W1 bundle-scoped production storage isolation, exact bridge identity composition, containment guards, and bounded generated-build cleanup | Focused native tests 16/16; full Debug/Release XCTest 168/168; Debug/Release builds; C++ facade/public-header CTest 2/2; Bundle ID `com.lloydME.Prism`; Objective-C/Objective-C++ syntax; persistence/path and Swift boundary scans; final storage inventory; `git diff --check` |
 | `e876565c5` | Finalized M9-W4 R1-R4 rendering disposition and E2 QR exception acceptance after the former Xcode/task-log blocker resolved | Shared-path M9-W4 focused XCTest 2/2; full Debug/Release XCTest 168/168; Debug/Release builds; Bundle ID `com.lloydME.Prism`; no-screenshot/non-launch rendering and accessibility evidence; `git diff --check` |
+| `a6c1d5614` | Recorded the M10-W1 final parity audit, mixed acceptance status, explicit cutover prerequisites, and the sole next ready M10-W2 unit | Shared facade CMake/CTest 5/5; shared Debug/Release builds; full native XCTest 168/168 in both configurations; Bundle ID `com.lloydME.Prism`; ObjC/ObjC++ syntax; composition/retained-caller/localization/persistence scans; storage inventory; `git diff --check` |
 
 ## Current architecture findings
 
