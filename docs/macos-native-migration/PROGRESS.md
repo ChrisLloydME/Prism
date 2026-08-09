@@ -8,7 +8,7 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: 10. Native cutover
 
-Active work unit: M10-W3
+Active work unit: none
 
 Next ready work unit: none (M10-W3 is complete; M10-W4 remains queued until the M10-W1 parity gaps are resolved)
 
@@ -24,7 +24,7 @@ Build-storage constraint added 2026-08-09: all future work must reuse `.derivedd
 | Native product name is `Prism` | complete | Commit `6de92da18`; built Info.plist checked with `plutil` |
 | Production Application Support root is exactly `~/Library/Application Support/com.lloydME.Prism` | complete | `PRApplicationIdentity` appends only `com.lloydME.Prism`; production `PrismNativeRuntime` injects that identity into `PRPrismBridge`; synthetic exact-path and containment tests pass |
 | No legacy fallback, automatic import, parent scan, shared preferences, or shared Keychain service exists | complete for current native composition | Positive/negative identity tests, production-source assertions, and native forbidden persistence/path scans pass; no real support directory, UserDefaults suite, or Keychain service was accessed |
-| Generated build storage is bounded and incrementally reused | complete | Only `.deriveddata-prism-native` (644M) and `.deriveddata-prism-native-backend` (143M) remain; the two latest shared xcresult bundles are retained and the M10-W3 isolated clean tree is deleted |
+| Generated build storage is bounded and incrementally reused | complete | Only `.deriveddata-prism-native` (642M) and `.deriveddata-prism-native-backend` (143M) remain; the two latest shared xcresult bundles are retained and the M10-W3 isolated clean tree is deleted |
 | Native Xcode target exists | complete | Commit `5172b3a75` |
 | Objective-C++ public bridge exposes only Foundation types | complete | Commit `5172b3a75`; M1-W3 automated public-header scan and forbidden-token negative test |
 | Native tests target exists | complete | M1-W1; shared scheme and standalone `PrismNativeTests.xctest` target |
