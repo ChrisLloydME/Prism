@@ -94,7 +94,7 @@ Risks and remaining non-blocking limits: native feature models are still fixture
 
 Completion requirement: all required S0-W1 evidence passes, the safety baseline is complete, exact generated-output cleanup is recorded, and this unit is committed with the detailed PLAN commit body. Only then may M9-W4 return to blocked/active status; it remains blocked and was not activated in this unit.
 
-Commit: pending; final hash will be added by the immediate progress-ledger finalization commit.
+Commit: `5eea92583` (implementation); this entry is finalized in the following progress-ledger commit.
 
 Next after completion: M9-W4 remains blocked; no ready work unit exists. Do not activate another unit in the same turn.
 
@@ -2221,7 +2221,7 @@ Next after recovery: rerun PLAN §9 Debug and Release builds, full native tests,
 | `7515679e4` | Added native skin management and SceneKit domain-content preview with typed Foundation request/result values, standard system controls, cancellation/recovery contracts, bounded image caching, Minecraft UV geometry, and non-launch fixture evidence | Focused skin XCTest 7/7; full Debug/Release XCTest 163/163; Debug/Release builds; Bundle ID `com.lloydME.Prism`; universal `x86_64 arm64` native products; Objective-C/Objective-C++ syntax; accessibility/localization/keyboard/boundary/no-drawing/UV/cache scans; `git diff --check` |
 | `7b2b16f56` | Completed M9-W3 source-backed retained-surface audit, explicit blocker/owner matrix, and M9-W4 rendering-candidate inventory without changing production composition | Legacy caller/class/rendering inventory; native-target forbidden legacy scan; Debug/Release builds and `PrismNativeTests` 163/163; Bundle ID `com.lloydME.Prism`; universal `x86_64 arm64` artifacts; Objective-C/Objective-C++ syntax; accessibility/keyboard/localization/boundary/no-drawing scans; `git diff --check` |
 | `818b18a1b` | Added the bounded native authentication QR content path, E2 exception record, R1-R4 disposition, and safe-state blocker evidence; M9-W4 is not complete | Debug build; direct M9-W4 XCTest 2/2; Debug Bundle ID `com.lloydME.Prism`; universal Debug app; Objective-C/Objective-C++ syntax; native boundary/content scans; full Debug 164/165 with the existing task-log failure; Release/Xcode worker recovery required; `git diff --check` |
-| pending | S0-W1 bundle-scoped production storage isolation, exact bridge identity composition, containment guards, and bounded generated-build cleanup | Focused native tests 16/16; full Debug/Release XCTest 168/168; Debug/Release builds; C++ facade/public-header CTest 2/2; Bundle ID `com.lloydME.Prism`; Objective-C/Objective-C++ syntax; persistence/path and Swift boundary scans; final storage inventory; `git diff --check` |
+| `5eea92583` | S0-W1 bundle-scoped production storage isolation, exact bridge identity composition, containment guards, and bounded generated-build cleanup | Focused native tests 16/16; full Debug/Release XCTest 168/168; Debug/Release builds; C++ facade/public-header CTest 2/2; Bundle ID `com.lloydME.Prism`; Objective-C/Objective-C++ syntax; persistence/path and Swift boundary scans; final storage inventory; `git diff --check` |
 
 ## Current architecture findings
 
