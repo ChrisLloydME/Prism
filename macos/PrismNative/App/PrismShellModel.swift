@@ -2552,6 +2552,129 @@ final class PrismLaunchCoordinator: ObservableObject {
     }
 }
 
+enum PrismInstanceAcquisitionSurface: String, Identifiable, Sendable {
+    case creation
+    case importInstance
+
+    var id: String { rawValue }
+}
+
+/// Main-actor coordinator for the production creation/import forms. Swift
+/// owns only Foundation DTOs and presentation state; the bridge owns the
+/// backend task, staging tree, download port, cancellation token, and commit.
+@MainActor
+final class PrismInstanceAcquisitionCoordinator: ObservableObject {
+    @Published var presentedSurface: PrismInstanceAcquisitionSurface?
+
+    private weak var bridge: PRPrismBridge?
+    private weak var creationModel: PrismVanillaCreationModel?
+    private weak var importModel: PrismInstanceImportModel?
+    private var creationRequest: PRBridgeObservationToken?
+    private var importRequest: PRBridgeObservationToken?
+
+    init(bridge: PRPrismBridge?) {
+        self.bridge = bridge
+    }
+
+    func bind(creationModel: PrismVanillaCreationModel, importModel: PrismInstanceImportModel) {
+        self.creationModel = creationModel
+        self.importModel = importModel
+    }
+
+    func handle(command: PrismCommandID) {
+        switch command {
+        case .newInstance:
+            presentCreation()
+        case .importInstance:
+            presentImport()
+        default:
+            break
+        }
+    }
+
+    func presentCreation() {
+        importRequest?.cancel()
+        importRequest = nil
+        creationModel?.reset()
+        presentedSurface = .creation
+    }
+
+    func presentImport() {
+        creationRequest?.cancel()
+        creationRequest = nil
+        importModel?.reset()
+        presentedSurface = .importInstance
+    }
+
+    func create(request: PRVanillaCreationRequest, generation: Int) {
+        guard let bridge, let model = creationModel else {
+            return
+        }
+        creationRequest?.cancel()
+        creationRequest = bridge.createVanillaInstance(
+            with: request,
+            progress: { [weak model] status in
+                Task { @MainActor [weak model] in
+                    _ = model?.apply(progress: status, generation: generation)
+                }
+            },
+            completion: { [weak self, weak model] result, error in
+                Task { @MainActor [weak self, weak model] in
+                    guard let self, let model else { return }
+                    self.creationRequest = nil
+                    if let error {
+                        _ = model.apply(error: error, generation: generation)
+                    } else if let result {
+                        _ = model.apply(result: result, generation: generation)
+                    }
+                }
+            }
+        )
+    }
+
+    func importInstance(request: PRInstanceImportRequest, generation: Int) {
+        guard let bridge, let model = importModel else {
+            return
+        }
+        importRequest?.cancel()
+        importRequest = bridge.importInstance(
+            with: request,
+            progress: { [weak model] status in
+                Task { @MainActor [weak model] in
+                    _ = model?.apply(progress: status, generation: generation)
+                }
+            },
+            completion: { [weak self, weak model] result, error in
+                Task { @MainActor [weak self, weak model] in
+                    guard let self, let model else { return }
+                    self.importRequest = nil
+                    if let error {
+                        _ = model.apply(error: error, generation: generation)
+                    } else if let result {
+                        _ = model.apply(result: result, generation: generation)
+                    }
+                }
+            }
+        )
+    }
+
+    func cancelCreation() {
+        creationRequest?.cancel()
+        creationRequest = nil
+    }
+
+    func cancelImport() {
+        importRequest?.cancel()
+        importRequest = nil
+    }
+
+    func dismiss() {
+        cancelCreation()
+        cancelImport()
+        presentedSurface = nil
+    }
+}
+
 enum ProductionTaskIdentifier {
     static func launch(for instanceIdentifier: String) -> String {
         "launch.\(instanceIdentifier)"

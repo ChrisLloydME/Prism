@@ -40,6 +40,36 @@ final class PrismVanillaCreationTests: XCTestCase {
         XCTAssertNil(model.draft.loaderVersionDescriptor)
     }
 
+    func testProductionDraftAcceptsTypedMetadataWithoutFixtureOptions() throws {
+        var receivedRequest: PRVanillaCreationRequest?
+        let model = PrismVanillaCreationModel(
+            versions: [],
+            loaders: [],
+            icons: ["default"],
+            initialDraft: PrismVanillaCreationDraft(
+                versionDescriptor: "",
+                versionName: "",
+                loaderIdentifier: nil,
+                loaderVersionDescriptor: nil,
+                name: "",
+                groupID: "",
+                iconKey: "default"
+            ),
+            onCreate: { request, _ in receivedRequest = request }
+        )
+
+        XCTAssertFalse(model.canCreate)
+        model.draft.versionDescriptor = "1.20.1"
+        model.draft.versionName = "Minecraft 1.20.1"
+        model.draft.name = "Native Instance"
+        XCTAssertTrue(model.canCreate)
+        XCTAssertTrue(model.create())
+        XCTAssertEqual(receivedRequest?.versionDescriptor, "1.20.1")
+        XCTAssertEqual(receivedRequest?.versionName, "Minecraft 1.20.1")
+        XCTAssertEqual(receivedRequest?.name, "Native Instance")
+        XCTAssertNil(receivedRequest?.loaderIdentifier)
+    }
+
     func testCreateForwardsCopiedRequestAndSerializesWhileCreating() throws {
         var receivedRequest: PRVanillaCreationRequest?
         var receivedGeneration: Int?

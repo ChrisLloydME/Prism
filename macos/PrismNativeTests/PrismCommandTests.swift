@@ -92,6 +92,15 @@ final class PrismCommandTests: XCTestCase {
         XCTAssertEqual(invoked, [.launchSelected, .settings])
     }
 
+    func testCommandModelRoutesCreationAndImportToNativeAcquisitionBoundary() {
+        var invoked: [PrismCommandID] = []
+        let model = PrismCommandModel(onCommand: { invoked.append($0) })
+
+        XCTAssertTrue(model.invoke(.newInstance))
+        XCTAssertTrue(model.invoke(.importInstance))
+        XCTAssertEqual(invoked, [.newInstance, .importInstance])
+    }
+
     func testCommandModelRoutesLaunchAndStopWithStableInstanceIntents() {
         var intents: [PrismInstanceCommandIntent] = []
         let model = PrismCommandModel(onInstanceCommand: { intents.append($0) })

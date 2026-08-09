@@ -2285,6 +2285,40 @@ final class PrismShellTests: XCTestCase {
         XCTAssertFalse(source.contains("Task {"))
     }
 
+    func testContentSourceConnectsProductionCreationAndImportForms() throws {
+        let source = try contentSource()
+        for requiredToken in [
+            "PrismInstanceAcquisitionCoordinator",
+            "versions: []",
+            "loaders: []",
+            "icons: [\"default\"]",
+            "commandModel.onCommand",
+            ".sheet(item:",
+            "PrismVanillaCreationView(",
+            "PrismInstanceImportView("
+        ] {
+            XCTAssertTrue(source.contains(requiredToken), "Missing production acquisition composition: \(requiredToken)")
+        }
+        XCTAssertFalse(source.contains("fixtureVersions"))
+        XCTAssertFalse(source.contains("fixtureLoaders"))
+    }
+
+    func testAcquisitionCoordinatorKeepsFoundationOnlyBridgeSelectors() throws {
+        let source = try shellModelSource()
+        for requiredToken in [
+            "PrismInstanceAcquisitionCoordinator",
+            "presentedSurface",
+            "createVanillaInstance(",
+            "importInstance(",
+            "cancelCreation()",
+            "cancelImport()"
+        ] {
+            XCTAssertTrue(source.contains(requiredToken), "Missing acquisition coordinator contract: \(requiredToken)")
+        }
+        XCTAssertFalse(source.contains("QWidget"))
+        XCTAssertFalse(source.contains("QDialog"))
+    }
+
     func testSidebarSelectionUsesSystemListFocusAndAccessibilityValueSemantics() throws {
         let source = try contentSource()
 

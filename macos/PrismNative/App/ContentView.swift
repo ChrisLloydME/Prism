@@ -16,6 +16,9 @@ struct ContentView: View {
     @StateObject private var instanceCopyModel: PrismInstanceCopyModel
     @StateObject private var instanceExportModel: PrismInstanceExportModel
     @StateObject private var instanceDeleteModel: PrismInstanceDeleteModel
+    @StateObject private var acquisitionCoordinator: PrismInstanceAcquisitionCoordinator
+    @StateObject private var vanillaCreationModel: PrismVanillaCreationModel
+    @StateObject private var instanceImportModel: PrismInstanceImportModel
     @ObservedObject private var logModel: PrismTaskLogPresentationModel
     @ObservedObject private var commandModel: PrismCommandModel
     @ObservedObject private var taskModel: PrismTaskPresentationModel
@@ -109,9 +112,51 @@ struct ContentView: View {
                 detailCoordinator?.cancelDelete()
             }
         )
+        let acquisitionCoordinator = PrismInstanceAcquisitionCoordinator(bridge: bridge)
+        let creationModel = PrismVanillaCreationModel(
+            versions: [],
+            loaders: [],
+            icons: ["default"],
+            initialDraft: PrismVanillaCreationDraft(
+                versionDescriptor: "",
+                versionName: "",
+                loaderIdentifier: nil,
+                loaderVersionDescriptor: nil,
+                name: "",
+                groupID: "",
+                iconKey: "default"
+            ),
+            onCreate: { [weak acquisitionCoordinator] request, generation in
+                acquisitionCoordinator?.create(request: request, generation: generation)
+            },
+            onCancel: { [weak acquisitionCoordinator] in
+                acquisitionCoordinator?.cancelCreation()
+            }
+        )
+        let importModel = PrismInstanceImportModel(
+            icons: ["default"],
+            initialDraft: PrismInstanceImportDraft(
+                source: .localFile,
+                localFileURL: nil,
+                remoteURLText: "",
+                name: "",
+                groupID: "",
+                iconKey: "default"
+            ),
+            onImport: { [weak acquisitionCoordinator] request, generation in
+                acquisitionCoordinator?.importInstance(request: request, generation: generation)
+            },
+            onCancel: { [weak acquisitionCoordinator] in
+                acquisitionCoordinator?.cancelImport()
+            }
+        )
         commandModel.onDeleteRequest = { [weak deleteModel] identifier in
             _ = deleteModel?.request(identifier: identifier)
         }
+        commandModel.onCommand = { [weak acquisitionCoordinator] command in
+            acquisitionCoordinator?.handle(command: command)
+        }
+        acquisitionCoordinator.bind(creationModel: creationModel, importModel: importModel)
         detailCoordinator.bind(
             detailsModel: detailsModel,
             componentsModel: componentsModel,
@@ -138,6 +183,9 @@ struct ContentView: View {
         _instanceCopyModel = StateObject(wrappedValue: copyModel)
         _instanceExportModel = StateObject(wrappedValue: exportModel)
         _instanceDeleteModel = StateObject(wrappedValue: deleteModel)
+        _acquisitionCoordinator = StateObject(wrappedValue: acquisitionCoordinator)
+        _vanillaCreationModel = StateObject(wrappedValue: creationModel)
+        _instanceImportModel = StateObject(wrappedValue: importModel)
         _commandModel = ObservedObject(wrappedValue: commandModel)
         _taskModel = ObservedObject(wrappedValue: taskModel)
         _logModel = ObservedObject(wrappedValue: logModel ?? PrismTaskLogPresentationModel(bridge: bridge))
@@ -276,6 +324,20 @@ struct ContentView: View {
             }
         } message: {
             Text("The instance will be moved into Prism's isolated recovery area.")
+        }
+        .sheet(item: $acquisitionCoordinator.presentedSurface) { surface in
+            switch surface {
+            case .creation:
+                PrismVanillaCreationView(
+                    model: vanillaCreationModel,
+                    onFinished: { acquisitionCoordinator.dismiss() }
+                )
+            case .importInstance:
+                PrismInstanceImportView(
+                    model: instanceImportModel,
+                    onFinished: { acquisitionCoordinator.dismiss() }
+                )
+            }
         }
     }
 }

@@ -649,7 +649,7 @@ struct FrontendVanillaCreationRequest final {
     std::string iconKey = "default";
 };
 
-/// Confirmed result for one fixture-controlled vanilla creation request. A
+/// Confirmed result for one production vanilla creation request. A
 /// successful result carries only the immutable summary of the committed
 /// instance; paths and backend task ownership never cross this value type.
 struct FrontendVanillaCreationResult final {
@@ -675,7 +675,7 @@ struct FrontendInstanceImportRequest final {
     std::string iconKey = "default";
 };
 
-/// Confirmed result for one fixture-controlled import request. A successful
+/// Confirmed result for one production import request. A successful
 /// result carries only immutable instance metadata; source paths and task
 /// ownership never cross this value type.
 struct FrontendInstanceImportResult final {

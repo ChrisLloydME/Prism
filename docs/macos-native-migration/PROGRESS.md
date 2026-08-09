@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: 11. Production backend adapters and complete launcher composition
 
-Active work unit: none (M11-W6 complete; activate M11-W7 next)
+Active work unit: M11-W7 Creation and import
 
-Next ready work unit: M11-W7 Creation and import
+Next ready work unit: none (M11-W7 active; M11-W8 remains queued)
 
 Goal correction added 2026-08-09: this project must deliver a complete Minecraft launcher, not only native surfaces and fixture contracts. Historical M4-M9 `complete` labels mean surface/contract completion unless a later M11 unit proves production adapter and default-composition wiring. M10-W1 identified this gap; M10-W2 packaging and M10-W3 clean builds are complete infrastructure, not launcher parity. Qt retirement is moved to M12 and is forbidden until M11-W10 proves production parity.
 
@@ -2337,7 +2337,7 @@ Risks and limits: this unit proves only the instance-library persistence/observa
 
 Commit: `b2cb8b3b8` (implementation); this entry is finalized in the immediate progress-ledger commit.
 
-Next ready work unit: M11-W2 Production global and instance settings persistence.
+M11-W2 followed this work unit and is now complete; the M11 sequence continues with M11-W7 after M11-W6.
 
 ### M11-W2: Production global and instance settings persistence
 
@@ -2370,7 +2370,7 @@ Risks and limits: this adapter deliberately rejects external/custom `InstanceDir
 
 Commit: `727684db8` (implementation); this entry is finalized in the following progress-ledger commit.
 
-Next ready work unit: M11-W3 Production Java discovery, validation, selection, and managed metadata.
+M11-W3 followed this work unit and is now complete.
 
 ### M11-W3: Production Java discovery, validation, selection, and managed metadata
 
@@ -2403,7 +2403,7 @@ Risks and limits: Java validation is intentionally synchronous inside the bridge
 
 Commit: `14e2befcf` (implementation); this entry is finalized in the following progress-ledger commit.
 
-Next ready work unit: M11-W4 Accounts and authentication. It must use production account persistence and fake HTTP/browser/Keychain ports with synthetic secrets; no credential or token may cross Swift DTOs, logs, fixtures, or progress records.
+M11-W4 followed this work unit and is now complete.
 
 ### M11-W4: Accounts and authentication
 
@@ -2433,7 +2433,7 @@ Risks and limits: live provider interaction and the real Keychain remain intenti
 
 Commit: `be147cdb9` (implementation); this entry is finalized in this progress-ledger commit.
 
-Next ready work unit: M11-W5 Launch, stop, tasks, and logs. It must connect launch preparation, Java/Minecraft command construction, `LaunchController`, task observation, cancellation, stop, shutdown, and bounded/redacted logs through fake process ports without starting Minecraft.
+M11-W5 followed this work unit and is now complete.
 
 ### M11-W5: Launch, stop, tasks, and logs
 
@@ -2494,7 +2494,17 @@ Risks and limits: the copy adapter intentionally rejects advanced link/clone pol
 
 Commit: `ab6352cb0` (implementation); this entry is finalized in the following progress-ledger commit.
 
-Next ready work unit: M11-W7 Creation and import. It must connect vanilla creation, local/URL import, staging, archive inspection, download/copy, cancellation, rollback, and final atomic commit through existing backend tasks using fake network responses and disposable roots.
+M11-W7 is now active; M11-W8 remains queued until this unit is complete.
+
+### M11-W7: Creation and import
+
+Status: active
+
+Prerequisite: M11-W6 is complete. Connect vanilla creation, local/URL import, staging, archive inspection, download/copy, cancellation, rollback, and final atomic commit through existing backend tasks. Tests must use fake network responses and disposable roots while exercising the real staging, archive, and domain adapter paths.
+
+Outcome: in progress. The production creation/import adapter and default native composition are being connected against isolated synthetic roots; no live network, upstream data, account, Keychain, credential, or Minecraft process is in scope.
+
+Next ready work unit: none while M11-W7 is active.
 
 ## Completed commit index
 

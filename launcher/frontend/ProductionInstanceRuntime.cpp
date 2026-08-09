@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "ProductionInstanceRuntime.h"
+#include "ProductionInstanceAcquisitionRuntime.h"
 #include "ProductionAccountRuntime.h"
 #include "ProductionInstanceDetailRuntime.h"
 #include "ProductionJavaRuntime.h"
@@ -37,9 +38,9 @@ bool isSafeInstanceIdentifier(const std::string& value)
     });
 }
 
-bool isSafeDisplayValue(const std::string& value, std::size_t maxLength)
+bool isSafeDisplayValue(const std::string& value, std::size_t maxLength, bool allowEmpty = false)
 {
-    return !value.empty() && value.size() <= maxLength
+    return (allowEmpty || !value.empty()) && value.size() <= maxLength
         && std::all_of(value.begin(), value.end(), [](unsigned char character) {
                return character != '\0' && character != '\n' && character != '\r';
            });
@@ -79,11 +80,13 @@ std::optional<FrontendInstanceSnapshot> readSnapshot(
 
     const std::string name = trimmedValue(settings.get("name", QStringLiteral("Unnamed Instance")));
     const std::string iconKey = trimmedValue(settings.get("iconKey", QStringLiteral("default")));
-    if (!isSafeDisplayValue(name, 512) || !isSafeDisplayValue(iconKey, 256)) {
+    const std::string groupId = trimmedValue(settings.get("InstanceGroupId", QString()));
+    if (!isSafeDisplayValue(name, 512) || !isSafeDisplayValue(iconKey, 256)
+        || !isSafeDisplayValue(groupId, 512, true)) {
         return std::nullopt;
     }
 
-    return FrontendInstanceSnapshot{ identifier, name, iconKey, "" };
+    return FrontendInstanceSnapshot{ identifier, name, iconKey, groupId };
 }
 
 ProductionInstanceRuntime::SnapshotMap scanRoot(const std::filesystem::path& instancesRoot)
@@ -309,6 +312,7 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
     auto settingsRuntime = makeProductionSettingsRuntime(normalizedDataRoot);
     auto javaRuntime = makeProductionJavaRuntime(normalizedDataRoot);
     auto accountRuntime = makeProductionAccountRuntime(normalizedDataRoot);
+    auto acquisitionRuntime = makeProductionInstanceAcquisitionRuntime(normalizedDataRoot);
     auto detailRuntime = makeProductionInstanceDetailRuntime(normalizedDataRoot);
     auto launchRuntime = makeProductionLaunchRuntime(
         normalizedDataRoot,
@@ -327,11 +331,12 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
         runtime->stopInstanceObservation();
         launchRuntime->cancelPendingWork();
     };
-    dependencies.shutdown = [runtime, settingsRuntime, javaRuntime, accountRuntime, detailRuntime, launchRuntime] {
+    dependencies.shutdown = [runtime, settingsRuntime, javaRuntime, accountRuntime, acquisitionRuntime, detailRuntime, launchRuntime] {
         runtime->shutdown();
         settingsRuntime->shutdown();
         javaRuntime->shutdown();
         accountRuntime->shutdown();
+        acquisitionRuntime->shutdown();
         static_cast<void>(detailRuntime);
         launchRuntime->shutdown();
     };
@@ -414,6 +419,20 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
                                       const FrontendRuntimeDependencies::InstanceExportProgressHandler& progress,
                                       const FrontendRuntimeDependencies::InstanceExportCancellationCheck& cancellation) {
         return detailRuntime->exportInstance(request, progress, cancellation);
+    };
+    dependencies.createVanillaInstance = [acquisitionRuntime](
+                                             const std::filesystem::path&,
+                                             const FrontendVanillaCreationRequest& request,
+                                             const FrontendRuntimeDependencies::VanillaCreationProgressHandler& progress,
+                                             const FrontendRuntimeDependencies::VanillaCreationCancellationCheck& cancellation) {
+        return acquisitionRuntime->createVanillaInstance(request, progress, cancellation);
+    };
+    dependencies.importInstance = [acquisitionRuntime](
+                                      const std::filesystem::path&,
+                                      const FrontendInstanceImportRequest& request,
+                                      const FrontendRuntimeDependencies::InstanceImportProgressHandler& progress,
+                                      const FrontendRuntimeDependencies::InstanceImportCancellationCheck& cancellation) {
+        return acquisitionRuntime->importInstance(request, progress, cancellation);
     };
     dependencies.loadInstanceSettings = [settingsRuntime](
                                             const std::filesystem::path&,

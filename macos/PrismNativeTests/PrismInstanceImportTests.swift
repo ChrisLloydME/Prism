@@ -75,6 +75,29 @@ final class PrismInstanceImportTests: XCTestCase {
         XCTAssertFalse(model.canImport)
     }
 
+    func testProductionDraftStartsEmptyWithoutFixtureName() throws {
+        var receivedRequest: PRInstanceImportRequest?
+        let model = PrismInstanceImportModel(
+            icons: ["default"],
+            initialDraft: PrismInstanceImportDraft(
+                source: .remoteURL,
+                localFileURL: nil,
+                remoteURLText: "",
+                name: "",
+                groupID: "",
+                iconKey: "default"
+            ),
+            onImport: { request, _ in receivedRequest = request }
+        )
+
+        XCTAssertFalse(model.canImport)
+        model.draft.remoteURLText = "https://downloads.example.invalid/pack.zip"
+        model.draft.name = "Native Imported"
+        XCTAssertTrue(model.startImport())
+        XCTAssertEqual(receivedRequest?.sourceKind, .remoteURL)
+        XCTAssertEqual(receivedRequest?.name, "Native Imported")
+    }
+
     func testImportForwardsRequestAndProgressToActiveGeneration() throws {
         var receivedRequest: PRInstanceImportRequest?
         var receivedGeneration: Int?

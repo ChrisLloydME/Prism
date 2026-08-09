@@ -180,6 +180,16 @@ final class PrismVanillaCreationModel: ObservableObject {
         }
     }
 
+    func setLoaderIdentifier(_ identifier: String) {
+        let normalized = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft.loaderIdentifier = normalized.isEmpty ? nil : normalized
+        if normalized.isEmpty {
+            draft.loaderVersionDescriptor = nil
+        } else if draft.loaderVersionDescriptor == nil {
+            draft.loaderVersionDescriptor = ""
+        }
+    }
+
     func setIcon(_ iconKey: String) {
         guard icons.contains(iconKey) else { return }
         draft.iconKey = iconKey
@@ -397,32 +407,63 @@ struct PrismVanillaCreationView: View {
     private var editingForm: some View {
         Form {
             Section("Minecraft") {
-                Picker(
-                    "Version",
-                    selection: Binding(
-                        get: { model.draft.versionDescriptor },
-                        set: { model.selectVersion($0) }
+                if model.versions.isEmpty {
+                    TextField(
+                        "Minecraft Version",
+                        text: Binding(
+                            get: { model.draft.versionDescriptor },
+                            set: { model.draft.versionDescriptor = $0 }
+                        )
                     )
-                ) {
-                    ForEach(model.versions) { version in
-                        Text(version.name).tag(version.id)
-                    }
-                }
-                .accessibilityIdentifier("prism.vanilla-creation.version")
+                    .accessibilityIdentifier("prism.vanilla-creation.version")
 
-                Picker(
-                    "Mod Loader",
-                    selection: Binding<String?>(
-                        get: { model.draft.loaderIdentifier },
-                        set: { model.selectLoader($0) }
+                    TextField(
+                        "Version Name",
+                        text: Binding(
+                            get: { model.draft.versionName },
+                            set: { model.draft.versionName = $0 }
+                        )
                     )
-                ) {
-                    Text("No Loader").tag(String?.none)
-                    ForEach(model.loaders) { loader in
-                        Text(loader.name).tag(Optional(loader.id))
+                    .accessibilityIdentifier("prism.vanilla-creation.version-name")
+                } else {
+                    Picker(
+                        "Version",
+                        selection: Binding(
+                            get: { model.draft.versionDescriptor },
+                            set: { model.selectVersion($0) }
+                        )
+                    ) {
+                        ForEach(model.versions) { version in
+                            Text(version.name).tag(version.id)
+                        }
                     }
+                    .accessibilityIdentifier("prism.vanilla-creation.version")
                 }
-                .accessibilityIdentifier("prism.vanilla-creation.loader")
+
+                if model.loaders.isEmpty {
+                    TextField(
+                        "Loader Identifier (Optional)",
+                        text: Binding(
+                            get: { model.draft.loaderIdentifier ?? "" },
+                            set: { model.setLoaderIdentifier($0) }
+                        )
+                    )
+                    .accessibilityIdentifier("prism.vanilla-creation.loader")
+                } else {
+                    Picker(
+                        "Mod Loader",
+                        selection: Binding<String?>(
+                            get: { model.draft.loaderIdentifier },
+                            set: { model.selectLoader($0) }
+                        )
+                    ) {
+                        Text("No Loader").tag(String?.none)
+                        ForEach(model.loaders) { loader in
+                            Text(loader.name).tag(Optional(loader.id))
+                        }
+                    }
+                    .accessibilityIdentifier("prism.vanilla-creation.loader")
+                }
 
                 if model.draft.loaderIdentifier != nil {
                     TextField(

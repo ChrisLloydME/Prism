@@ -267,15 +267,15 @@ typedef void (^PROfflineLaunchIdentityUpdateCompletionHandler)(PROfflineLaunchId
                                                            confirmed:(BOOL)confirmed
                                                           completion:(PRInstanceDeleteCompletionHandler)completion;
 
-/// Runs the fixture-controlled vanilla creation contract. Progress uses the
-/// existing immutable task DTO; cancellation of the returned token is
-/// observable by the adapter and suppresses late Foundation delivery. Real
-/// staging, downloads, and final instance commits remain adapter-owned.
+/// Runs the production vanilla creation adapter. Progress uses the existing
+/// immutable task DTO; cancellation of the returned token is observable by
+/// the adapter and suppresses late Foundation delivery. Staging, downloads,
+/// and final instance commits remain adapter-owned.
 - (nullable PRBridgeObservationToken *)createVanillaInstanceWithRequest:(PRVanillaCreationRequest *)request
                                                                  progress:(nullable PRVanillaCreationProgressHandler)progress
                                                                completion:(PRVanillaCreationCompletionHandler)completion;
 
-/// Runs the fixture-controlled local file or HTTP(S) import contract. The
+/// Runs the production local file or HTTP(S) import adapter. The
 /// request contains only Foundation values; system file selection, backend
 /// staging/download/commit, cancellation, and late-delivery suppression stay
 /// outside Swift and the bridge owns no archive or URL task objects.
