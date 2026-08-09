@@ -104,6 +104,9 @@ typedef void (^PRProviderBrowseCompletionHandler)(PRProviderBrowseResult * _Null
 typedef void (^PRProviderVersionProgressHandler)(PRTaskStatus *progress);
 typedef void (^PRProviderVersionCompletionHandler)(PRProviderVersionResult * _Nullable result,
                                                     PRBridgeError * _Nullable error);
+typedef void (^PRProviderInstallProgressHandler)(PRTaskStatus *progress);
+typedef void (^PRProviderInstallCompletionHandler)(PRProviderInstallResult * _Nullable result,
+                                                     PRBridgeError * _Nullable error);
 typedef void (^PROfflineLaunchIdentityLoadCompletionHandler)(PROfflineLaunchIdentityLoadResult * _Nullable result,
                                                               PRBridgeError * _Nullable error);
 typedef void (^PROfflineLaunchIdentityUpdateCompletionHandler)(PROfflineLaunchIdentityUpdateResult * _Nullable result,
@@ -278,6 +281,14 @@ typedef void (^PROfflineLaunchIdentityUpdateCompletionHandler)(PROfflineLaunchId
 - (nullable PRBridgeObservationToken *)loadProviderVersionsWithRequest:(PRProviderVersionRequest *)request
                                                                progress:(nullable PRProviderVersionProgressHandler)progress
                                                              completion:(PRProviderVersionCompletionHandler)completion;
+
+/// Runs a fixture-controlled provider installation contract. The adapter
+/// owns each legacy provider task, staging root, optional/blocked-file
+/// decisions, cancellation, rollback, and final commit; Swift receives only
+/// Foundation values and task progress.
+- (nullable PRBridgeObservationToken *)installProviderPackWithRequest:(PRProviderInstallRequest *)request
+                                                               progress:(nullable PRProviderInstallProgressHandler)progress
+                                                             completion:(PRProviderInstallCompletionHandler)completion;
 
 /// Loads immutable, non-secret instance settings for a standard native Form.
 - (nullable PRBridgeObservationToken *)loadInstanceSettingsWithIdentifier:(NSString *)identifier

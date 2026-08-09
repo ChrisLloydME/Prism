@@ -389,6 +389,46 @@ bool isKnownProviderVersionOutcome(PRProviderVersionOutcome outcome)
     return false;
 }
 
+bool isKnownProviderInstallKind(PRProviderInstallKind kind)
+{
+    switch (kind) {
+        case PRProviderInstallKindModrinth:
+        case PRProviderInstallKindCurseForgeFlame:
+        case PRProviderInstallKindFTB:
+        case PRProviderInstallKindLegacyFTB:
+        case PRProviderInstallKindFTBImport:
+        case PRProviderInstallKindATLauncher:
+        case PRProviderInstallKindTechnicZip:
+        case PRProviderInstallKindTechnicSolder:
+        case PRProviderInstallKindCustomArchive:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownProviderInstallOutcome(PRProviderInstallOutcome outcome)
+{
+    switch (outcome) {
+        case PRProviderInstallOutcomeSucceeded:
+        case PRProviderInstallOutcomeFailed:
+        case PRProviderInstallOutcomeCancelled:
+        case PRProviderInstallOutcomeRejected:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownProviderInstallRollbackOutcome(PRProviderInstallRollbackOutcome outcome)
+{
+    switch (outcome) {
+        case PRProviderInstallRollbackOutcomeNotRequired:
+        case PRProviderInstallRollbackOutcomeApplied:
+        case PRProviderInstallRollbackOutcomeFailed:
+            return true;
+    }
+    return false;
+}
+
 std::string stableIdentifierFromFoundation(NSString *identifier)
 {
     if (![identifier isKindOfClass:NSString.class]) {
@@ -2287,6 +2327,103 @@ PRProviderVersionResult *providerVersionResultFromFacadeResult(const FrontendPro
     return converted;
 }
 
+FrontendProviderInstallKind providerInstallKindFromFoundation(PRProviderInstallKind kind)
+{
+    switch (kind) {
+        case PRProviderInstallKindModrinth:
+            return FrontendProviderInstallKind::Modrinth;
+        case PRProviderInstallKindCurseForgeFlame:
+            return FrontendProviderInstallKind::CurseForgeFlame;
+        case PRProviderInstallKindFTB:
+            return FrontendProviderInstallKind::FTB;
+        case PRProviderInstallKindLegacyFTB:
+            return FrontendProviderInstallKind::LegacyFTB;
+        case PRProviderInstallKindFTBImport:
+            return FrontendProviderInstallKind::FTBImport;
+        case PRProviderInstallKindATLauncher:
+            return FrontendProviderInstallKind::ATLauncher;
+        case PRProviderInstallKindTechnicZip:
+            return FrontendProviderInstallKind::TechnicZip;
+        case PRProviderInstallKindTechnicSolder:
+            return FrontendProviderInstallKind::TechnicSolder;
+        case PRProviderInstallKindCustomArchive:
+            return FrontendProviderInstallKind::CustomArchive;
+    }
+    throw std::invalid_argument("Unknown provider installation kind");
+}
+
+PRProviderInstallKind providerInstallKindFromFacadeKind(FrontendProviderInstallKind kind)
+{
+    switch (kind) {
+        case FrontendProviderInstallKind::Modrinth:
+            return PRProviderInstallKindModrinth;
+        case FrontendProviderInstallKind::CurseForgeFlame:
+            return PRProviderInstallKindCurseForgeFlame;
+        case FrontendProviderInstallKind::FTB:
+            return PRProviderInstallKindFTB;
+        case FrontendProviderInstallKind::LegacyFTB:
+            return PRProviderInstallKindLegacyFTB;
+        case FrontendProviderInstallKind::FTBImport:
+            return PRProviderInstallKindFTBImport;
+        case FrontendProviderInstallKind::ATLauncher:
+            return PRProviderInstallKindATLauncher;
+        case FrontendProviderInstallKind::TechnicZip:
+            return PRProviderInstallKindTechnicZip;
+        case FrontendProviderInstallKind::TechnicSolder:
+            return PRProviderInstallKindTechnicSolder;
+        case FrontendProviderInstallKind::CustomArchive:
+            return PRProviderInstallKindCustomArchive;
+    }
+    throw std::invalid_argument("Facade returned an unknown provider installation kind");
+}
+
+PRProviderInstallOutcome providerInstallOutcomeFromFacadeOutcome(FrontendProviderInstallOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendProviderInstallOutcome::Succeeded:
+            return PRProviderInstallOutcomeSucceeded;
+        case FrontendProviderInstallOutcome::Failed:
+            return PRProviderInstallOutcomeFailed;
+        case FrontendProviderInstallOutcome::Cancelled:
+            return PRProviderInstallOutcomeCancelled;
+        case FrontendProviderInstallOutcome::Rejected:
+            return PRProviderInstallOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown provider installation outcome");
+}
+
+PRProviderInstallRollbackOutcome providerInstallRollbackOutcomeFromFacadeOutcome(
+    FrontendProviderInstallRollbackOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendProviderInstallRollbackOutcome::NotRequired:
+            return PRProviderInstallRollbackOutcomeNotRequired;
+        case FrontendProviderInstallRollbackOutcome::Applied:
+            return PRProviderInstallRollbackOutcomeApplied;
+        case FrontendProviderInstallRollbackOutcome::Failed:
+            return PRProviderInstallRollbackOutcomeFailed;
+    }
+    throw std::invalid_argument("Facade returned an unknown provider installation rollback outcome");
+}
+
+PRProviderInstallResult *providerInstallResultFromFacadeResult(const FrontendProviderInstallResult& result)
+{
+    PRProviderInstallResult *converted = [[PRProviderInstallResult alloc]
+        initWithKind:providerInstallKindFromFacadeKind(result.kind)
+       packIdentifier:foundationStringFromUTF8(result.packIdentifier)
+   versionIdentifier:foundationStringFromUTF8(result.versionIdentifier)
+            instance:result.instance.has_value() ? summaryFromFacadeSnapshot(*result.instance) : nil
+             outcome:providerInstallOutcomeFromFacadeOutcome(result.outcome)
+     rollbackOutcome:providerInstallRollbackOutcomeFromFacadeOutcome(result.rollbackOutcome)
+      localizationKey:foundationStringFromUTF8AllowEmpty(result.localizationKey)
+        diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+             retryable:result.retryable];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid provider installation result");
+    }
+    return converted;
+}
+
 PRInstanceNotesUpdateOutcome notesUpdateOutcomeFromFacadeResult(FrontendInstanceNotesUpdateOutcome outcome)
 {
     switch (outcome) {
@@ -3500,6 +3637,36 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@interface PRBridgeProviderInstallDelivery : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithProgress:(nullable PRTaskStatus *)progress
+                           result:(nullable PRProviderInstallResult *)result
+                            error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRTaskStatus *progress;
+@property(nonatomic, strong, readonly, nullable) PRProviderInstallResult *result;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeProviderInstallDelivery
+
+- (instancetype)initWithProgress:(PRTaskStatus *)progress
+                           result:(PRProviderInstallResult *)result
+                            error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _progress = progress;
+        _result = result;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
 @interface PRBridgeInstanceImportDelivery : NSObject
 
 - (instancetype)init NS_UNAVAILABLE;
@@ -3741,6 +3908,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *instanceExportRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *providerBrowseRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *providerVersionRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *providerInstallRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *offlineIdentityLoadRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *offlineIdentityUpdateRequestStates;
 @property(nonatomic, strong) NSLock *observationLock;
@@ -3783,6 +3951,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 - (void)removeInstanceExportRequest:(PRBridgeObservationState *)request;
 - (void)removeProviderBrowseRequest:(PRBridgeObservationState *)request;
 - (void)removeProviderVersionRequest:(PRBridgeObservationState *)request;
+- (void)removeProviderInstallRequest:(PRBridgeObservationState *)request;
 - (void)removeOfflineIdentityLoadRequest:(PRBridgeObservationState *)request;
 - (void)removeOfflineIdentityUpdateRequest:(PRBridgeObservationState *)request;
 - (nullable PRBridgeObservationToken *)loadTaskStatusWithIdentifier:(NSString *)identifier
@@ -3994,6 +4163,32 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, copy, readwrite) NSString *packIdentifier;
 @property(nonatomic, copy, readwrite) NSArray<PRProviderVersion *> *versions;
 @property(nonatomic, assign, readwrite) PRProviderVersionOutcome outcome;
+@property(nonatomic, copy, readwrite) NSString *localizationKey;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readwrite) BOOL retryable;
+
+@end
+
+@interface PRProviderInstallRequest ()
+
+@property(nonatomic, assign, readwrite) PRProviderInstallKind kind;
+@property(nonatomic, copy, readwrite) NSString *packIdentifier;
+@property(nonatomic, copy, readwrite) NSString *versionIdentifier;
+@property(nonatomic, copy, readwrite, nullable) NSURL *sourceURL;
+@property(nonatomic, copy, readwrite) NSString *name;
+@property(nonatomic, copy, readwrite, nullable) NSString *groupID;
+@property(nonatomic, copy, readwrite) NSString *iconKey;
+
+@end
+
+@interface PRProviderInstallResult ()
+
+@property(nonatomic, assign, readwrite) PRProviderInstallKind kind;
+@property(nonatomic, copy, readwrite) NSString *packIdentifier;
+@property(nonatomic, copy, readwrite) NSString *versionIdentifier;
+@property(nonatomic, strong, readwrite, nullable) PRInstanceSummary *instance;
+@property(nonatomic, assign, readwrite) PRProviderInstallOutcome outcome;
+@property(nonatomic, assign, readwrite) PRProviderInstallRollbackOutcome rollbackOutcome;
 @property(nonatomic, copy, readwrite) NSString *localizationKey;
 @property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
 @property(nonatomic, assign, readwrite) BOOL retryable;
@@ -5156,6 +5351,89 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.packIdentifier = [packIdentifier copy];
         self.versions = [versions copy];
         self.outcome = outcome;
+        self.localizationKey = [localizationKey copy];
+        self.diagnosticText = [diagnosticText copy];
+        self.retryable = retryable;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRProviderInstallRequest
+
+- (instancetype)initWithKind:(PRProviderInstallKind)kind
+               packIdentifier:(NSString *)packIdentifier
+           versionIdentifier:(NSString *)versionIdentifier
+                   sourceURL:(NSURL *)sourceURL
+                        name:(NSString *)name
+                     groupID:(NSString *)groupID
+                     iconKey:(NSString *)iconKey
+{
+    if (!isKnownProviderInstallKind(kind) || !isNonEmptyString(packIdentifier)
+        || !isNonEmptyString(versionIdentifier) || !isNonEmptyString(name) || !isNonEmptyString(iconKey)) {
+        return nil;
+    }
+
+    const bool requiresLocalSource = kind == PRProviderInstallKindCustomArchive
+        || kind == PRProviderInstallKindFTBImport;
+    if (requiresLocalSource) {
+        if (![sourceURL isKindOfClass:NSURL.class] || !sourceURL.isFileURL || sourceURL.path.length == 0
+            || !sourceURL.path.isAbsolutePath) {
+            return nil;
+        }
+    } else if (sourceURL) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.kind = kind;
+        self.packIdentifier = [packIdentifier copy];
+        self.versionIdentifier = [versionIdentifier copy];
+        self.sourceURL = [sourceURL.standardizedURL copy];
+        self.name = [name copy];
+        self.groupID = nullableStringCopy(groupID);
+        self.iconKey = [iconKey copy];
+    }
+    return self;
+}
+
+@end
+
+@implementation PRProviderInstallResult
+
+- (instancetype)initWithKind:(PRProviderInstallKind)kind
+               packIdentifier:(NSString *)packIdentifier
+           versionIdentifier:(NSString *)versionIdentifier
+                    instance:(PRInstanceSummary *)instance
+                     outcome:(PRProviderInstallOutcome)outcome
+             rollbackOutcome:(PRProviderInstallRollbackOutcome)rollbackOutcome
+              localizationKey:(NSString *)localizationKey
+                diagnosticText:(NSString *)diagnosticText
+                     retryable:(BOOL)retryable
+{
+    if (!isKnownProviderInstallKind(kind) || !isKnownProviderInstallOutcome(outcome)
+        || !isKnownProviderInstallRollbackOutcome(rollbackOutcome) || !isNonEmptyString(packIdentifier)
+        || !isNonEmptyString(versionIdentifier) || !isNonEmptyString(localizationKey)
+        || (instance && ![instance isKindOfClass:PRInstanceSummary.class])
+        || (outcome == PRProviderInstallOutcomeSucceeded && !instance)
+        || (outcome != PRProviderInstallOutcomeSucceeded && instance)
+        || (outcome == PRProviderInstallOutcomeSucceeded
+            && rollbackOutcome != PRProviderInstallRollbackOutcomeNotRequired)
+        || (outcome == PRProviderInstallOutcomeRejected
+            && rollbackOutcome != PRProviderInstallRollbackOutcomeNotRequired)) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.kind = kind;
+        self.packIdentifier = [packIdentifier copy];
+        self.versionIdentifier = [versionIdentifier copy];
+        self.instance = instance;
+        self.outcome = outcome;
+        self.rollbackOutcome = rollbackOutcome;
         self.localizationKey = [localizationKey copy];
         self.diagnosticText = [diagnosticText copy];
         self.retryable = retryable;
@@ -6643,6 +6921,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.instanceExportRequestStates = [NSMutableArray array];
         self.providerBrowseRequestStates = [NSMutableArray array];
         self.providerVersionRequestStates = [NSMutableArray array];
+        self.providerInstallRequestStates = [NSMutableArray array];
         self.offlineIdentityLoadRequestStates = [NSMutableArray array];
         self.offlineIdentityUpdateRequestStates = [NSMutableArray array];
         self.observationLock = [[NSLock alloc] init];
@@ -9783,6 +10062,116 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     return [[PRBridgeObservationToken alloc] initWithState:observation];
 }
 
+- (PRBridgeObservationToken *)installProviderPackWithRequest:(PRProviderInstallRequest *)request
+                                                       progress:(PRProviderInstallProgressHandler)progress
+                                                     completion:(PRProviderInstallCompletionHandler)completion
+{
+    if (!request || !completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    PRProviderInstallRequest *requestCopy = request;
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *observation = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeProviderInstallDelivery *delivery = (PRBridgeProviderInstallDelivery *)value;
+        if (delivery.progress && progress) {
+            progress(delivery.progress);
+        }
+        if (delivery.result || delivery.error) {
+            [weakRequest cancel];
+            completion(delivery.result, delivery.error);
+        }
+    }];
+    weakRequest = observation;
+    observation.removalHandler = ^{
+        [weakBridge removeProviderInstallRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [observation cancel];
+        return nil;
+    }
+    [self.providerInstallRequestStates addObject:observation];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRProviderInstallResult *result = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    FrontendProviderInstallRequest installRequest;
+                    installRequest.kind = providerInstallKindFromFoundation(requestCopy.kind);
+                    installRequest.packIdentifier = stableIdentifierFromFoundation(requestCopy.packIdentifier);
+                    installRequest.versionIdentifier = stableIdentifierFromFoundation(requestCopy.versionIdentifier);
+                    if (requestCopy.sourceURL) {
+                        installRequest.sourcePath = resourceSourcePathFromFoundation(requestCopy.sourceURL);
+                    }
+                    installRequest.name = utf8TextFromFoundation(requestCopy.name);
+                    installRequest.groupId = requestCopy.groupID ? utf8TextFromFoundation(requestCopy.groupID) : "";
+                    installRequest.iconKey = stableIdentifierFromFoundation(requestCopy.iconKey);
+                    const FrontendProviderInstallResult installResult = bridge->_facade->installProviderPack(
+                        installRequest,
+                        [&](const FrontendTaskSnapshot& snapshot) {
+                            if (state.isCancelled) {
+                                return;
+                            }
+                            PRTaskStatus *convertedStatus = taskStatusFromFacadeSnapshot(snapshot);
+                            [state deliverOnMainActor:[[PRBridgeProviderInstallDelivery alloc]
+                                initWithProgress:convertedStatus
+                                           result:nil
+                                            error:nil]];
+                        },
+                        [&] { return state.isCancelled; });
+                    result = providerInstallResultFromFacadeResult(installResult);
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid provider installation request"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Provider installation cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Provider installation unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown provider installation failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeProviderInstallDelivery alloc]
+                initWithProgress:nil
+                           result:result
+                            error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:observation];
+}
+
 - (PRBridgeObservationToken *)loadOfflineLaunchIdentityWithMode:(PROfflineLaunchIdentityMode)mode
                                                 accountIdentifier:(NSString *)accountIdentifier
                                                      fallbackName:(NSString *)fallbackName
@@ -10319,6 +10708,16 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.observationLock unlock];
 }
 
+- (void)removeProviderInstallRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.providerInstallRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.providerInstallRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
 - (void)removeOfflineIdentityLoadRequest:(PRBridgeObservationState *)request
 {
     [self.observationLock lock];
@@ -10376,6 +10775,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [observations addObjectsFromArray:self.instanceExportRequestStates];
     [observations addObjectsFromArray:self.providerBrowseRequestStates];
     [observations addObjectsFromArray:self.providerVersionRequestStates];
+    [observations addObjectsFromArray:self.providerInstallRequestStates];
     [observations addObjectsFromArray:self.offlineIdentityLoadRequestStates];
     [observations addObjectsFromArray:self.offlineIdentityUpdateRequestStates];
     [self.instanceObservationStates removeAllObjects];
@@ -10411,6 +10811,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.instanceExportRequestStates removeAllObjects];
     [self.providerBrowseRequestStates removeAllObjects];
     [self.providerVersionRequestStates removeAllObjects];
+    [self.providerInstallRequestStates removeAllObjects];
     [self.offlineIdentityLoadRequestStates removeAllObjects];
     [self.offlineIdentityUpdateRequestStates removeAllObjects];
     [self.observationLock unlock];

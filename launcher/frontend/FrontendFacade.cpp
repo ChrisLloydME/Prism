@@ -1425,6 +1425,92 @@ void validateProviderVersionResult(
     }
 }
 
+bool isKnownProviderInstallKind(FrontendProviderInstallKind kind) noexcept
+{
+    switch (kind) {
+        case FrontendProviderInstallKind::Modrinth:
+        case FrontendProviderInstallKind::CurseForgeFlame:
+        case FrontendProviderInstallKind::FTB:
+        case FrontendProviderInstallKind::LegacyFTB:
+        case FrontendProviderInstallKind::FTBImport:
+        case FrontendProviderInstallKind::ATLauncher:
+        case FrontendProviderInstallKind::TechnicZip:
+        case FrontendProviderInstallKind::TechnicSolder:
+        case FrontendProviderInstallKind::CustomArchive:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownProviderInstallOutcome(FrontendProviderInstallOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendProviderInstallOutcome::Succeeded:
+        case FrontendProviderInstallOutcome::Failed:
+        case FrontendProviderInstallOutcome::Cancelled:
+        case FrontendProviderInstallOutcome::Rejected:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownProviderInstallRollbackOutcome(FrontendProviderInstallRollbackOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendProviderInstallRollbackOutcome::NotRequired:
+        case FrontendProviderInstallRollbackOutcome::Applied:
+        case FrontendProviderInstallRollbackOutcome::Failed:
+            return true;
+    }
+    return false;
+}
+
+void validateProviderInstallRequest(const FrontendProviderInstallRequest& request)
+{
+    if (!isKnownProviderInstallKind(request.kind) || request.packIdentifier.empty()
+        || request.versionIdentifier.empty() || request.name.empty() || request.iconKey.empty()) {
+        throw std::invalid_argument("Provider installation requires a known kind, pack, version, name, and icon");
+    }
+
+    const bool requiresLocalSource = request.kind == FrontendProviderInstallKind::CustomArchive
+        || request.kind == FrontendProviderInstallKind::FTBImport;
+    if (requiresLocalSource && (request.sourcePath.empty() || !request.sourcePath.is_absolute())) {
+        throw std::invalid_argument("Local provider installation requires an absolute source path");
+    }
+    if (!requiresLocalSource && !request.sourcePath.empty()) {
+        throw std::invalid_argument("Only local provider installation may carry a source path");
+    }
+}
+
+void validateProviderInstallResult(
+    const FrontendProviderInstallResult& result,
+    const FrontendProviderInstallRequest& request)
+{
+    if (!isKnownProviderInstallKind(result.kind) || !isKnownProviderInstallOutcome(result.outcome)
+        || !isKnownProviderInstallRollbackOutcome(result.rollbackOutcome) || result.kind != request.kind
+        || result.packIdentifier != request.packIdentifier || result.versionIdentifier != request.versionIdentifier
+        || result.localizationKey.empty()) {
+        throw std::invalid_argument("Provider installation results must echo the request and use known outcomes");
+    }
+
+    if (result.outcome == FrontendProviderInstallOutcome::Succeeded) {
+        if (!result.instance.has_value() || result.rollbackOutcome != FrontendProviderInstallRollbackOutcome::NotRequired) {
+            throw std::invalid_argument("Successful provider installation must carry an instance without rollback");
+        }
+    } else if (result.instance.has_value()) {
+        throw std::invalid_argument("Unsuccessful provider installation cannot carry an instance");
+    }
+
+    if (result.outcome == FrontendProviderInstallOutcome::Rejected
+        && result.rollbackOutcome != FrontendProviderInstallRollbackOutcome::NotRequired) {
+        throw std::invalid_argument("Rejected provider installation cannot report rollback work");
+    }
+    if (result.rollbackOutcome == FrontendProviderInstallRollbackOutcome::Applied
+        && result.outcome == FrontendProviderInstallOutcome::Succeeded) {
+        throw std::invalid_argument("Successful provider installation cannot report applied rollback");
+    }
+}
+
 bool isMatchingProviderTerminalState(
     FrontendProviderBrowseOutcome outcome,
     FrontendTaskState terminalState) noexcept
@@ -1441,6 +1527,15 @@ bool isMatchingProviderTerminalState(
     return (outcome == FrontendProviderVersionOutcome::Succeeded && terminalState == FrontendTaskState::Succeeded)
         || (outcome == FrontendProviderVersionOutcome::Failed && terminalState == FrontendTaskState::Failed)
         || (outcome == FrontendProviderVersionOutcome::Cancelled && terminalState == FrontendTaskState::Cancelled);
+}
+
+bool isMatchingProviderTerminalState(
+    FrontendProviderInstallOutcome outcome,
+    FrontendTaskState terminalState) noexcept
+{
+    return (outcome == FrontendProviderInstallOutcome::Succeeded && terminalState == FrontendTaskState::Succeeded)
+        || (outcome == FrontendProviderInstallOutcome::Failed && terminalState == FrontendTaskState::Failed)
+        || (outcome == FrontendProviderInstallOutcome::Cancelled && terminalState == FrontendTaskState::Cancelled);
 }
 
 std::string truncateUTF8(std::string value, std::size_t maxBytes)
@@ -2515,6 +2610,61 @@ FrontendProviderVersionResult executeProviderVersions(
     return result;
 }
 
+FrontendProviderInstallResult executeProviderInstall(
+    const FrontendRuntimeDependencies::ProviderInstallRunner& runner,
+    const std::filesystem::path& dataRoot,
+    const FrontendProviderInstallRequest& request,
+    const FrontendRuntimeDependencies::ProviderInstallProgressHandler& progressHandler,
+    const FrontendRuntimeDependencies::ProviderInstallCancellationCheck& cancellationCheck)
+{
+    validateProviderInstallRequest(request);
+    if (!runner) {
+        return FrontendProviderInstallResult{
+            request.kind,
+            FrontendProviderInstallOutcome::Rejected,
+            std::nullopt,
+            request.packIdentifier,
+            request.versionIdentifier,
+            FrontendProviderInstallRollbackOutcome::NotRequired,
+            "providers.install.unavailable",
+            "Provider pack installation is unavailable.",
+            true,
+        };
+    }
+
+    bool terminalProgressSeen = false;
+    FrontendTaskState terminalState = FrontendTaskState::Queued;
+    const auto progress = [&](const FrontendTaskSnapshot& snapshot) {
+        validateTaskSnapshot(snapshot);
+        if (snapshot.title.empty()) {
+            throw std::invalid_argument("Provider installation progress requires a task title");
+        }
+        if (terminalProgressSeen) {
+            throw std::invalid_argument("Provider installation cannot report progress after a terminal event");
+        }
+        if (isTerminalTaskState(snapshot.state)) {
+            terminalProgressSeen = true;
+            terminalState = snapshot.state;
+        }
+        if (progressHandler) {
+            progressHandler(snapshot);
+        }
+    };
+
+    auto result = runner(dataRoot, request, progress, cancellationCheck);
+    validateProviderInstallResult(result, request);
+    if (result.outcome == FrontendProviderInstallOutcome::Rejected) {
+        if (terminalProgressSeen) {
+            throw std::invalid_argument("Rejected provider installation cannot report a terminal progress event");
+        }
+        return result;
+    }
+    if (!terminalProgressSeen || !isMatchingProviderTerminalState(result.outcome, terminalState)) {
+        throw std::invalid_argument("Provider installation result must match its terminal progress event");
+    }
+    return result;
+}
+
 }  // namespace
 
 FrontendFacade::FrontendFacade(std::filesystem::path dataRoot, FrontendRuntimeDependencies runtimeDependencies)
@@ -2792,6 +2942,16 @@ FrontendProviderVersionResult FrontendFacade::providerVersions(
     ensureRunning(m_lifecycleState);
     return executeProviderVersions(
         m_runtimeDependencies.loadProviderVersions, m_dataRoot, request, progressHandler, cancellationCheck);
+}
+
+FrontendProviderInstallResult FrontendFacade::installProviderPack(
+    const FrontendProviderInstallRequest& request,
+    const FrontendRuntimeDependencies::ProviderInstallProgressHandler& progressHandler,
+    const FrontendRuntimeDependencies::ProviderInstallCancellationCheck& cancellationCheck) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeProviderInstall(
+        m_runtimeDependencies.installProviderPack, m_dataRoot, request, progressHandler, cancellationCheck);
 }
 
 FrontendOfflineLaunchIdentityLoadResult FrontendFacade::loadOfflineLaunchIdentity(

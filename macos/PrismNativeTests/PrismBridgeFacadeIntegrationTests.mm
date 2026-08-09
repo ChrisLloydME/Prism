@@ -3687,4 +3687,135 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     XCTAssertEqual(cancelledCompletionCount, (NSUInteger)0);
 }
 
+- (void)testProviderInstallationConvertsFoundationValuesAndSuppressesCancelledDelivery
+{
+    auto receivedRequest = std::make_shared<FrontendProviderInstallRequest>();
+    auto receivedRoot = std::make_shared<std::string>();
+    auto progressCalls = std::make_shared<std::atomic<size_t>>(0);
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.installProviderPack = [receivedRequest, receivedRoot, progressCalls](
+                                           const std::filesystem::path& root,
+                                           const FrontendProviderInstallRequest& request,
+                                           const FrontendRuntimeDependencies::ProviderInstallProgressHandler& progress,
+                                           const FrontendRuntimeDependencies::ProviderInstallCancellationCheck&) {
+        *receivedRoot = root.string();
+        *receivedRequest = request;
+        progress(FrontendTaskSnapshot{ "provider-install.bridge", "Install Provider Pack", FrontendTaskState::Queued,
+                                       FrontendTaskProgressKind::None, 0.0, true, {}, std::nullopt });
+        ++*progressCalls;
+        progress(FrontendTaskSnapshot{ "provider-install.bridge", "Install Provider Pack", FrontendTaskState::Running,
+                                       FrontendTaskProgressKind::Determinate, 0.5, true, {}, std::nullopt });
+        ++*progressCalls;
+        const FrontendTaskTerminalResult terminal{
+            FrontendTaskTerminalOutcome::Succeeded, "providers.install.completed", {}, "", false };
+        progress(FrontendTaskSnapshot{ "provider-install.bridge", "Install Provider Pack", FrontendTaskState::Succeeded,
+                                       FrontendTaskProgressKind::Determinate, 1.0, false, {}, terminal });
+        ++*progressCalls;
+        return FrontendProviderInstallResult{
+            request.kind,
+            FrontendProviderInstallOutcome::Succeeded,
+            fixtureSnapshot("instance.provider.bridge", "Bridge Provider Pack", "default", "fixture-group"),
+            request.packIdentifier,
+            request.versionIdentifier,
+            FrontendProviderInstallRollbackOutcome::NotRequired,
+            "providers.install.completed",
+            "",
+            false,
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    NSURL *sourceURL = [self.fixtureRootURL URLByAppendingPathComponent:@"custom-pack.fixture.zip"];
+    PRProviderInstallRequest *request = [[PRProviderInstallRequest alloc]
+        initWithKind:PRProviderInstallKindCustomArchive
+       packIdentifier:@"pack.bridge"
+   versionIdentifier:@"version.bridge"
+           sourceURL:sourceURL
+                name:@"Bridge Provider Pack"
+             groupID:@"fixture-group"
+             iconKey:@"default"];
+    XCTAssertNotNil(request);
+
+    XCTestExpectation *completion = [self expectationWithDescription:@"Provider installation completed"];
+    __block PRProviderInstallResult *receivedResult = nil;
+    __block PRBridgeError *receivedError = nil;
+    __block BOOL completionOnMain = NO;
+    PRBridgeObservationToken *token = [bridge
+        installProviderPackWithRequest:request
+                              progress:^(__unused PRTaskStatus *status) {}
+                            completion:^(PRProviderInstallResult *result, PRBridgeError *error) {
+        completionOnMain = [NSThread isMainThread];
+        receivedResult = result;
+        receivedError = error;
+        [completion fulfill];
+    }];
+    XCTAssertNotNil(token);
+    [self waitForExpectations:@[ completion ] timeout:2.0];
+    XCTAssertTrue(completionOnMain);
+    XCTAssertNil(receivedError);
+    XCTAssertTrue(token.isCancelled);
+    XCTAssertEqual(receivedRoot->compare(self.fixtureRootURL.standardizedURL.path.UTF8String), 0);
+    XCTAssertEqual(receivedRequest->kind, FrontendProviderInstallKind::CustomArchive);
+    XCTAssertEqual(receivedRequest->packIdentifier, "pack.bridge");
+    XCTAssertEqual(receivedRequest->versionIdentifier, "version.bridge");
+    XCTAssertEqual(receivedRequest->sourcePath, std::filesystem::path(sourceURL.fileSystemRepresentation));
+    XCTAssertEqual(progressCalls->load(), (size_t)3);
+    XCTAssertEqual(receivedResult.kind, PRProviderInstallKindCustomArchive);
+    XCTAssertEqual(receivedResult.outcome, PRProviderInstallOutcomeSucceeded);
+    XCTAssertEqual(receivedResult.rollbackOutcome, PRProviderInstallRollbackOutcomeNotRequired);
+    XCTAssertEqualObjects(receivedResult.instance.identifier, @"instance.provider.bridge");
+
+    dispatch_semaphore_t runnerEntered = dispatch_semaphore_create(0);
+    dispatch_semaphore_t releaseRunner = dispatch_semaphore_create(0);
+    FrontendRuntimeDependencies cancelledDependencies = baseFixtureDependencies();
+    cancelledDependencies.installProviderPack = [runnerEntered, releaseRunner](
+                                                    const std::filesystem::path&,
+                                                    const FrontendProviderInstallRequest& request,
+                                                    const FrontendRuntimeDependencies::ProviderInstallProgressHandler& progress,
+                                                    const FrontendRuntimeDependencies::ProviderInstallCancellationCheck& isCancelled) {
+        progress(FrontendTaskSnapshot{ "provider-install.cancel", "Install Provider Pack", FrontendTaskState::Queued,
+                                       FrontendTaskProgressKind::None, 0.0, true, {}, std::nullopt });
+        dispatch_semaphore_signal(runnerEntered);
+        dispatch_semaphore_wait(releaseRunner, DISPATCH_TIME_FOREVER);
+        XCTAssertTrue(isCancelled && isCancelled());
+        const FrontendTaskTerminalResult terminal{
+            FrontendTaskTerminalOutcome::Cancelled, "providers.install.cancelled", {}, "", false };
+        progress(FrontendTaskSnapshot{ "provider-install.cancel", "Install Provider Pack", FrontendTaskState::Cancelled,
+                                       FrontendTaskProgressKind::None, 0.0, false, {}, terminal });
+        return FrontendProviderInstallResult{
+            request.kind,
+            FrontendProviderInstallOutcome::Cancelled,
+            std::nullopt,
+            request.packIdentifier,
+            request.versionIdentifier,
+            FrontendProviderInstallRollbackOutcome::Applied,
+            "providers.install.cancelled",
+            "Fixture provider installation cancelled",
+            false,
+        };
+    };
+    PRPrismBridge *cancelledBridge = [self bridgeWithDependencies:std::move(cancelledDependencies)
+                                                cancellationHandler:nil
+                                                   shutdownHandler:nil];
+    XCTestExpectation *cancelledDrained = [self expectationWithDescription:@"Cancelled provider installation drained"];
+    __block NSUInteger cancelledCompletionCount = 0;
+    PRBridgeObservationToken *cancelToken = [cancelledBridge
+        installProviderPackWithRequest:request
+                              progress:nil
+                            completion:^(__unused PRProviderInstallResult *result, __unused PRBridgeError *error) {
+        cancelledCompletionCount += 1;
+    }];
+    XCTAssertNotNil(cancelToken);
+    XCTAssertEqual(dispatch_semaphore_wait(runnerEntered, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC)), 0);
+    XCTAssertTrue([cancelToken cancel]);
+    dispatch_semaphore_signal(releaseRunner);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [cancelledDrained fulfill];
+    });
+    [self waitForExpectations:@[ cancelledDrained ] timeout:2.0];
+    XCTAssertEqual(cancelledCompletionCount, (NSUInteger)0);
+}
+
 @end

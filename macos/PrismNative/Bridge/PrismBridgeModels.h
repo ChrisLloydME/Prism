@@ -530,6 +530,83 @@ typedef NS_ENUM(NSInteger, PRProviderVersionOutcome) {
 
 @end
 
+typedef NS_ENUM(NSInteger, PRProviderInstallKind) {
+    PRProviderInstallKindModrinth = 0,
+    PRProviderInstallKindCurseForgeFlame,
+    PRProviderInstallKindFTB,
+    PRProviderInstallKindLegacyFTB,
+    PRProviderInstallKindFTBImport,
+    PRProviderInstallKindATLauncher,
+    PRProviderInstallKindTechnicZip,
+    PRProviderInstallKindTechnicSolder,
+    PRProviderInstallKindCustomArchive,
+};
+
+typedef NS_ENUM(NSInteger, PRProviderInstallOutcome) {
+    PRProviderInstallOutcomeSucceeded = 0,
+    PRProviderInstallOutcomeFailed,
+    PRProviderInstallOutcomeCancelled,
+    PRProviderInstallOutcomeRejected,
+};
+
+typedef NS_ENUM(NSInteger, PRProviderInstallRollbackOutcome) {
+    PRProviderInstallRollbackOutcomeNotRequired = 0,
+    PRProviderInstallRollbackOutcomeApplied,
+    PRProviderInstallRollbackOutcomeFailed,
+};
+
+/// Foundation-only provider installation input. Staging, manifests, task
+/// ownership, optional/blocked-file choices, and final instance commits remain
+/// in Objective-C++. A source URL is allowed only for a local custom archive
+/// or FTB App import directory.
+@interface PRProviderInstallRequest : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithKind:(PRProviderInstallKind)kind
+                       packIdentifier:(NSString *)packIdentifier
+                   versionIdentifier:(NSString *)versionIdentifier
+                           sourceURL:(nullable NSURL *)sourceURL
+                                name:(NSString *)name
+                             groupID:(nullable NSString *)groupID
+                             iconKey:(NSString *)iconKey NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, assign, readonly) PRProviderInstallKind kind;
+@property(nonatomic, copy, readonly) NSString *packIdentifier;
+@property(nonatomic, copy, readonly) NSString *versionIdentifier;
+@property(nonatomic, copy, readonly, nullable) NSURL *sourceURL;
+@property(nonatomic, copy, readonly) NSString *name;
+@property(nonatomic, copy, readonly, nullable) NSString *groupID;
+@property(nonatomic, copy, readonly) NSString *iconKey;
+
+@end
+
+/// Immutable confirmed provider installation result. Instance metadata is the
+/// only successful payload; rollback status remains explicit on failures.
+@interface PRProviderInstallResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithKind:(PRProviderInstallKind)kind
+                       packIdentifier:(NSString *)packIdentifier
+                   versionIdentifier:(NSString *)versionIdentifier
+                            instance:(nullable PRInstanceSummary *)instance
+                             outcome:(PRProviderInstallOutcome)outcome
+                     rollbackOutcome:(PRProviderInstallRollbackOutcome)rollbackOutcome
+                      localizationKey:(NSString *)localizationKey
+                        diagnosticText:(nullable NSString *)diagnosticText
+                             retryable:(BOOL)retryable NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, assign, readonly) PRProviderInstallKind kind;
+@property(nonatomic, copy, readonly) NSString *packIdentifier;
+@property(nonatomic, copy, readonly) NSString *versionIdentifier;
+@property(nonatomic, strong, readonly, nullable) PRInstanceSummary *instance;
+@property(nonatomic, assign, readonly) PRProviderInstallOutcome outcome;
+@property(nonatomic, assign, readonly) PRProviderInstallRollbackOutcome rollbackOutcome;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL retryable;
+
+@end
+
 /// Immutable instance metadata and notes for the native detail form.
 @interface PRInstanceDetails : NSObject
 

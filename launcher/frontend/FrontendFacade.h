@@ -852,6 +852,57 @@ struct FrontendProviderVersionResult final {
     bool retryable = false;
 };
 
+/// Provider-specific installation task families retained by the legacy
+/// backend. The distinction is intentional: CurseForge is installed through
+/// the Flame manifest/task path, Technic has separate single-archive and
+/// Solder task paths, and local custom archives use the existing import task.
+enum class FrontendProviderInstallKind : std::uint8_t {
+    Modrinth,
+    CurseForgeFlame,
+    FTB,
+    LegacyFTB,
+    FTBImport,
+    ATLauncher,
+    TechnicZip,
+    TechnicSolder,
+    CustomArchive,
+};
+
+enum class FrontendProviderInstallOutcome : std::uint8_t { Succeeded, Failed, Cancelled, Rejected };
+enum class FrontendProviderInstallRollbackOutcome : std::uint8_t { NotRequired, Applied, Failed };
+
+/// Explicit provider-pack installation input. Provider identifiers and
+/// version identifiers are metadata values; the adapter owns manifests,
+/// staging, network/archive tasks, optional/blocked-file decisions, and the
+/// final instance commit. `sourcePath` is used only by a user-selected local
+/// custom archive or FTB App import directory and never carries an upstream
+/// data-root path.
+struct FrontendProviderInstallRequest final {
+    FrontendProviderInstallKind kind = FrontendProviderInstallKind::Modrinth;
+    std::string packIdentifier;
+    std::string versionIdentifier;
+    std::filesystem::path sourcePath;
+    std::string name;
+    std::string groupId;
+    std::string iconKey = "default";
+};
+
+/// Confirmed result for one fixture-controlled provider installation. A
+/// successful result carries only committed instance metadata. Failed or
+/// cancelled work carries no instance and reports whether the staging/commit
+/// adapter applied or failed to apply its rollback policy.
+struct FrontendProviderInstallResult final {
+    FrontendProviderInstallKind kind = FrontendProviderInstallKind::Modrinth;
+    FrontendProviderInstallOutcome outcome = FrontendProviderInstallOutcome::Rejected;
+    std::optional<FrontendInstanceSnapshot> instance;
+    std::string packIdentifier;
+    std::string versionIdentifier;
+    FrontendProviderInstallRollbackOutcome rollbackOutcome = FrontendProviderInstallRollbackOutcome::NotRequired;
+    std::string localizationKey;
+    std::string diagnosticText;
+    bool retryable = false;
+};
+
 inline constexpr std::size_t kFrontendLogMaxEntries = 512;
 inline constexpr std::size_t kFrontendLogMaxBytes = 256 * 1024;
 
@@ -972,6 +1023,13 @@ struct FrontendRuntimeDependencies final {
         const FrontendProviderVersionRequest&,
         const ProviderVersionProgressHandler&,
         const ProviderVersionCancellationCheck&)>;
+    using ProviderInstallProgressHandler = std::function<void(const FrontendTaskSnapshot&)>;
+    using ProviderInstallCancellationCheck = std::function<bool()>;
+    using ProviderInstallRunner = std::function<FrontendProviderInstallResult(
+        const std::filesystem::path&,
+        const FrontendProviderInstallRequest&,
+        const ProviderInstallProgressHandler&,
+        const ProviderInstallCancellationCheck&)>;
     using OfflineLaunchIdentityLoader = std::function<FrontendOfflineLaunchIdentityLoadResult(
         const std::filesystem::path&, const FrontendOfflineLaunchIdentityRequest&)>;
     using OfflineLaunchIdentityUpdater = std::function<FrontendOfflineLaunchIdentityUpdateResult(
@@ -1015,6 +1073,7 @@ struct FrontendRuntimeDependencies final {
     InstanceExportRunner exportInstance;
     ProviderBrowseRunner browseProvider;
     ProviderVersionRunner loadProviderVersions;
+    ProviderInstallRunner installProviderPack;
     OfflineLaunchIdentityLoader loadOfflineLaunchIdentity;
     OfflineLaunchIdentityUpdater updateOfflineLaunchIdentity;
     TaskSnapshotLoader loadTaskSnapshot;
@@ -1107,6 +1166,10 @@ class FrontendFacade final {
         const FrontendProviderVersionRequest& request,
         const FrontendRuntimeDependencies::ProviderVersionProgressHandler& progressHandler = {},
         const FrontendRuntimeDependencies::ProviderVersionCancellationCheck& cancellationCheck = {}) const;
+    FrontendProviderInstallResult installProviderPack(
+        const FrontendProviderInstallRequest& request,
+        const FrontendRuntimeDependencies::ProviderInstallProgressHandler& progressHandler = {},
+        const FrontendRuntimeDependencies::ProviderInstallCancellationCheck& cancellationCheck = {}) const;
     FrontendOfflineLaunchIdentityLoadResult loadOfflineLaunchIdentity(
         const FrontendOfflineLaunchIdentityRequest& request) const;
     FrontendOfflineLaunchIdentityUpdateResult updateOfflineLaunchIdentity(

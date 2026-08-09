@@ -46,6 +46,9 @@
 		A10000000000000000000025 /* PrismProviderBrowsing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* PrismProviderBrowsing.swift */; };
 		A10000000000000000000026 /* PrismProviderBrowsing.swift in Tests */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* PrismProviderBrowsing.swift */; };
 		A10000000000000000000027 /* PrismProviderBrowsingTests.swift in Tests */ = {isa = PBXBuildFile; fileRef = A20000000000000000000021 /* PrismProviderBrowsingTests.swift */; };
+		A10000000000000000000028 /* PrismProviderInstallation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000022 /* PrismProviderInstallation.swift */; };
+		A10000000000000000000029 /* PrismProviderInstallation.swift in Tests */ = {isa = PBXBuildFile; fileRef = A20000000000000000000022 /* PrismProviderInstallation.swift */; };
+		A1000000000000000000002A /* PrismProviderInstallationTests.swift in Tests */ = {isa = PBXBuildFile; fileRef = A20000000000000000000023 /* PrismProviderInstallationTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -82,6 +85,8 @@
 		A2000000000000000000001F /* PrismInstanceCopyExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrismInstanceCopyExportTests.swift; sourceTree = "<group>"; };
 		A20000000000000000000020 /* PrismProviderBrowsing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrismProviderBrowsing.swift; sourceTree = "<group>"; };
 		A20000000000000000000021 /* PrismProviderBrowsingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrismProviderBrowsingTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000022 /* PrismProviderInstallation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrismProviderInstallation.swift; sourceTree = "<group>"; };
+		A20000000000000000000023 /* PrismProviderInstallationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrismProviderInstallationTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -138,6 +143,7 @@
 				A2000000000000000000001C /* PrismInstanceImport.swift */,
 				A2000000000000000000001E /* PrismInstanceCopyExport.swift */,
 				A20000000000000000000020 /* PrismProviderBrowsing.swift */,
+				A20000000000000000000022 /* PrismProviderInstallation.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -177,6 +183,7 @@
 				A2000000000000000000001D /* PrismInstanceImportTests.swift */,
 				A2000000000000000000001F /* PrismInstanceCopyExportTests.swift */,
 				A20000000000000000000021 /* PrismProviderBrowsingTests.swift */,
+				A20000000000000000000023 /* PrismProviderInstallationTests.swift */,
 			);
 			path = PrismNativeTests;
 			sourceTree = "<group>";
@@ -293,6 +300,8 @@
 				A10000000000000000000024 /* PrismInstanceCopyExportTests.swift in Tests */,
 				A10000000000000000000026 /* PrismProviderBrowsing.swift in Tests */,
 				A10000000000000000000027 /* PrismProviderBrowsingTests.swift in Tests */,
+				A10000000000000000000029 /* PrismProviderInstallation.swift in Tests */,
+				A1000000000000000000002A /* PrismProviderInstallationTests.swift in Tests */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -325,6 +334,7 @@
 				A1000000000000000000001F /* PrismInstanceImport.swift in Sources */,
 				A10000000000000000000022 /* PrismInstanceCopyExport.swift in Sources */,
 				A10000000000000000000025 /* PrismProviderBrowsing.swift in Sources */,
+				A10000000000000000000028 /* PrismProviderInstallation.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
