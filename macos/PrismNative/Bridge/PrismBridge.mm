@@ -1779,6 +1779,48 @@ PRVanillaCreationResult *vanillaCreationResultFromFacadeResult(const FrontendVan
     return converted;
 }
 
+PRInstanceImportSourceKind instanceImportSourceKindFromFacadeKind(FrontendInstanceImportSourceKind kind)
+{
+    switch (kind) {
+        case FrontendInstanceImportSourceKind::LocalFile:
+            return PRInstanceImportSourceKindLocalFile;
+        case FrontendInstanceImportSourceKind::RemoteURL:
+            return PRInstanceImportSourceKindRemoteURL;
+    }
+    throw std::invalid_argument("Facade returned an unknown instance import source kind");
+}
+
+PRInstanceImportOutcome instanceImportOutcomeFromFacadeResult(FrontendInstanceImportOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendInstanceImportOutcome::Succeeded:
+            return PRInstanceImportOutcomeSucceeded;
+        case FrontendInstanceImportOutcome::Failed:
+            return PRInstanceImportOutcomeFailed;
+        case FrontendInstanceImportOutcome::Cancelled:
+            return PRInstanceImportOutcomeCancelled;
+        case FrontendInstanceImportOutcome::Rejected:
+            return PRInstanceImportOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown instance import outcome");
+}
+
+PRInstanceImportResult *instanceImportResultFromFacadeResult(const FrontendInstanceImportResult& result)
+{
+    PRInstanceSummary *instance = result.instance.has_value() ? summaryFromFacadeSnapshot(*result.instance) : nil;
+    PRInstanceImportResult *converted = [[PRInstanceImportResult alloc]
+        initWithInstance:instance
+                  outcome:instanceImportOutcomeFromFacadeResult(result.outcome)
+           localizationKey:foundationStringFromUTF8AllowEmpty(result.localizationKey)
+             diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+                 retryable:result.retryable
+  partialChangesRolledBack:result.partialChangesRolledBack];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid instance import result");
+    }
+    return converted;
+}
+
 PRInstanceNotesUpdateOutcome notesUpdateOutcomeFromFacadeResult(FrontendInstanceNotesUpdateOutcome outcome)
 {
     switch (outcome) {
@@ -2872,6 +2914,36 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@interface PRBridgeInstanceImportDelivery : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithProgress:(nullable PRTaskStatus *)progress
+                           result:(nullable PRInstanceImportResult *)result
+                            error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRTaskStatus *progress;
+@property(nonatomic, strong, readonly, nullable) PRInstanceImportResult *result;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeInstanceImportDelivery
+
+- (instancetype)initWithProgress:(PRTaskStatus *)progress
+                           result:(PRInstanceImportResult *)result
+                            error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _progress = progress;
+        _result = result;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
 @interface PRBridgeOfflineLaunchIdentityLoadDelivery : NSObject
 
 - (instancetype)init NS_UNAVAILABLE;
@@ -3078,6 +3150,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *accountSelectionRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *accountAuthenticationRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *vanillaCreationRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *instanceImportRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *offlineIdentityLoadRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *offlineIdentityUpdateRequestStates;
 @property(nonatomic, strong) NSLock *observationLock;
@@ -3115,6 +3188,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 - (void)removeAccountSelectionRequest:(PRBridgeObservationState *)request;
 - (void)removeAccountAuthenticationRequest:(PRBridgeObservationState *)request;
 - (void)removeVanillaCreationRequest:(PRBridgeObservationState *)request;
+- (void)removeInstanceImportRequest:(PRBridgeObservationState *)request;
 - (void)removeOfflineIdentityLoadRequest:(PRBridgeObservationState *)request;
 - (void)removeOfflineIdentityUpdateRequest:(PRBridgeObservationState *)request;
 - (nullable PRBridgeObservationToken *)loadTaskStatusWithIdentifier:(NSString *)identifier
@@ -3162,6 +3236,27 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, copy, readwrite) NSString *localizationKey;
 @property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
 @property(nonatomic, assign, readwrite) BOOL retryable;
+
+@end
+
+@interface PRInstanceImportRequest ()
+
+@property(nonatomic, copy, readwrite) NSURL *sourceURL;
+@property(nonatomic, assign, readwrite) PRInstanceImportSourceKind sourceKind;
+@property(nonatomic, copy, readwrite) NSString *name;
+@property(nonatomic, copy, readwrite, nullable) NSString *groupID;
+@property(nonatomic, copy, readwrite) NSString *iconKey;
+
+@end
+
+@interface PRInstanceImportResult ()
+
+@property(nonatomic, strong, readwrite, nullable) PRInstanceSummary *instance;
+@property(nonatomic, assign, readwrite) PRInstanceImportOutcome outcome;
+@property(nonatomic, copy, readwrite) NSString *localizationKey;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readwrite) BOOL retryable;
+@property(nonatomic, assign, readwrite) BOOL partialChangesRolledBack;
 
 @end
 
@@ -3759,6 +3854,89 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.localizationKey = [localizationKey copy];
         self.diagnosticText = [diagnosticText copy];
         self.retryable = retryable;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRInstanceImportRequest
+
+- (instancetype)initWithSourceURL:(NSURL *)sourceURL
+                        sourceKind:(PRInstanceImportSourceKind)sourceKind
+                              name:(NSString *)name
+                           groupID:(NSString *)groupID
+                           iconKey:(NSString *)iconKey
+{
+    switch (sourceKind) {
+        case PRInstanceImportSourceKindLocalFile:
+            if (![sourceURL isKindOfClass:NSURL.class] || !sourceURL.isFileURL || sourceURL.path.length == 0
+                || !sourceURL.path.isAbsolutePath) {
+                return nil;
+            }
+            break;
+        case PRInstanceImportSourceKindRemoteURL: {
+            if (![sourceURL isKindOfClass:NSURL.class] || sourceURL.isFileURL || sourceURL.host.length == 0) {
+                return nil;
+            }
+            NSString *scheme = sourceURL.scheme.lowercaseString;
+            if (![scheme isEqualToString:@"http"] && ![scheme isEqualToString:@"https"]) {
+                return nil;
+            }
+            break;
+        }
+        default:
+            return nil;
+    }
+    if (!isNonEmptyString(name) || !isNonEmptyString(iconKey)) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.sourceURL = [sourceURL copy];
+        self.sourceKind = sourceKind;
+        self.name = [name copy];
+        self.groupID = nullableStringCopy(groupID);
+        self.iconKey = [iconKey copy];
+    }
+    return self;
+}
+
+@end
+
+@implementation PRInstanceImportResult
+
+- (instancetype)initWithInstance:(PRInstanceSummary *)instance
+                          outcome:(PRInstanceImportOutcome)outcome
+                   localizationKey:(NSString *)localizationKey
+                     diagnosticText:(NSString *)diagnosticText
+                         retryable:(BOOL)retryable
+          partialChangesRolledBack:(BOOL)partialChangesRolledBack
+{
+    switch (outcome) {
+        case PRInstanceImportOutcomeSucceeded:
+        case PRInstanceImportOutcomeFailed:
+        case PRInstanceImportOutcomeCancelled:
+        case PRInstanceImportOutcomeRejected:
+            break;
+        default:
+            return nil;
+    }
+    if (!isNonEmptyString(localizationKey) || (instance && ![instance isKindOfClass:PRInstanceSummary.class])
+        || (outcome == PRInstanceImportOutcomeSucceeded && !instance)
+        || (outcome != PRInstanceImportOutcomeSucceeded && instance)) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.instance = instance;
+        self.outcome = outcome;
+        self.localizationKey = [localizationKey copy];
+        self.diagnosticText = [diagnosticText copy];
+        self.retryable = retryable;
+        self.partialChangesRolledBack = partialChangesRolledBack;
     }
     return self;
 }
@@ -5238,6 +5416,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.accountSelectionRequestStates = [NSMutableArray array];
         self.accountAuthenticationRequestStates = [NSMutableArray array];
         self.vanillaCreationRequestStates = [NSMutableArray array];
+        self.instanceImportRequestStates = [NSMutableArray array];
         self.offlineIdentityLoadRequestStates = [NSMutableArray array];
         self.offlineIdentityUpdateRequestStates = [NSMutableArray array];
         self.observationLock = [[NSLock alloc] init];
@@ -7757,6 +7936,127 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     return [[PRBridgeObservationToken alloc] initWithState:observation];
 }
 
+- (PRBridgeObservationToken *)importInstanceWithRequest:(PRInstanceImportRequest *)request
+                                                progress:(PRInstanceImportProgressHandler)progress
+                                              completion:(PRInstanceImportCompletionHandler)completion
+{
+    if (!request || !completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    PRInstanceImportRequest *requestCopy = request;
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *observation = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeInstanceImportDelivery *delivery = (PRBridgeInstanceImportDelivery *)value;
+        if (delivery.progress && progress) {
+            progress(delivery.progress);
+        }
+        if (delivery.result || delivery.error) {
+            [weakRequest cancel];
+            completion(delivery.result, delivery.error);
+        }
+    }];
+    weakRequest = observation;
+    observation.removalHandler = ^{
+        [weakBridge removeInstanceImportRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [observation cancel];
+        return nil;
+    }
+    [self.instanceImportRequestStates addObject:observation];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRInstanceImportResult *result = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    FrontendInstanceImportRequest importRequest;
+                    switch (requestCopy.sourceKind) {
+                        case PRInstanceImportSourceKindLocalFile: {
+                            importRequest.sourceKind = FrontendInstanceImportSourceKind::LocalFile;
+                            const char *fileSystemRepresentation = requestCopy.sourceURL.fileSystemRepresentation;
+                            if (fileSystemRepresentation == nullptr || fileSystemRepresentation[0] == '\0') {
+                                throw std::invalid_argument("Local instance imports require a filesystem representation");
+                            }
+                            importRequest.source = std::filesystem::path(fileSystemRepresentation).lexically_normal().string();
+                            break;
+                        }
+                        case PRInstanceImportSourceKindRemoteURL:
+                            importRequest.sourceKind = FrontendInstanceImportSourceKind::RemoteURL;
+                            importRequest.source = utf8TextFromFoundation(requestCopy.sourceURL.absoluteString);
+                            break;
+                        default:
+                            throw std::invalid_argument("Unknown instance import source kind");
+                    }
+                    importRequest.name = utf8TextFromFoundation(requestCopy.name);
+                    importRequest.groupId = requestCopy.groupID ? utf8TextFromFoundation(requestCopy.groupID) : "";
+                    importRequest.iconKey = utf8TextFromFoundation(requestCopy.iconKey);
+                    const FrontendInstanceImportResult importResult = bridge->_facade->importInstance(
+                        importRequest,
+                        [&](const FrontendTaskSnapshot& snapshot) {
+                            if (state.isCancelled) {
+                                return;
+                            }
+                            PRTaskStatus *convertedStatus = taskStatusFromFacadeSnapshot(snapshot);
+                            [state deliverOnMainActor:[[PRBridgeInstanceImportDelivery alloc]
+                                initWithProgress:convertedStatus
+                                           result:nil
+                                            error:nil]];
+                        },
+                        [&] { return state.isCancelled; });
+                    result = instanceImportResultFromFacadeResult(importResult);
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid instance import request"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Instance import cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Instance import unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown instance import failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeInstanceImportDelivery alloc]
+                initWithProgress:nil
+                           result:result
+                            error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:observation];
+}
+
 - (PRBridgeObservationToken *)loadOfflineLaunchIdentityWithMode:(PROfflineLaunchIdentityMode)mode
                                                 accountIdentifier:(NSString *)accountIdentifier
                                                      fallbackName:(NSString *)fallbackName
@@ -8243,6 +8543,16 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.observationLock unlock];
 }
 
+- (void)removeInstanceImportRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.instanceImportRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.instanceImportRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
 - (void)removeOfflineIdentityLoadRequest:(PRBridgeObservationState *)request
 {
     [self.observationLock lock];
@@ -8295,6 +8605,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [observations addObjectsFromArray:self.accountSelectionRequestStates];
     [observations addObjectsFromArray:self.accountAuthenticationRequestStates];
     [observations addObjectsFromArray:self.vanillaCreationRequestStates];
+    [observations addObjectsFromArray:self.instanceImportRequestStates];
     [observations addObjectsFromArray:self.offlineIdentityLoadRequestStates];
     [observations addObjectsFromArray:self.offlineIdentityUpdateRequestStates];
     [self.instanceObservationStates removeAllObjects];
@@ -8325,6 +8636,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.accountSelectionRequestStates removeAllObjects];
     [self.accountAuthenticationRequestStates removeAllObjects];
     [self.vanillaCreationRequestStates removeAllObjects];
+    [self.instanceImportRequestStates removeAllObjects];
     [self.offlineIdentityLoadRequestStates removeAllObjects];
     [self.offlineIdentityUpdateRequestStates removeAllObjects];
     [self.observationLock unlock];

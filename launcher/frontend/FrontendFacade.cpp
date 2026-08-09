@@ -1017,6 +1017,87 @@ void validateVanillaCreationResult(
     }
 }
 
+bool isKnownInstanceImportSourceKind(FrontendInstanceImportSourceKind kind) noexcept
+{
+    switch (kind) {
+        case FrontendInstanceImportSourceKind::LocalFile:
+        case FrontendInstanceImportSourceKind::RemoteURL:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownInstanceImportOutcome(FrontendInstanceImportOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendInstanceImportOutcome::Succeeded:
+        case FrontendInstanceImportOutcome::Failed:
+        case FrontendInstanceImportOutcome::Cancelled:
+        case FrontendInstanceImportOutcome::Rejected:
+            return true;
+    }
+    return false;
+}
+
+bool hasNoWhitespace(const std::string& value) noexcept
+{
+    return value.find_first_of(" \t\r\n") == std::string::npos;
+}
+
+bool isValidRemoteInstanceImportSource(const std::string& source) noexcept
+{
+    const bool hasHTTPSScheme = source.rfind("https://", 0) == 0;
+    const bool hasHTTPScheme = source.rfind("http://", 0) == 0;
+    if ((!hasHTTPSScheme && !hasHTTPScheme) || !hasNoWhitespace(source)) {
+        return false;
+    }
+
+    const auto authorityOffset = hasHTTPSScheme ? std::string("https://").size() : std::string("http://").size();
+    const auto authorityEnd = source.find_first_of("/?#", authorityOffset);
+    const auto authority = source.substr(
+        authorityOffset,
+        authorityEnd == std::string::npos ? std::string::npos : authorityEnd - authorityOffset);
+    return !authority.empty();
+}
+
+void validateInstanceImportRequest(const FrontendInstanceImportRequest& request)
+{
+    if (!isKnownInstanceImportSourceKind(request.sourceKind) || request.source.empty() || request.name.empty()
+        || request.iconKey.empty()) {
+        throw std::invalid_argument("Instance import requires a known source, name, and icon key");
+    }
+
+    if (request.sourceKind == FrontendInstanceImportSourceKind::LocalFile) {
+        if (!std::filesystem::path(request.source).is_absolute()) {
+            throw std::invalid_argument("Local instance imports require an absolute source path");
+        }
+        return;
+    }
+
+    if (!isValidRemoteInstanceImportSource(request.source)) {
+        throw std::invalid_argument("Remote instance imports require an HTTP(S) URL with an authority");
+    }
+}
+
+void validateInstanceImportResult(
+    const FrontendInstanceImportResult& result,
+    const FrontendInstanceImportRequest& request)
+{
+    if (!isKnownInstanceImportOutcome(result.outcome) || result.localizationKey.empty()) {
+        throw std::invalid_argument("Instance import results require a known outcome and localization key");
+    }
+
+    if (result.outcome == FrontendInstanceImportOutcome::Succeeded) {
+        if (!result.instance.has_value() || !result.instance->hasStableIdentifier() || result.instance->name.empty()
+            || result.instance->name != request.name || result.instance->groupId != request.groupId
+            || result.instance->iconKey != request.iconKey) {
+            throw std::invalid_argument("Successful instance import must confirm the requested instance values");
+        }
+    } else if (result.instance.has_value()) {
+        throw std::invalid_argument("Non-successful instance import cannot carry an instance summary");
+    }
+}
+
 std::string truncateUTF8(std::string value, std::size_t maxBytes)
 {
     if (value.size() <= maxBytes) {
@@ -1810,6 +1891,64 @@ FrontendVanillaCreationResult executeVanillaCreation(
     return result;
 }
 
+FrontendInstanceImportResult executeInstanceImport(
+    const FrontendRuntimeDependencies::InstanceImportRunner& runner,
+    const std::filesystem::path& dataRoot,
+    const FrontendInstanceImportRequest& request,
+    const FrontendRuntimeDependencies::InstanceImportProgressHandler& progressHandler,
+    const FrontendRuntimeDependencies::InstanceImportCancellationCheck& cancellationCheck)
+{
+    validateInstanceImportRequest(request);
+    if (!runner) {
+        return FrontendInstanceImportResult{
+            FrontendInstanceImportOutcome::Rejected,
+            std::nullopt,
+            "instances.import.unavailable",
+            "Instance import is unavailable.",
+            true,
+            false,
+        };
+    }
+
+    bool terminalProgressSeen = false;
+    FrontendTaskState terminalState = FrontendTaskState::Queued;
+    const auto progress = [&](const FrontendTaskSnapshot& snapshot) {
+        validateTaskSnapshot(snapshot);
+        if (snapshot.title.empty()) {
+            throw std::invalid_argument("Instance import progress requires a task title");
+        }
+        if (terminalProgressSeen) {
+            throw std::invalid_argument("Instance import cannot report progress after a terminal event");
+        }
+        if (isTerminalTaskState(snapshot.state)) {
+            terminalProgressSeen = true;
+            terminalState = snapshot.state;
+        }
+        if (progressHandler) {
+            progressHandler(snapshot);
+        }
+    };
+
+    auto result = runner(dataRoot, request, progress, cancellationCheck);
+    validateInstanceImportResult(result, request);
+    if (result.outcome == FrontendInstanceImportOutcome::Rejected) {
+        if (terminalProgressSeen) {
+            throw std::invalid_argument("Rejected instance import cannot report a terminal progress event");
+        }
+        return result;
+    }
+
+    const bool matchingTerminalState = (result.outcome == FrontendInstanceImportOutcome::Succeeded
+                                         && terminalState == FrontendTaskState::Succeeded)
+        || (result.outcome == FrontendInstanceImportOutcome::Failed && terminalState == FrontendTaskState::Failed)
+        || (result.outcome == FrontendInstanceImportOutcome::Cancelled
+            && terminalState == FrontendTaskState::Cancelled);
+    if (!terminalProgressSeen || !matchingTerminalState) {
+        throw std::invalid_argument("Instance import result must match its terminal progress event");
+    }
+    return result;
+}
+
 }  // namespace
 
 FrontendFacade::FrontendFacade(std::filesystem::path dataRoot, FrontendRuntimeDependencies runtimeDependencies)
@@ -2037,6 +2176,16 @@ FrontendVanillaCreationResult FrontendFacade::createVanillaInstance(
     ensureRunning(m_lifecycleState);
     return executeVanillaCreation(
         m_runtimeDependencies.createVanillaInstance, m_dataRoot, request, progressHandler, cancellationCheck);
+}
+
+FrontendInstanceImportResult FrontendFacade::importInstance(
+    const FrontendInstanceImportRequest& request,
+    const FrontendRuntimeDependencies::InstanceImportProgressHandler& progressHandler,
+    const FrontendRuntimeDependencies::InstanceImportCancellationCheck& cancellationCheck) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeInstanceImport(
+        m_runtimeDependencies.importInstance, m_dataRoot, request, progressHandler, cancellationCheck);
 }
 
 FrontendOfflineLaunchIdentityLoadResult FrontendFacade::loadOfflineLaunchIdentity(

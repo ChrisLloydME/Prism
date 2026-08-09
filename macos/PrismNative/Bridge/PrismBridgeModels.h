@@ -124,6 +124,59 @@ typedef NS_ENUM(NSInteger, PRVanillaCreationOutcome) {
 
 @end
 
+typedef NS_ENUM(NSInteger, PRInstanceImportSourceKind) {
+    PRInstanceImportSourceKindLocalFile = 0,
+    PRInstanceImportSourceKindRemoteURL,
+};
+
+/// Foundation-only input for importing a caller-selected local archive or an
+/// HTTP(S) archive. Staging, extraction, downloads, and commits remain in the
+/// injected facade runner.
+@interface PRInstanceImportRequest : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithSourceURL:(NSURL *)sourceURL
+                                sourceKind:(PRInstanceImportSourceKind)sourceKind
+                                      name:(NSString *)name
+                                   groupID:(nullable NSString *)groupID
+                                   iconKey:(NSString *)iconKey NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSURL *sourceURL;
+@property(nonatomic, assign, readonly) PRInstanceImportSourceKind sourceKind;
+@property(nonatomic, copy, readonly) NSString *name;
+@property(nonatomic, copy, readonly, nullable) NSString *groupID;
+@property(nonatomic, copy, readonly) NSString *iconKey;
+
+@end
+
+typedef NS_ENUM(NSInteger, PRInstanceImportOutcome) {
+    PRInstanceImportOutcomeSucceeded = 0,
+    PRInstanceImportOutcomeFailed,
+    PRInstanceImportOutcomeCancelled,
+    PRInstanceImportOutcomeRejected,
+};
+
+/// Immutable confirmed result for one instance import task. A successful
+/// result carries only the committed instance summary.
+@interface PRInstanceImportResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithInstance:(nullable PRInstanceSummary *)instance
+                                  outcome:(PRInstanceImportOutcome)outcome
+                           localizationKey:(NSString *)localizationKey
+                             diagnosticText:(nullable NSString *)diagnosticText
+                                 retryable:(BOOL)retryable
+                  partialChangesRolledBack:(BOOL)partialChangesRolledBack NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRInstanceSummary *instance;
+@property(nonatomic, assign, readonly) PRInstanceImportOutcome outcome;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL retryable;
+@property(nonatomic, assign, readonly) BOOL partialChangesRolledBack;
+
+@end
+
 /// Immutable instance metadata and notes for the native detail form.
 @interface PRInstanceDetails : NSObject
 

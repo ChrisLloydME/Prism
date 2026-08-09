@@ -3103,4 +3103,161 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     XCTAssertEqualObjects(receivedResult.instance.iconKey, @"default");
 }
 
+- (void)testInstanceImportConvertsFoundationRequestProgressResultAndCancellation
+{
+    auto rootMatches = std::make_shared<std::atomic<bool>>(true);
+    auto receivedRequest = std::make_shared<FrontendInstanceImportRequest>();
+    auto progressCalls = std::make_shared<std::atomic<std::size_t>>(0);
+    const std::string fixtureRoot = self.fixtureRootURL.path.UTF8String;
+
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.importInstance = [rootMatches, receivedRequest, progressCalls, fixtureRoot](
+                                      const std::filesystem::path& root,
+                                      const FrontendInstanceImportRequest& request,
+                                      const FrontendRuntimeDependencies::InstanceImportProgressHandler& progress,
+                                      const FrontendRuntimeDependencies::InstanceImportCancellationCheck&) {
+        *rootMatches = root == std::filesystem::path(fixtureRoot).lexically_normal();
+        *receivedRequest = request;
+        progress(FrontendTaskSnapshot{ "instance-import.local", "Import Instance", FrontendTaskState::Queued,
+                                       FrontendTaskProgressKind::None, 0.0, true, {}, std::nullopt });
+        ++*progressCalls;
+        progress(FrontendTaskSnapshot{ "instance-import.local", "Import Instance", FrontendTaskState::Running,
+                                       FrontendTaskProgressKind::Determinate, 0.5, true, {}, std::nullopt });
+        ++*progressCalls;
+        const FrontendTaskTerminalResult terminal{
+            FrontendTaskTerminalOutcome::Succeeded, "instances.import.completed", {}, "", false };
+        progress(FrontendTaskSnapshot{ "instance-import.local", "Import Instance", FrontendTaskState::Succeeded,
+                                       FrontendTaskProgressKind::Determinate, 1.0, false, {}, terminal });
+        ++*progressCalls;
+        return FrontendInstanceImportResult{
+            FrontendInstanceImportOutcome::Succeeded,
+            FrontendInstanceSnapshot{ "fixture.imported", request.name, request.iconKey, request.groupId },
+            "instances.import.completed",
+            "",
+            false,
+            false,
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    NSString *sourcePath = [self.fixtureRootURL.path stringByAppendingPathComponent:@"fixture-pack.zip"];
+    PRInstanceImportRequest *request =
+        [[PRInstanceImportRequest alloc] initWithSourceURL:[NSURL fileURLWithPath:sourcePath]
+                                                sourceKind:PRInstanceImportSourceKindLocalFile
+                                                      name:@"Imported Fixture"
+                                                   groupID:@"fixture-imports"
+                                                   iconKey:@"default"];
+    XCTAssertNotNil(request);
+
+    XCTestExpectation *completion = [self expectationWithDescription:@"Instance import completed"];
+    __block NSMutableArray<PRTaskStatus *> *receivedProgress = [NSMutableArray array];
+    __block PRInstanceImportResult *receivedResult = nil;
+    __block PRBridgeError *receivedError = nil;
+    __block BOOL progressRanOnMainThread = YES;
+    __block BOOL completionRanOnMainThread = NO;
+    PRBridgeObservationToken *token = [bridge
+        importInstanceWithRequest:request
+                          progress:^(PRTaskStatus *status) {
+        progressRanOnMainThread = progressRanOnMainThread && [NSThread isMainThread];
+        [receivedProgress addObject:status];
+    }
+                        completion:^(PRInstanceImportResult *result, PRBridgeError *error) {
+        completionRanOnMainThread = [NSThread isMainThread];
+        receivedResult = result;
+        receivedError = error;
+        [completion fulfill];
+    }];
+
+    XCTAssertNotNil(token);
+    [self waitForExpectations:@[ completion ] timeout:2.0];
+    XCTAssertTrue(progressRanOnMainThread);
+    XCTAssertTrue(completionRanOnMainThread);
+    XCTAssertNil(receivedError);
+    XCTAssertTrue(token.isCancelled);
+    XCTAssertEqual(progressCalls->load(), (size_t)3);
+    XCTAssertEqual(receivedProgress.count, (NSUInteger)3);
+    XCTAssertEqual(receivedProgress[0].state, PRTaskStateQueued);
+    XCTAssertEqual(receivedProgress[1].state, PRTaskStateRunning);
+    XCTAssertEqual(receivedProgress[1].progressFraction, 0.5);
+    XCTAssertEqual(receivedProgress[2].state, PRTaskStateSucceeded);
+    XCTAssertEqualObjects(receivedProgress[2].terminalResult.localizationKey, @"instances.import.completed");
+    XCTAssertTrue(rootMatches->load());
+    XCTAssertEqual(receivedRequest->sourceKind, FrontendInstanceImportSourceKind::LocalFile);
+    XCTAssertEqual(receivedRequest->source, std::filesystem::path(sourcePath.fileSystemRepresentation).lexically_normal().string());
+    XCTAssertEqual(receivedRequest->name, "Imported Fixture");
+    XCTAssertEqual(receivedRequest->groupId, "fixture-imports");
+    XCTAssertEqual(receivedRequest->iconKey, "default");
+    XCTAssertEqual(receivedResult.outcome, PRInstanceImportOutcomeSucceeded);
+    XCTAssertEqualObjects(receivedResult.localizationKey, @"instances.import.completed");
+    XCTAssertEqualObjects(receivedResult.instance.identifier, @"fixture.imported");
+    XCTAssertEqualObjects(receivedResult.instance.name, @"Imported Fixture");
+    XCTAssertEqualObjects(receivedResult.instance.groupID, @"fixture-imports");
+    XCTAssertEqualObjects(receivedResult.instance.iconKey, @"default");
+
+    dispatch_semaphore_t runnerEntered = dispatch_semaphore_create(0);
+    dispatch_semaphore_t releaseRunner = dispatch_semaphore_create(0);
+    FrontendRuntimeDependencies cancelledDependencies = baseFixtureDependencies();
+    cancelledDependencies.importInstance = [runnerEntered, releaseRunner](
+                                                const std::filesystem::path&,
+                                                const FrontendInstanceImportRequest&,
+                                                const FrontendRuntimeDependencies::InstanceImportProgressHandler& progress,
+                                                const FrontendRuntimeDependencies::InstanceImportCancellationCheck& isCancelled) {
+        progress(FrontendTaskSnapshot{ "instance-import.cancel", "Import Instance", FrontendTaskState::Queued,
+                                       FrontendTaskProgressKind::None, 0.0, true, {}, std::nullopt });
+        dispatch_semaphore_signal(runnerEntered);
+        dispatch_semaphore_wait(releaseRunner, DISPATCH_TIME_FOREVER);
+        if (isCancelled && isCancelled()) {
+            const FrontendTaskTerminalResult terminal{
+                FrontendTaskTerminalOutcome::Cancelled, "instances.import.cancelled", {}, "", false };
+            progress(FrontendTaskSnapshot{ "instance-import.cancel", "Import Instance", FrontendTaskState::Cancelled,
+                                           FrontendTaskProgressKind::None, 0.0, false, {}, terminal });
+            return FrontendInstanceImportResult{
+                FrontendInstanceImportOutcome::Cancelled,
+                std::nullopt,
+                "instances.import.cancelled",
+                "",
+                false,
+                true,
+            };
+        }
+        const FrontendTaskTerminalResult terminal{
+            FrontendTaskTerminalOutcome::Succeeded, "instances.import.completed", {}, "", false };
+        progress(FrontendTaskSnapshot{ "instance-import.cancel", "Import Instance", FrontendTaskState::Succeeded,
+                                       FrontendTaskProgressKind::Determinate, 1.0, false, {}, terminal });
+        return FrontendInstanceImportResult{
+            FrontendInstanceImportOutcome::Succeeded,
+            FrontendInstanceSnapshot{ "fixture.imported", "Imported Fixture", "default", "fixture-imports" },
+            "instances.import.completed",
+            "",
+            false,
+            false,
+        };
+    };
+    PRPrismBridge *cancelledBridge = [self bridgeWithDependencies:std::move(cancelledDependencies)
+                                                cancellationHandler:nil
+                                                   shutdownHandler:nil];
+    XCTAssertNotNil(cancelledBridge);
+    __block NSUInteger cancellationCompletionCount = 0;
+    PRBridgeObservationToken *cancelToken = [cancelledBridge
+        importInstanceWithRequest:request
+                          progress:nil
+                        completion:^(__unused PRInstanceImportResult *result, __unused PRBridgeError *error) {
+        cancellationCompletionCount += 1;
+    }];
+    XCTAssertNotNil(cancelToken);
+    XCTAssertEqual(dispatch_semaphore_wait(runnerEntered, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC)), 0);
+    XCTAssertTrue([cancelToken cancel]);
+    dispatch_semaphore_signal(releaseRunner);
+    XCTestExpectation *drained = [self expectationWithDescription:@"Cancelled instance import drained"];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [drained fulfill];
+    });
+    [self waitForExpectations:@[ drained ] timeout:2.0];
+    XCTAssertEqual(cancellationCompletionCount, (NSUInteger)0);
+}
+
 @end

@@ -1157,6 +1157,106 @@ int main()
                (void) vanillaFacade.createVanillaInstance(vanillaRequest);
            });
 
+    FrontendInstanceImportRequest instanceImportRequest;
+    instanceImportRequest.sourceKind = FrontendInstanceImportSourceKind::LocalFile;
+    instanceImportRequest.source = (fixtureRoot / "fixture-pack.zip").lexically_normal().string();
+    instanceImportRequest.name = "Imported Fixture";
+    instanceImportRequest.groupId = "fixture-imports";
+    instanceImportRequest.iconKey = "default";
+    std::size_t importCalls = 0;
+    std::size_t importProgressEvents = 0;
+    bool importRootMatches = true;
+    bool importSourcePreserved = false;
+    bool importCancellationCheckObserved = false;
+    auto importDependencies = makeFixtureDependencies();
+    importDependencies.importInstance = [&](
+                                               const std::filesystem::path& root,
+                                               const FrontendInstanceImportRequest& request,
+                                               const FrontendRuntimeDependencies::InstanceImportProgressHandler& progress,
+                                               const FrontendRuntimeDependencies::InstanceImportCancellationCheck& isCancelled) {
+        importRootMatches = importRootMatches && root == fixtureRoot.lexically_normal();
+        ++importCalls;
+        const bool expectedSource = request.sourceKind == FrontendInstanceImportSourceKind::LocalFile
+            ? request.source == instanceImportRequest.source
+            : request.source == "https://downloads.example.invalid/fixture-pack.zip";
+        importSourcePreserved = importSourcePreserved && expectedSource && request.name == instanceImportRequest.name
+            && request.groupId == instanceImportRequest.groupId && request.iconKey == instanceImportRequest.iconKey;
+        const std::string taskIdentifier = request.sourceKind == FrontendInstanceImportSourceKind::LocalFile
+            ? "instance-import.local"
+            : "instance-import.remote";
+        progress(FrontendTaskSnapshot{ taskIdentifier, "Import Instance", FrontendTaskState::Queued,
+                                       FrontendTaskProgressKind::None, 0.0, true, {}, std::nullopt });
+        ++importProgressEvents;
+        progress(FrontendTaskSnapshot{ taskIdentifier, "Import Instance", FrontendTaskState::Running,
+                                       FrontendTaskProgressKind::Determinate, 0.5, true, {}, std::nullopt });
+        ++importProgressEvents;
+        if (isCancelled && isCancelled()) {
+            importCancellationCheckObserved = true;
+            const FrontendTaskTerminalResult terminal{
+                FrontendTaskTerminalOutcome::Cancelled, "instances.import.cancelled", {}, "Fixture cancelled", false };
+            progress(FrontendTaskSnapshot{ taskIdentifier, "Import Instance", FrontendTaskState::Cancelled,
+                                           FrontendTaskProgressKind::Determinate, 0.5, false, {}, terminal });
+            ++importProgressEvents;
+            return FrontendInstanceImportResult{
+                FrontendInstanceImportOutcome::Cancelled,
+                std::nullopt,
+                "instances.import.cancelled",
+                "Fixture cancelled",
+                false,
+                true,
+            };
+        }
+
+        const FrontendTaskTerminalResult terminal{
+            FrontendTaskTerminalOutcome::Succeeded, "instances.import.completed", {}, "", false };
+        progress(FrontendTaskSnapshot{ taskIdentifier, "Import Instance", FrontendTaskState::Succeeded,
+                                       FrontendTaskProgressKind::Determinate, 1.0, false, {}, terminal });
+        ++importProgressEvents;
+        return FrontendInstanceImportResult{
+            FrontendInstanceImportOutcome::Succeeded,
+            FrontendInstanceSnapshot{ "fixture.imported", request.name, request.iconKey, request.groupId },
+            "instances.import.completed",
+            "",
+            false,
+            false,
+        };
+    };
+    instanceImportRequest.source = (fixtureRoot / "fixture-pack.zip").lexically_normal().string();
+    importSourcePreserved = true;
+    FrontendFacade importFacade(fixtureRoot / "nested" / "..", std::move(importDependencies));
+    const auto importedInstance = importFacade.importInstance(instanceImportRequest);
+    FrontendInstanceImportRequest remoteImportRequest = instanceImportRequest;
+    remoteImportRequest.sourceKind = FrontendInstanceImportSourceKind::RemoteURL;
+    remoteImportRequest.source = "https://downloads.example.invalid/fixture-pack.zip";
+    const auto cancelledImport = importFacade.importInstance(remoteImportRequest, {}, [] { return true; });
+    const bool instanceImportContract = importedInstance.outcome == FrontendInstanceImportOutcome::Succeeded
+        && importedInstance.instance.has_value() && importedInstance.instance->id == "fixture.imported"
+        && importedInstance.instance->name == "Imported Fixture"
+        && cancelledImport.outcome == FrontendInstanceImportOutcome::Cancelled && !cancelledImport.instance.has_value()
+        && importCalls == 2 && importProgressEvents == 6 && importRootMatches && importSourcePreserved
+        && importCancellationCheckObserved;
+    const bool rejectedInvalidImportRequest = throwsInvalidArgument([&importFacade] {
+        FrontendInstanceImportRequest invalid;
+        invalid.sourceKind = FrontendInstanceImportSourceKind::LocalFile;
+        invalid.source = "relative-fixture-pack.zip";
+        invalid.name = "Imported Fixture";
+        invalid.iconKey = "default";
+        (void) importFacade.importInstance(invalid);
+    }) && throwsInvalidArgument([&importFacade] {
+        FrontendInstanceImportRequest invalid;
+        invalid.sourceKind = FrontendInstanceImportSourceKind::RemoteURL;
+        invalid.source = "ftp://downloads.example.invalid/fixture-pack.zip";
+        invalid.name = "Imported Fixture";
+        invalid.iconKey = "default";
+        (void) importFacade.importInstance(invalid);
+    });
+    const bool missingInstanceImportPortIsSafe = emptyFacade.importInstance(instanceImportRequest).outcome
+        == FrontendInstanceImportOutcome::Rejected;
+    const bool rejectedPostShutdownInstanceImport = importFacade.shutdown()
+        && throwsLogicError([&importFacade, &instanceImportRequest] {
+               (void) importFacade.importInstance(instanceImportRequest);
+           });
+
     std::vector<std::string> launchCalls;
     std::vector<std::string> stopCalls;
     bool commandRootMatches = true;
@@ -1611,7 +1711,9 @@ int main()
                && authenticationContract && invalidAuthenticationRejected && missingAuthenticationPortIsSafe
                && rejectedPostShutdownAuthenticationWork && offlineIdentityContract && invalidOfflineLoadRejected
                && invalidOfflineUpdateRejected && missingOfflineIdentityPortsAreSafe
-               && rejectedPostShutdownOfflineIdentityWork
+               && rejectedPostShutdownOfflineIdentityWork && instanceImportContract
+               && rejectedInvalidImportRequest && missingInstanceImportPortIsSafe
+               && rejectedPostShutdownInstanceImport
                && rejectedEmptyRoot && rejectedRelativeRoot && rejectedIncompleteDependencies
                && lifecycleContract && callbacksRanExactlyOnce && destructorShutdownContract && !error
         ? 0

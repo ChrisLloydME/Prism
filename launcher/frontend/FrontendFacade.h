@@ -628,6 +628,33 @@ struct FrontendVanillaCreationResult final {
     bool retryable = false;
 };
 
+enum class FrontendInstanceImportSourceKind : std::uint8_t { LocalFile, RemoteURL };
+enum class FrontendInstanceImportOutcome : std::uint8_t { Succeeded, Failed, Cancelled, Rejected };
+
+/// Explicit, non-UI input for importing a local archive or an HTTP(S) archive.
+/// The local path may be outside the data root because it is caller-selected;
+/// all staging, extraction, download, and final instance commits stay inside
+/// the injected backend runner and its explicit data root.
+struct FrontendInstanceImportRequest final {
+    FrontendInstanceImportSourceKind sourceKind = FrontendInstanceImportSourceKind::LocalFile;
+    std::string source;
+    std::string name;
+    std::string groupId;
+    std::string iconKey = "default";
+};
+
+/// Confirmed result for one fixture-controlled import request. A successful
+/// result carries only immutable instance metadata; source paths and task
+/// ownership never cross this value type.
+struct FrontendInstanceImportResult final {
+    FrontendInstanceImportOutcome outcome = FrontendInstanceImportOutcome::Rejected;
+    std::optional<FrontendInstanceSnapshot> instance;
+    std::string localizationKey;
+    std::string diagnosticText;
+    bool retryable = false;
+    bool partialChangesRolledBack = false;
+};
+
 inline constexpr std::size_t kFrontendLogMaxEntries = 512;
 inline constexpr std::size_t kFrontendLogMaxBytes = 256 * 1024;
 
@@ -713,6 +740,13 @@ struct FrontendRuntimeDependencies final {
         const FrontendVanillaCreationRequest&,
         const VanillaCreationProgressHandler&,
         const VanillaCreationCancellationCheck&)>;
+    using InstanceImportProgressHandler = std::function<void(const FrontendTaskSnapshot&)>;
+    using InstanceImportCancellationCheck = std::function<bool()>;
+    using InstanceImportRunner = std::function<FrontendInstanceImportResult(
+        const std::filesystem::path&,
+        const FrontendInstanceImportRequest&,
+        const InstanceImportProgressHandler&,
+        const InstanceImportCancellationCheck&)>;
     using OfflineLaunchIdentityLoader = std::function<FrontendOfflineLaunchIdentityLoadResult(
         const std::filesystem::path&, const FrontendOfflineLaunchIdentityRequest&)>;
     using OfflineLaunchIdentityUpdater = std::function<FrontendOfflineLaunchIdentityUpdateResult(
@@ -751,6 +785,7 @@ struct FrontendRuntimeDependencies final {
     AccountSelectionUpdater selectActiveAccount;
     AccountAuthenticationRunner authenticateAccount;
     VanillaCreationRunner createVanillaInstance;
+    InstanceImportRunner importInstance;
     OfflineLaunchIdentityLoader loadOfflineLaunchIdentity;
     OfflineLaunchIdentityUpdater updateOfflineLaunchIdentity;
     TaskSnapshotLoader loadTaskSnapshot;
@@ -823,6 +858,10 @@ class FrontendFacade final {
         const FrontendVanillaCreationRequest& request,
         const FrontendRuntimeDependencies::VanillaCreationProgressHandler& progressHandler = {},
         const FrontendRuntimeDependencies::VanillaCreationCancellationCheck& cancellationCheck = {}) const;
+    FrontendInstanceImportResult importInstance(
+        const FrontendInstanceImportRequest& request,
+        const FrontendRuntimeDependencies::InstanceImportProgressHandler& progressHandler = {},
+        const FrontendRuntimeDependencies::InstanceImportCancellationCheck& cancellationCheck = {}) const;
     FrontendOfflineLaunchIdentityLoadResult loadOfflineLaunchIdentity(
         const FrontendOfflineLaunchIdentityRequest& request) const;
     FrontendOfflineLaunchIdentityUpdateResult updateOfflineLaunchIdentity(

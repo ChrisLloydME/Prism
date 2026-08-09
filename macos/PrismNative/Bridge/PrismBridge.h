@@ -89,6 +89,9 @@ typedef void (^PRAccountAuthenticationCompletionHandler)(PRAccountAuthentication
 typedef void (^PRVanillaCreationProgressHandler)(PRTaskStatus *progress);
 typedef void (^PRVanillaCreationCompletionHandler)(PRVanillaCreationResult * _Nullable result,
                                                      PRBridgeError * _Nullable error);
+typedef void (^PRInstanceImportProgressHandler)(PRTaskStatus *progress);
+typedef void (^PRInstanceImportCompletionHandler)(PRInstanceImportResult * _Nullable result,
+                                                   PRBridgeError * _Nullable error);
 typedef void (^PROfflineLaunchIdentityLoadCompletionHandler)(PROfflineLaunchIdentityLoadResult * _Nullable result,
                                                               PRBridgeError * _Nullable error);
 typedef void (^PROfflineLaunchIdentityUpdateCompletionHandler)(PROfflineLaunchIdentityUpdateResult * _Nullable result,
@@ -227,6 +230,14 @@ typedef void (^PROfflineLaunchIdentityUpdateCompletionHandler)(PROfflineLaunchId
 - (nullable PRBridgeObservationToken *)createVanillaInstanceWithRequest:(PRVanillaCreationRequest *)request
                                                                  progress:(nullable PRVanillaCreationProgressHandler)progress
                                                                completion:(PRVanillaCreationCompletionHandler)completion;
+
+/// Runs the fixture-controlled local file or HTTP(S) import contract. The
+/// request contains only Foundation values; system file selection, backend
+/// staging/download/commit, cancellation, and late-delivery suppression stay
+/// outside Swift and the bridge owns no archive or URL task objects.
+- (nullable PRBridgeObservationToken *)importInstanceWithRequest:(PRInstanceImportRequest *)request
+                                                         progress:(nullable PRInstanceImportProgressHandler)progress
+                                                       completion:(PRInstanceImportCompletionHandler)completion;
 
 /// Loads immutable, non-secret instance settings for a standard native Form.
 - (nullable PRBridgeObservationToken *)loadInstanceSettingsWithIdentifier:(NSString *)identifier
