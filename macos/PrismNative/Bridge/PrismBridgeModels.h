@@ -317,6 +317,219 @@ typedef NS_ENUM(NSInteger, PRInstanceExportOutcome) {
 
 @end
 
+typedef NS_ENUM(NSInteger, PRProviderKind) {
+    PRProviderKindModrinth = 0,
+    PRProviderKindCurseForge,
+    PRProviderKindFTB,
+    PRProviderKindATLauncher,
+    PRProviderKindTechnic,
+    PRProviderKindLegacyFTB,
+};
+
+typedef NS_ENUM(NSInteger, PRProviderSort) {
+    PRProviderSortRelevance = 0,
+    PRProviderSortPopularity,
+    PRProviderSortNewest,
+    PRProviderSortUpdated,
+    PRProviderSortName,
+    PRProviderSortDownloads,
+    PRProviderSortFollows,
+    PRProviderSortGameVersion,
+    PRProviderSortPlays,
+    PRProviderSortInstalls,
+};
+
+typedef NS_ENUM(NSInteger, PRProviderReleaseType) {
+    PRProviderReleaseTypeUnknown = 0,
+    PRProviderReleaseTypeRelease,
+    PRProviderReleaseTypeBeta,
+    PRProviderReleaseTypeAlpha,
+};
+
+typedef NS_ENUM(NSInteger, PRProviderSide) {
+    PRProviderSideAny = 0,
+    PRProviderSideClient,
+    PRProviderSideServer,
+    PRProviderSideUniversal,
+};
+
+/// Foundation-only provider browse input. Provider endpoints, credentials,
+/// cache paths, and network task ownership remain inside Objective-C++.
+@interface PRProviderBrowseRequest : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithProvider:(PRProviderKind)provider
+                                     query:(NSString *)query
+                                    offset:(NSInteger)offset
+                                  pageSize:(NSInteger)pageSize
+                                      sort:(PRProviderSort)sort
+                              gameVersions:(NSArray<NSString *> *)gameVersions
+                                  loaders:(NSArray<NSString *> *)loaders
+                                categories:(NSArray<NSString *> *)categories
+                              releaseTypes:(NSArray<NSNumber *> *)releaseTypes
+                                      side:(PRProviderSide)side
+                                openSource:(BOOL)openSource
+                             hideInstalled:(BOOL)hideInstalled NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, assign, readonly) PRProviderKind provider;
+@property(nonatomic, copy, readonly) NSString *query;
+@property(nonatomic, assign, readonly) NSInteger offset;
+@property(nonatomic, assign, readonly) NSInteger pageSize;
+@property(nonatomic, assign, readonly) PRProviderSort sort;
+@property(nonatomic, copy, readonly) NSArray<NSString *> *gameVersions;
+@property(nonatomic, copy, readonly) NSArray<NSString *> *loaders;
+@property(nonatomic, copy, readonly) NSArray<NSString *> *categories;
+@property(nonatomic, copy, readonly) NSArray<NSNumber *> *releaseTypes;
+@property(nonatomic, assign, readonly) PRProviderSide side;
+@property(nonatomic, assign, readonly) BOOL openSource;
+@property(nonatomic, assign, readonly) BOOL hideInstalled;
+
+@end
+
+/// Immutable provider browse row. Images and download/install payloads are
+/// intentionally absent; Swift uses system text/list controls for this data.
+@interface PRProviderPack : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithProvider:(PRProviderKind)provider
+                               identifier:(NSString *)identifier
+                                     name:(NSString *)name
+                                      slug:(nullable NSString *)slug
+                                   summary:(nullable NSString *)summary
+                                    author:(nullable NSString *)author
+                                categories:(NSArray<NSString *> *)categories
+                       versionsAvailable:(BOOL)versionsAvailable
+                  supportsVersionSelection:(BOOL)supportsVersionSelection NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, assign, readonly) PRProviderKind provider;
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, copy, readonly) NSString *name;
+@property(nonatomic, copy, readonly, nullable) NSString *slug;
+@property(nonatomic, copy, readonly, nullable) NSString *summary;
+@property(nonatomic, copy, readonly, nullable) NSString *author;
+@property(nonatomic, copy, readonly) NSArray<NSString *> *categories;
+@property(nonatomic, assign, readonly) BOOL versionsAvailable;
+@property(nonatomic, assign, readonly) BOOL supportsVersionSelection;
+
+@end
+
+/// Immutable provider browse page with an explicit optional next offset.
+@interface PRProviderBrowsePage : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithProvider:(PRProviderKind)provider
+                                    offset:(NSInteger)offset
+                                  pageSize:(NSInteger)pageSize
+                               nextOffset:(nullable NSNumber *)nextOffset
+                                     packs:(NSArray<PRProviderPack *> *)packs NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, assign, readonly) PRProviderKind provider;
+@property(nonatomic, assign, readonly) NSInteger offset;
+@property(nonatomic, assign, readonly) NSInteger pageSize;
+@property(nonatomic, strong, readonly, nullable) NSNumber *nextOffset;
+@property(nonatomic, copy, readonly) NSArray<PRProviderPack *> *packs;
+
+@end
+
+typedef NS_ENUM(NSInteger, PRProviderBrowseOutcome) {
+    PRProviderBrowseOutcomeSucceeded = 0,
+    PRProviderBrowseOutcomeFailed,
+    PRProviderBrowseOutcomeCancelled,
+    PRProviderBrowseOutcomeRejected,
+};
+
+/// Immutable confirmed provider browse result.
+@interface PRProviderBrowseResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithPage:(nullable PRProviderBrowsePage *)page
+                              outcome:(PRProviderBrowseOutcome)outcome
+                       localizationKey:(NSString *)localizationKey
+                         diagnosticText:(nullable NSString *)diagnosticText
+                              retryable:(BOOL)retryable NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRProviderBrowsePage *page;
+@property(nonatomic, assign, readonly) PRProviderBrowseOutcome outcome;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL retryable;
+
+@end
+
+/// Foundation-only version-list request for one selected provider pack.
+@interface PRProviderVersionRequest : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithProvider:(PRProviderKind)provider
+                              packIdentifier:(NSString *)packIdentifier
+                                gameVersions:(NSArray<NSString *> *)gameVersions
+                                    loaders:(NSArray<NSString *> *)loaders NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, assign, readonly) PRProviderKind provider;
+@property(nonatomic, copy, readonly) NSString *packIdentifier;
+@property(nonatomic, copy, readonly) NSArray<NSString *> *gameVersions;
+@property(nonatomic, copy, readonly) NSArray<NSString *> *loaders;
+
+@end
+
+/// Immutable version-selection row. Download URLs, archives, and changelog
+/// payloads are deliberately deferred to the installation work units.
+@interface PRProviderVersion : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithProvider:(PRProviderKind)provider
+                               identifier:(NSString *)identifier
+                           packIdentifier:(NSString *)packIdentifier
+                                     name:(NSString *)name
+                                  version:(NSString *)version
+                            gameVersions:(NSArray<NSString *> *)gameVersions
+                                loaders:(NSArray<NSString *> *)loaders
+                            releaseType:(PRProviderReleaseType)releaseType
+                 publishedUnixSeconds:(NSInteger)publishedUnixSeconds
+                              recommended:(BOOL)recommended NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, assign, readonly) PRProviderKind provider;
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, copy, readonly) NSString *packIdentifier;
+@property(nonatomic, copy, readonly) NSString *name;
+@property(nonatomic, copy, readonly) NSString *version;
+@property(nonatomic, copy, readonly) NSArray<NSString *> *gameVersions;
+@property(nonatomic, copy, readonly) NSArray<NSString *> *loaders;
+@property(nonatomic, assign, readonly) PRProviderReleaseType releaseType;
+@property(nonatomic, assign, readonly) NSInteger publishedUnixSeconds;
+@property(nonatomic, assign, readonly) BOOL recommended;
+
+@end
+
+typedef NS_ENUM(NSInteger, PRProviderVersionOutcome) {
+    PRProviderVersionOutcomeSucceeded = 0,
+    PRProviderVersionOutcomeFailed,
+    PRProviderVersionOutcomeCancelled,
+    PRProviderVersionOutcomeRejected,
+};
+
+/// Immutable confirmed version-selection result.
+@interface PRProviderVersionResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithProvider:(PRProviderKind)provider
+                            packIdentifier:(NSString *)packIdentifier
+                                 versions:(NSArray<PRProviderVersion *> *)versions
+                                  outcome:(PRProviderVersionOutcome)outcome
+                           localizationKey:(NSString *)localizationKey
+                             diagnosticText:(nullable NSString *)diagnosticText
+                                  retryable:(BOOL)retryable NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, assign, readonly) PRProviderKind provider;
+@property(nonatomic, copy, readonly) NSString *packIdentifier;
+@property(nonatomic, copy, readonly) NSArray<PRProviderVersion *> *versions;
+@property(nonatomic, assign, readonly) PRProviderVersionOutcome outcome;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL retryable;
+
+@end
+
 /// Immutable instance metadata and notes for the native detail form.
 @interface PRInstanceDetails : NSObject
 

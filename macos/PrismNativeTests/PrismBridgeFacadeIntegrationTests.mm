@@ -3481,4 +3481,210 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     XCTAssertEqual(cancellationCompletionCount, (NSUInteger)0);
 }
 
+- (void)testProviderBrowseAndVersionConvertFoundationValuesAndSuppressCancelledDelivery
+{
+    auto receivedBrowseRequest = std::make_shared<FrontendProviderBrowseRequest>();
+    auto receivedVersionRequest = std::make_shared<FrontendProviderVersionRequest>();
+    auto browseProgressCalls = std::make_shared<std::atomic<size_t>>(0);
+    auto versionProgressCalls = std::make_shared<std::atomic<size_t>>(0);
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.browseProvider = [receivedBrowseRequest, browseProgressCalls](
+                                      const std::filesystem::path&,
+                                      const FrontendProviderBrowseRequest& request,
+                                      const FrontendRuntimeDependencies::ProviderBrowseProgressHandler& progress,
+                                      const FrontendRuntimeDependencies::ProviderBrowseCancellationCheck&) {
+        *receivedBrowseRequest = request;
+        progress(FrontendTaskSnapshot{ "provider-browse.fixture", "Browse Provider", FrontendTaskState::Queued,
+                                       FrontendTaskProgressKind::None, 0.0, true, {}, std::nullopt });
+        ++*browseProgressCalls;
+        progress(FrontendTaskSnapshot{ "provider-browse.fixture", "Browse Provider", FrontendTaskState::Running,
+                                       FrontendTaskProgressKind::Indeterminate, 0.0, true, {}, std::nullopt });
+        ++*browseProgressCalls;
+        FrontendProviderPackSnapshot pack;
+        pack.provider = request.provider;
+        pack.id = "pack.bridge.fixture";
+        pack.name = "Bridge Fixture Pack";
+        pack.slug = "bridge-fixture-pack";
+        pack.summary = "Bridge summary";
+        pack.author = "Bridge Author";
+        pack.categories = { "adventure" };
+        FrontendProviderBrowsePage page;
+        page.provider = request.provider;
+        page.offset = request.offset;
+        page.pageSize = request.pageSize;
+        page.packs = { pack };
+        page.nextOffset = request.offset + request.pageSize;
+        const FrontendTaskTerminalResult terminal{
+            FrontendTaskTerminalOutcome::Succeeded, "providers.browse.completed", {}, "", false };
+        progress(FrontendTaskSnapshot{ "provider-browse.fixture", "Browse Provider", FrontendTaskState::Succeeded,
+                                       FrontendTaskProgressKind::Determinate, 1.0, false, {}, terminal });
+        ++*browseProgressCalls;
+        return FrontendProviderBrowseResult{
+            FrontendProviderBrowseOutcome::Succeeded,
+            page,
+            "providers.browse.completed",
+            "",
+            false,
+        };
+    };
+    dependencies.loadProviderVersions = [receivedVersionRequest, versionProgressCalls](
+                                             const std::filesystem::path&,
+                                             const FrontendProviderVersionRequest& request,
+                                             const FrontendRuntimeDependencies::ProviderVersionProgressHandler& progress,
+                                             const FrontendRuntimeDependencies::ProviderVersionCancellationCheck&) {
+        *receivedVersionRequest = request;
+        progress(FrontendTaskSnapshot{ "provider-version.fixture", "Load Provider Versions", FrontendTaskState::Queued,
+                                       FrontendTaskProgressKind::None, 0.0, true, {}, std::nullopt });
+        ++*versionProgressCalls;
+        FrontendProviderVersionSnapshot version;
+        version.provider = request.provider;
+        version.id = "version.bridge.fixture";
+        version.packIdentifier = request.packIdentifier;
+        version.name = "1.0.0 Bridge";
+        version.version = "1.0.0";
+        version.gameVersions = { "1.21.1" };
+        version.loaders = { "fabric" };
+        version.releaseType = FrontendProviderReleaseType::Release;
+        version.publishedUnixSeconds = 456;
+        version.recommended = true;
+        const FrontendTaskTerminalResult terminal{
+            FrontendTaskTerminalOutcome::Succeeded, "providers.versions.completed", {}, "", false };
+        progress(FrontendTaskSnapshot{ "provider-version.fixture", "Load Provider Versions",
+                                       FrontendTaskState::Succeeded, FrontendTaskProgressKind::Determinate, 1.0,
+                                       false, {}, terminal });
+        ++*versionProgressCalls;
+        return FrontendProviderVersionResult{
+            FrontendProviderVersionOutcome::Succeeded,
+            request.provider,
+            request.packIdentifier,
+            { version },
+            "providers.versions.completed",
+            "",
+            false,
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    PRProviderBrowseRequest *browseRequest = [[PRProviderBrowseRequest alloc]
+        initWithProvider:PRProviderKindCurseForge
+                   query:@"bridge fixture"
+                  offset:0
+                pageSize:20
+                    sort:PRProviderSortRelevance
+            gameVersions:@[ @"1.21.1" ]
+                loaders:@[ @"fabric" ]
+              categories:@[ @"adventure" ]
+            releaseTypes:@[ @1 ]
+                    side:PRProviderSideClient
+              openSource:YES
+           hideInstalled:NO];
+    XCTAssertNotNil(browseRequest);
+
+    XCTestExpectation *browseCompletion = [self expectationWithDescription:@"Provider browse completed"];
+    __block PRProviderBrowseResult *receivedBrowseResult = nil;
+    __block PRBridgeError *receivedBrowseError = nil;
+    __block BOOL browseCallbackOnMain = NO;
+    PRBridgeObservationToken *browseToken = [bridge
+        browseProviderWithRequest:browseRequest
+                          progress:^(__unused PRTaskStatus *progress) {}
+                        completion:^(PRProviderBrowseResult *result, PRBridgeError *error) {
+        browseCallbackOnMain = [NSThread isMainThread];
+        receivedBrowseResult = result;
+        receivedBrowseError = error;
+        [browseCompletion fulfill];
+    }];
+    XCTAssertNotNil(browseToken);
+    [self waitForExpectations:@[ browseCompletion ] timeout:2.0];
+    XCTAssertTrue(browseCallbackOnMain);
+    XCTAssertNil(receivedBrowseError);
+    XCTAssertTrue(browseToken.isCancelled);
+    XCTAssertEqual(receivedBrowseRequest->provider, FrontendProviderKind::CurseForge);
+    XCTAssertEqual(receivedBrowseRequest->query, "bridge fixture");
+    XCTAssertEqual(receivedBrowseRequest->offset, (size_t)0);
+    XCTAssertEqual(receivedBrowseRequest->pageSize, (size_t)20);
+    XCTAssertTrue(receivedBrowseRequest->openSource);
+    XCTAssertEqual(browseProgressCalls->load(), (size_t)3);
+    XCTAssertEqual(receivedBrowseResult.outcome, PRProviderBrowseOutcomeSucceeded);
+    XCTAssertEqual(receivedBrowseResult.page.packs.count, (NSUInteger)1);
+    XCTAssertEqualObjects(receivedBrowseResult.page.packs.firstObject.identifier, @"pack.bridge.fixture");
+    XCTAssertEqual(receivedBrowseResult.page.nextOffset.integerValue, 20);
+
+    PRProviderVersionRequest *versionRequest = [[PRProviderVersionRequest alloc]
+        initWithProvider:PRProviderKindCurseForge
+          packIdentifier:@"pack.bridge.fixture"
+            gameVersions:@[ @"1.21.1" ]
+                loaders:@[ @"fabric" ]];
+    XCTAssertNotNil(versionRequest);
+    XCTestExpectation *versionCompletion = [self expectationWithDescription:@"Provider versions completed"];
+    __block PRProviderVersionResult *receivedVersionResult = nil;
+    __block PRBridgeError *receivedVersionError = nil;
+    PRBridgeObservationToken *versionToken = [bridge
+        loadProviderVersionsWithRequest:versionRequest
+                               progress:nil
+                             completion:^(PRProviderVersionResult *result, PRBridgeError *error) {
+        receivedVersionResult = result;
+        receivedVersionError = error;
+        [versionCompletion fulfill];
+    }];
+    XCTAssertNotNil(versionToken);
+    [self waitForExpectations:@[ versionCompletion ] timeout:2.0];
+    XCTAssertNil(receivedVersionError);
+    XCTAssertTrue(versionToken.isCancelled);
+    XCTAssertEqual(receivedVersionRequest->provider, FrontendProviderKind::CurseForge);
+    XCTAssertEqual(receivedVersionRequest->packIdentifier, "pack.bridge.fixture");
+    XCTAssertEqual(versionProgressCalls->load(), (size_t)2);
+    XCTAssertEqual(receivedVersionResult.outcome, PRProviderVersionOutcomeSucceeded);
+    XCTAssertEqual(receivedVersionResult.versions.count, (NSUInteger)1);
+    XCTAssertTrue(receivedVersionResult.versions.firstObject.recommended);
+    XCTAssertEqualObjects(receivedVersionResult.versions.firstObject.identifier, @"version.bridge.fixture");
+
+    dispatch_semaphore_t runnerEntered = dispatch_semaphore_create(0);
+    dispatch_semaphore_t releaseRunner = dispatch_semaphore_create(0);
+    FrontendRuntimeDependencies cancelledDependencies = baseFixtureDependencies();
+    cancelledDependencies.browseProvider = [runnerEntered, releaseRunner](
+                                                const std::filesystem::path&,
+                                                const FrontendProviderBrowseRequest& request,
+                                                const FrontendRuntimeDependencies::ProviderBrowseProgressHandler& progress,
+                                                const FrontendRuntimeDependencies::ProviderBrowseCancellationCheck& isCancelled) {
+        progress(FrontendTaskSnapshot{ "provider-browse.cancel", "Browse Provider", FrontendTaskState::Queued,
+                                       FrontendTaskProgressKind::None, 0.0, true, {}, std::nullopt });
+        dispatch_semaphore_signal(runnerEntered);
+        dispatch_semaphore_wait(releaseRunner, DISPATCH_TIME_FOREVER);
+        const FrontendTaskTerminalResult terminal{
+            FrontendTaskTerminalOutcome::Cancelled, "providers.browse.cancelled", {}, "", false };
+        progress(FrontendTaskSnapshot{ "provider-browse.cancel", "Browse Provider", FrontendTaskState::Cancelled,
+                                       FrontendTaskProgressKind::None, 0.0, false, {}, terminal });
+        XCTAssertTrue(isCancelled && isCancelled());
+        return FrontendProviderBrowseResult{
+            FrontendProviderBrowseOutcome::Cancelled,
+            std::nullopt,
+            "providers.browse.cancelled",
+            "",
+            false,
+        };
+    };
+    PRPrismBridge *cancelledBridge = [self bridgeWithDependencies:std::move(cancelledDependencies)
+                                                cancellationHandler:nil
+                                                   shutdownHandler:nil];
+    XCTestExpectation *cancelledDrained = [self expectationWithDescription:@"Cancelled provider browse drained"];
+    __block NSUInteger cancelledCompletionCount = 0;
+    PRBridgeObservationToken *cancelToken = [cancelledBridge
+        browseProviderWithRequest:browseRequest
+                          progress:nil
+                        completion:^(__unused PRProviderBrowseResult *result, __unused PRBridgeError *error) {
+        cancelledCompletionCount += 1;
+    }];
+    XCTAssertNotNil(cancelToken);
+    XCTAssertEqual(dispatch_semaphore_wait(runnerEntered, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC)), 0);
+    XCTAssertTrue([cancelToken cancel]);
+    dispatch_semaphore_signal(releaseRunner);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [cancelledDrained fulfill];
+    });
+    [self waitForExpectations:@[ cancelledDrained ] timeout:2.0];
+    XCTAssertEqual(cancelledCompletionCount, (NSUInteger)0);
+}
+
 @end

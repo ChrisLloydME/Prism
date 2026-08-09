@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 8, Creation, discovery, and installation
 
-Active work unit: none (M8-W3 complete; activate the next unit at the next round boundary)
+Active work unit: none (M8-W4 complete; activate the next unit at the next round boundary)
 
-Next ready work unit: M8-W4
+Next ready work unit: M8-W5
 
 ## Safety baseline
 
@@ -1850,11 +1850,49 @@ Next after completion: M8-W4, browse providers with shared search, filtering, pa
 
 ### M8-W4: Fixture-controlled provider browsing
 
-Status: ready
+Status: complete
 
-Outcome: queued. Define the shared provider search, filter, pagination, version-selection, cancellation, and error-recovery contract using fixtures only.
+Outcome: implemented the shared fixture-controlled provider browse and version-selection contract. The QWidget-free facade validates provider identity, query, search filters, sort, page bounds, stable pack rows, advancing pagination, version identity, release metadata, progress-terminal ordering, cancellation, retryable errors, empty pages, and shutdown rejection. Objective-C++ is the only Foundation/C++ conversion and callback-lifetime boundary; Swift owns the main-actor generation guards, page merge, stale-result suppression, cancellation/retry state, and native presentation.
 
-Working boundary: do not begin until M8-W3 is committed. Re-read the provider choice/search/version dialogs and existing provider task ownership before editing. Keep provider services, credentials, live network, production caches, and installation mutations out of this work unit.
+Legacy evidence: `ChooseProviderDialog` exposes Modrinth, CurseForge/Flame, FTB, ATLauncher, Technic, and Legacy FTB choices; `ResourceAPI::SearchArgs` carries query, offset, sorting, loaders, game versions, side, categories, release types, open-source, and installed-item filters. Modrinth uses a 20-row page and lazy version loading; the shared Resource/Flame convention uses 25-row pages and lazy project versions; ATLauncher and FTB expose filtered pack lists with manifest/version metadata; Technic and Legacy FTB load provider-specific metadata and versions through their own models. Provider network services, cache ownership, and installation tasks remain backend-owned and are not imported into the native contract.
+
+Working boundary: use sanitized fixture responses and explicit temporary-root values only. Provider services, endpoints, credentials, live network, production caches, downloads, archive payloads, installation mutations, optional/blocked-file handling, and provider task ownership remain outside this work unit. No installed upstream application, upstream Application Support data, real account, Keychain, production service, or live provider was accessed.
+
+Architecture: `FrontendProviderBrowseRequest`/`Result` and `FrontendProviderVersionRequest`/`Result` are typed, QWidget-free value contracts. Injected runners receive normalized filters and report immutable pages, versions, progress, cancellation, and terminal outcomes; the facade rejects malformed filters, duplicate identifiers, invalid pagination, bad version identity, post-terminal progress, and result/outcome mismatches. `PRPrismBridge` copies only Foundation strings, arrays, numbers, and immutable DTOs, serializes backend calls, owns cancellation observation and shutdown cleanup, delivers on the main actor, and suppresses late callbacks. `PrismProviderBrowserModel` uses `@MainActor` state and generation tokens to ignore stale pages/results, merge deduplicated pages, preserve selection, and recover from empty, failed, cancelled, and retryable states. Swift never sees Qt, C++ types, provider clients, URLs/endpoints, credentials, cache paths, download payloads, or ownership wrappers.
+
+Files changed:
+
+- `launcher/frontend/FrontendFacade.{h,cpp}`
+- `launcher/frontend/FrontendFacadeContractTest.cpp`
+- `macos/PrismNative.xcodeproj/project.pbxproj`
+- `macos/PrismNative/Bridge/PrismBridge.h`
+- `macos/PrismNative/Bridge/PrismBridge.mm`
+- `macos/PrismNative/Bridge/PrismBridgeModels.h`
+- `macos/PrismNative/App/PrismProviderBrowsing.swift`
+- `macos/PrismNativeTests/PrismBridgeFacadeIntegrationTests.mm`
+- `macos/PrismNativeTests/PrismProviderBrowsingTests.swift`
+- this progress file
+
+Verification:
+
+- Focused native provider XCTest: `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-m8-w4-focused CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test -only-testing:PrismNativeTests/PrismProviderBrowsingTests -only-testing:PrismNativeTests/PrismBridgeFacadeIntegrationTests/testProviderBrowseAndVersionConvertFoundationValuesAndSuppressCancelledDelivery` — passed 4/4; model structure/state coverage and Foundation conversion, main-actor delivery, progress, cancellation, and late-completion suppression were included.
+- Universal macOS 14 facade: `cmake --build .deriveddata-prism-native-backend --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test --parallel 2`; `ctest --test-dir .deriveddata-prism-native-backend --output-on-failure` — build passed and CTest passed 3/3. The fixture contract covers all provider filters, page/offset echo, empty page, retryable failure, cancellation, version selection, invalid requests/results, missing ports, and post-shutdown rejection.
+- arm64 macOS 14 facade: `cmake --build /private/tmp/prism-m6-w5-arm64-backend --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test --parallel 2`; `ctest --test-dir /private/tmp/prism-m6-w5-arm64-backend --output-on-failure -R '^(FrontendFacadeContract|FrontendFacadePublicHeaders)$'` — build passed and CTest passed 2/2.
+- Existing arm64 Qt composition: `cmake --build /private/tmp/prism-m5-w4-cmake --target Prism --parallel 2` — passed with `ninja: no work to do`; the application was not executed. Existing macOS 26-versus-14 dependency deployment warnings and unavailable optional Vulkan/clang-format tooling remain non-blocking and unchanged.
+- Debug native artifact: `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-m8-w4-debug CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build`; the equivalent `... test` command — build passed and XCTest passed 139/139 with zero failures or skips. Result: `.deriveddata-m8-w4-debug/Logs/Test/Test-PrismNative-2026.08.09_09-34-38-+0800.xcresult`.
+- Release native artifact: the equivalent `xcodebuild` build and test commands with `-configuration Release -derivedDataPath .deriveddata-m8-w4-release` — build passed and XCTest passed 139/139 with zero failures or skips. Result: `.deriveddata-m8-w4-release/Logs/Test/Test-PrismNative-2026.08.09_09-36-04-+0800.xcresult`.
+- Identity and architecture: `plutil -extract CFBundleIdentifier raw -o - .deriveddata-m8-w4-debug/Build/Products/Debug/Prism.app/Contents/Info.plist` and the Release equivalent both returned `com.lloydME.Prism`; `file`/`lipo -info` confirmed both app binaries and `.deriveddata-prism-native-backend/libLauncher_frontend.a` are universal `x86_64 arm64`.
+- Boundary syntax: `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -fsyntax-only -x objective-c -target arm64-apple-macos14.0 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk macos/PrismNative/Bridge/PrismBridge.h` and the equivalent `clang++ -fsyntax-only -x objective-c++ -std=c++20 -fobjc-arc -fblocks -target arm64-apple-macos14.0 ... -Ilauncher/frontend macos/PrismNative/Bridge/PrismBridge.mm` — both passed.
+- Structure and safety: scans found standard `Form`, `Section`, `Picker`, `TextField`, `Toggle`, `Button`, `List`, `ProgressView`, `ContentUnavailableView`, `.keyboardShortcut(.defaultAction)`, `.keyboardShortcut(.cancelAction)`, accessibility identifiers/values, and `providers.browse.*`/`providers.versions.*` localization keys. Swift/public Foundation surfaces had no Qt/C++/ownership, network client, file-reader, process, upstream-data, or custom-drawing tokens; the public bridge and facade header scans were clean. `git diff --check` passed.
+- No application executable was launched; no screenshot, recording, visual snapshot test, upstream application/data, real account, Keychain, credential, production service, signing, installation, publishing, push, or destructive operation was used.
+
+HIG decision: use SwiftUI `Form`, `Section`, `Picker`, `TextField`, `Toggle`, `Button`, `List`, `ProgressView`, and `ContentUnavailableView`, with system default/cancel keyboard actions, disabled states, accessibility values, and localized recovery metadata. Search, filters, pagination, empty/loading/error/cancelled states, and version selection remain ordinary system controls and list semantics; no custom provider cells, custom control, custom drawing, third-party UI framework, custom title bar, or rendering exception was introduced. The decision follows Apple’s [SwiftUI Form](https://developer.apple.com/documentation/swiftui/form), [List](https://developer.apple.com/documentation/swiftui/list), [ProgressView](https://developer.apple.com/documentation/swiftui/progressview), [ContentUnavailableView](https://developer.apple.com/documentation/swiftui/contentunavailableview), and [Searching HIG](https://developer.apple.com/design/human-interface-guidelines/searching) guidance.
+
+Risk and limits: this unit proves the shared browse/version contract only. It is not wired to Modrinth, CurseForge/Flame, FTB, ATLauncher, Technic, or Legacy FTB live services, provider caches, authentication, download payloads, installation tasks, archive manifests, optional/blocked-file selection, disk/network error adapters, rollback, or production app composition. Provider-specific installation is M8-W5; optional/blocked-file and provider/network/disk recovery are later units. No custom-rendering exception was added.
+
+Commit: pending implementation commit; this entry will receive the implementation hash in the follow-up progress-ledger commit.
+
+Next after completion: M8-W5, install Modrinth, CurseForge/Flame, FTB variants, ATLauncher, Technic, and custom packs through existing backend tasks. Do not begin optional/blocked-file recovery until installation evidence is verified and committed.
 
 ## Completed commit index
 

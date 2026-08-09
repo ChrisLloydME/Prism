@@ -733,6 +733,125 @@ struct FrontendInstanceExportResult final {
     bool partialChangesRolledBack = false;
 };
 
+enum class FrontendProviderKind : std::uint8_t {
+    Modrinth,
+    CurseForge,
+    FTB,
+    ATLauncher,
+    Technic,
+    LegacyFTB,
+};
+
+enum class FrontendProviderSort : std::uint8_t {
+    Relevance,
+    Popularity,
+    Newest,
+    Updated,
+    Name,
+    Downloads,
+    Follows,
+    GameVersion,
+    Plays,
+    Installs,
+};
+
+enum class FrontendProviderReleaseType : std::uint8_t { Unknown, Release, Beta, Alpha };
+enum class FrontendProviderSide : std::uint8_t { Any, Client, Server, Universal };
+
+/// Explicit provider browse input. Query, filter labels, and pagination are
+/// sanitized value data; provider URLs, client identifiers, credentials,
+/// network jobs, caches, and installation ownership remain adapter-private.
+struct FrontendProviderBrowseRequest final {
+    FrontendProviderKind provider = FrontendProviderKind::Modrinth;
+    std::string query;
+    std::size_t offset = 0;
+    std::size_t pageSize = 20;
+    FrontendProviderSort sort = FrontendProviderSort::Relevance;
+    std::vector<std::string> gameVersions;
+    std::vector<std::string> loaders;
+    std::vector<std::string> categories;
+    std::vector<FrontendProviderReleaseType> releaseTypes;
+    FrontendProviderSide side = FrontendProviderSide::Any;
+    bool openSource = false;
+    bool hideInstalled = false;
+};
+
+/// Immutable provider result metadata for one browse row. Logo bytes, URLs,
+/// download files, and installed-instance ownership stay out of this DTO.
+struct FrontendProviderPackSnapshot final {
+    FrontendProviderKind provider = FrontendProviderKind::Modrinth;
+    std::string id;
+    std::string name;
+    std::string slug;
+    std::string summary;
+    std::string author;
+    std::vector<std::string> categories;
+    bool versionsAvailable = true;
+    bool supportsVersionSelection = true;
+
+    bool hasStableIdentifier() const noexcept { return !id.empty(); }
+};
+
+/// One immutable page. Providers without server pagination return no
+/// `nextOffset`; native state still uses the same load-more model.
+struct FrontendProviderBrowsePage final {
+    FrontendProviderKind provider = FrontendProviderKind::Modrinth;
+    std::size_t offset = 0;
+    std::size_t pageSize = 20;
+    std::vector<FrontendProviderPackSnapshot> packs;
+    std::optional<std::size_t> nextOffset;
+};
+
+enum class FrontendProviderBrowseOutcome : std::uint8_t { Succeeded, Failed, Cancelled, Rejected };
+
+/// Confirmed result for one provider browse request. A successful result must
+/// echo the requested page shape; no install or filesystem mutation occurs.
+struct FrontendProviderBrowseResult final {
+    FrontendProviderBrowseOutcome outcome = FrontendProviderBrowseOutcome::Rejected;
+    std::optional<FrontendProviderBrowsePage> page;
+    std::string localizationKey;
+    std::string diagnosticText;
+    bool retryable = false;
+};
+
+/// Explicit version-list input for a selected provider pack. The identifier
+/// is provider-scoped display metadata, not a URL, path, token, or task handle.
+struct FrontendProviderVersionRequest final {
+    FrontendProviderKind provider = FrontendProviderKind::Modrinth;
+    std::string packIdentifier;
+    std::vector<std::string> gameVersions;
+    std::vector<std::string> loaders;
+};
+
+struct FrontendProviderVersionSnapshot final {
+    FrontendProviderKind provider = FrontendProviderKind::Modrinth;
+    std::string id;
+    std::string packIdentifier;
+    std::string name;
+    std::string version;
+    std::vector<std::string> gameVersions;
+    std::vector<std::string> loaders;
+    FrontendProviderReleaseType releaseType = FrontendProviderReleaseType::Unknown;
+    std::int64_t publishedUnixSeconds = 0;
+    bool recommended = false;
+
+    bool hasStableIdentifier() const noexcept { return !id.empty(); }
+};
+
+enum class FrontendProviderVersionOutcome : std::uint8_t { Succeeded, Failed, Cancelled, Rejected };
+
+/// Confirmed version-selection data. Download URLs, archives, changelogs,
+/// optional-file decisions, and installation tasks remain later-unit inputs.
+struct FrontendProviderVersionResult final {
+    FrontendProviderVersionOutcome outcome = FrontendProviderVersionOutcome::Rejected;
+    FrontendProviderKind provider = FrontendProviderKind::Modrinth;
+    std::string packIdentifier;
+    std::vector<FrontendProviderVersionSnapshot> versions;
+    std::string localizationKey;
+    std::string diagnosticText;
+    bool retryable = false;
+};
+
 inline constexpr std::size_t kFrontendLogMaxEntries = 512;
 inline constexpr std::size_t kFrontendLogMaxBytes = 256 * 1024;
 
@@ -839,6 +958,20 @@ struct FrontendRuntimeDependencies final {
         const FrontendInstanceExportRequest&,
         const InstanceExportProgressHandler&,
         const InstanceExportCancellationCheck&)>;
+    using ProviderBrowseProgressHandler = std::function<void(const FrontendTaskSnapshot&)>;
+    using ProviderBrowseCancellationCheck = std::function<bool()>;
+    using ProviderBrowseRunner = std::function<FrontendProviderBrowseResult(
+        const std::filesystem::path&,
+        const FrontendProviderBrowseRequest&,
+        const ProviderBrowseProgressHandler&,
+        const ProviderBrowseCancellationCheck&)>;
+    using ProviderVersionProgressHandler = std::function<void(const FrontendTaskSnapshot&)>;
+    using ProviderVersionCancellationCheck = std::function<bool()>;
+    using ProviderVersionRunner = std::function<FrontendProviderVersionResult(
+        const std::filesystem::path&,
+        const FrontendProviderVersionRequest&,
+        const ProviderVersionProgressHandler&,
+        const ProviderVersionCancellationCheck&)>;
     using OfflineLaunchIdentityLoader = std::function<FrontendOfflineLaunchIdentityLoadResult(
         const std::filesystem::path&, const FrontendOfflineLaunchIdentityRequest&)>;
     using OfflineLaunchIdentityUpdater = std::function<FrontendOfflineLaunchIdentityUpdateResult(
@@ -880,6 +1013,8 @@ struct FrontendRuntimeDependencies final {
     InstanceImportRunner importInstance;
     InstanceCopyRunner copyInstance;
     InstanceExportRunner exportInstance;
+    ProviderBrowseRunner browseProvider;
+    ProviderVersionRunner loadProviderVersions;
     OfflineLaunchIdentityLoader loadOfflineLaunchIdentity;
     OfflineLaunchIdentityUpdater updateOfflineLaunchIdentity;
     TaskSnapshotLoader loadTaskSnapshot;
@@ -964,6 +1099,14 @@ class FrontendFacade final {
         const FrontendInstanceExportRequest& request,
         const FrontendRuntimeDependencies::InstanceExportProgressHandler& progressHandler = {},
         const FrontendRuntimeDependencies::InstanceExportCancellationCheck& cancellationCheck = {}) const;
+    FrontendProviderBrowseResult browseProvider(
+        const FrontendProviderBrowseRequest& request,
+        const FrontendRuntimeDependencies::ProviderBrowseProgressHandler& progressHandler = {},
+        const FrontendRuntimeDependencies::ProviderBrowseCancellationCheck& cancellationCheck = {}) const;
+    FrontendProviderVersionResult providerVersions(
+        const FrontendProviderVersionRequest& request,
+        const FrontendRuntimeDependencies::ProviderVersionProgressHandler& progressHandler = {},
+        const FrontendRuntimeDependencies::ProviderVersionCancellationCheck& cancellationCheck = {}) const;
     FrontendOfflineLaunchIdentityLoadResult loadOfflineLaunchIdentity(
         const FrontendOfflineLaunchIdentityRequest& request) const;
     FrontendOfflineLaunchIdentityUpdateResult updateOfflineLaunchIdentity(

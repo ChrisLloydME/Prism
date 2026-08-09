@@ -1222,6 +1222,227 @@ void validateInstanceExportResult(
     }
 }
 
+bool isKnownProviderKind(FrontendProviderKind provider) noexcept
+{
+    switch (provider) {
+        case FrontendProviderKind::Modrinth:
+        case FrontendProviderKind::CurseForge:
+        case FrontendProviderKind::FTB:
+        case FrontendProviderKind::ATLauncher:
+        case FrontendProviderKind::Technic:
+        case FrontendProviderKind::LegacyFTB:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownProviderSort(FrontendProviderSort sort) noexcept
+{
+    switch (sort) {
+        case FrontendProviderSort::Relevance:
+        case FrontendProviderSort::Popularity:
+        case FrontendProviderSort::Newest:
+        case FrontendProviderSort::Updated:
+        case FrontendProviderSort::Name:
+        case FrontendProviderSort::Downloads:
+        case FrontendProviderSort::Follows:
+        case FrontendProviderSort::GameVersion:
+        case FrontendProviderSort::Plays:
+        case FrontendProviderSort::Installs:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownProviderReleaseType(FrontendProviderReleaseType releaseType) noexcept
+{
+    switch (releaseType) {
+        case FrontendProviderReleaseType::Unknown:
+        case FrontendProviderReleaseType::Release:
+        case FrontendProviderReleaseType::Beta:
+        case FrontendProviderReleaseType::Alpha:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownProviderSide(FrontendProviderSide side) noexcept
+{
+    switch (side) {
+        case FrontendProviderSide::Any:
+        case FrontendProviderSide::Client:
+        case FrontendProviderSide::Server:
+        case FrontendProviderSide::Universal:
+            return true;
+    }
+    return false;
+}
+
+void validateProviderStringFilters(const std::vector<std::string>& values, const char* description)
+{
+    std::set<std::string> uniqueValues;
+    for (const auto& value : values) {
+        if (value.empty() || !uniqueValues.insert(value).second) {
+            throw std::invalid_argument(std::string("Provider ") + description + " require unique non-empty values");
+        }
+    }
+}
+
+void validateProviderReleaseFilters(const std::vector<FrontendProviderReleaseType>& values)
+{
+    std::set<FrontendProviderReleaseType> uniqueValues;
+    for (const auto value : values) {
+        if (!isKnownProviderReleaseType(value) || !uniqueValues.insert(value).second) {
+            throw std::invalid_argument("Provider release filters require known unique values");
+        }
+    }
+}
+
+void validateProviderBrowseRequest(const FrontendProviderBrowseRequest& request)
+{
+    if (!isKnownProviderKind(request.provider) || !isKnownProviderSort(request.sort)
+        || !isKnownProviderSide(request.side) || request.pageSize == 0 || request.pageSize > 100) {
+        throw std::invalid_argument("Provider browse requires known provider, sort, side, and bounded page size");
+    }
+    validateProviderStringFilters(request.gameVersions, "game-version filters");
+    validateProviderStringFilters(request.loaders, "loader filters");
+    validateProviderStringFilters(request.categories, "category filters");
+    validateProviderReleaseFilters(request.releaseTypes);
+}
+
+void validateProviderPackSnapshot(const FrontendProviderPackSnapshot& pack, FrontendProviderKind provider)
+{
+    if (!isKnownProviderKind(pack.provider) || pack.provider != provider || !pack.hasStableIdentifier()
+        || pack.name.empty()) {
+        throw std::invalid_argument("Provider browse rows require a provider, stable identifier, and name");
+    }
+    validateProviderStringFilters(pack.categories, "pack categories");
+}
+
+void validateProviderBrowsePage(
+    const FrontendProviderBrowsePage& page,
+    const FrontendProviderBrowseRequest& request)
+{
+    if (!isKnownProviderKind(page.provider) || page.provider != request.provider || page.offset != request.offset
+        || page.pageSize != request.pageSize) {
+        throw std::invalid_argument("Provider browse pages must echo provider and pagination values");
+    }
+
+    std::set<std::string> identifiers;
+    for (const auto& pack : page.packs) {
+        validateProviderPackSnapshot(pack, request.provider);
+        if (!identifiers.insert(pack.id).second) {
+            throw std::invalid_argument("Provider browse pages require unique pack identifiers");
+        }
+    }
+    if (page.nextOffset.has_value() && page.nextOffset.value() <= page.offset) {
+        throw std::invalid_argument("Provider browse next offsets must advance the current page");
+    }
+}
+
+bool isKnownProviderBrowseOutcome(FrontendProviderBrowseOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendProviderBrowseOutcome::Succeeded:
+        case FrontendProviderBrowseOutcome::Failed:
+        case FrontendProviderBrowseOutcome::Cancelled:
+        case FrontendProviderBrowseOutcome::Rejected:
+            return true;
+    }
+    return false;
+}
+
+void validateProviderBrowseResult(
+    const FrontendProviderBrowseResult& result,
+    const FrontendProviderBrowseRequest& request)
+{
+    if (!isKnownProviderBrowseOutcome(result.outcome) || result.localizationKey.empty()) {
+        throw std::invalid_argument("Provider browse results require a known outcome and localization key");
+    }
+    if (result.outcome == FrontendProviderBrowseOutcome::Succeeded) {
+        if (!result.page.has_value()) {
+            throw std::invalid_argument("Successful provider browse must carry a page");
+        }
+        validateProviderBrowsePage(*result.page, request);
+    } else if (result.page.has_value()) {
+        throw std::invalid_argument("Non-successful provider browse cannot carry a page");
+    }
+}
+
+void validateProviderVersionRequest(const FrontendProviderVersionRequest& request)
+{
+    if (!isKnownProviderKind(request.provider) || request.packIdentifier.empty()) {
+        throw std::invalid_argument("Provider version requests require a provider and pack identifier");
+    }
+    validateProviderStringFilters(request.gameVersions, "version game filters");
+    validateProviderStringFilters(request.loaders, "version loader filters");
+}
+
+void validateProviderVersionSnapshot(
+    const FrontendProviderVersionSnapshot& version,
+    const FrontendProviderVersionRequest& request)
+{
+    if (!isKnownProviderKind(version.provider) || version.provider != request.provider || !version.hasStableIdentifier()
+        || version.packIdentifier != request.packIdentifier || version.name.empty() || version.version.empty()
+        || !isKnownProviderReleaseType(version.releaseType)) {
+        throw std::invalid_argument("Provider versions require matching provider data and stable metadata");
+    }
+    validateProviderStringFilters(version.gameVersions, "version game metadata");
+    validateProviderStringFilters(version.loaders, "version loader metadata");
+}
+
+bool isKnownProviderVersionOutcome(FrontendProviderVersionOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendProviderVersionOutcome::Succeeded:
+        case FrontendProviderVersionOutcome::Failed:
+        case FrontendProviderVersionOutcome::Cancelled:
+        case FrontendProviderVersionOutcome::Rejected:
+            return true;
+    }
+    return false;
+}
+
+void validateProviderVersionResult(
+    const FrontendProviderVersionResult& result,
+    const FrontendProviderVersionRequest& request)
+{
+    if (!isKnownProviderVersionOutcome(result.outcome) || !isKnownProviderKind(result.provider)
+        || result.provider != request.provider || result.packIdentifier != request.packIdentifier
+        || result.localizationKey.empty()) {
+        throw std::invalid_argument("Provider version results require matching provider identity and localization key");
+    }
+    if (result.outcome != FrontendProviderVersionOutcome::Succeeded && !result.versions.empty()) {
+        throw std::invalid_argument("Non-successful provider version loads cannot carry versions");
+    }
+
+    std::set<std::string> identifiers;
+    for (const auto& version : result.versions) {
+        validateProviderVersionSnapshot(version, request);
+        if (!identifiers.insert(version.id).second) {
+            throw std::invalid_argument("Provider version results require unique identifiers");
+        }
+    }
+}
+
+bool isMatchingProviderTerminalState(
+    FrontendProviderBrowseOutcome outcome,
+    FrontendTaskState terminalState) noexcept
+{
+    return (outcome == FrontendProviderBrowseOutcome::Succeeded && terminalState == FrontendTaskState::Succeeded)
+        || (outcome == FrontendProviderBrowseOutcome::Failed && terminalState == FrontendTaskState::Failed)
+        || (outcome == FrontendProviderBrowseOutcome::Cancelled && terminalState == FrontendTaskState::Cancelled);
+}
+
+bool isMatchingProviderTerminalState(
+    FrontendProviderVersionOutcome outcome,
+    FrontendTaskState terminalState) noexcept
+{
+    return (outcome == FrontendProviderVersionOutcome::Succeeded && terminalState == FrontendTaskState::Succeeded)
+        || (outcome == FrontendProviderVersionOutcome::Failed && terminalState == FrontendTaskState::Failed)
+        || (outcome == FrontendProviderVersionOutcome::Cancelled && terminalState == FrontendTaskState::Cancelled);
+}
+
 std::string truncateUTF8(std::string value, std::size_t maxBytes)
 {
     if (value.size() <= maxBytes) {
@@ -2190,6 +2411,110 @@ FrontendInstanceExportResult executeInstanceExport(
     return result;
 }
 
+FrontendProviderBrowseResult executeProviderBrowse(
+    const FrontendRuntimeDependencies::ProviderBrowseRunner& runner,
+    const std::filesystem::path& dataRoot,
+    const FrontendProviderBrowseRequest& request,
+    const FrontendRuntimeDependencies::ProviderBrowseProgressHandler& progressHandler,
+    const FrontendRuntimeDependencies::ProviderBrowseCancellationCheck& cancellationCheck)
+{
+    validateProviderBrowseRequest(request);
+    if (!runner) {
+        return FrontendProviderBrowseResult{
+            FrontendProviderBrowseOutcome::Rejected,
+            std::nullopt,
+            "providers.browse.unavailable",
+            "Provider browsing is unavailable.",
+            true,
+        };
+    }
+
+    bool terminalProgressSeen = false;
+    FrontendTaskState terminalState = FrontendTaskState::Queued;
+    const auto progress = [&](const FrontendTaskSnapshot& snapshot) {
+        validateTaskSnapshot(snapshot);
+        if (snapshot.title.empty()) {
+            throw std::invalid_argument("Provider browse progress requires a task title");
+        }
+        if (terminalProgressSeen) {
+            throw std::invalid_argument("Provider browse cannot report progress after a terminal event");
+        }
+        if (isTerminalTaskState(snapshot.state)) {
+            terminalProgressSeen = true;
+            terminalState = snapshot.state;
+        }
+        if (progressHandler) {
+            progressHandler(snapshot);
+        }
+    };
+
+    auto result = runner(dataRoot, request, progress, cancellationCheck);
+    validateProviderBrowseResult(result, request);
+    if (result.outcome == FrontendProviderBrowseOutcome::Rejected) {
+        if (terminalProgressSeen) {
+            throw std::invalid_argument("Rejected provider browse cannot report a terminal progress event");
+        }
+        return result;
+    }
+    if (!terminalProgressSeen || !isMatchingProviderTerminalState(result.outcome, terminalState)) {
+        throw std::invalid_argument("Provider browse result must match its terminal progress event");
+    }
+    return result;
+}
+
+FrontendProviderVersionResult executeProviderVersions(
+    const FrontendRuntimeDependencies::ProviderVersionRunner& runner,
+    const std::filesystem::path& dataRoot,
+    const FrontendProviderVersionRequest& request,
+    const FrontendRuntimeDependencies::ProviderVersionProgressHandler& progressHandler,
+    const FrontendRuntimeDependencies::ProviderVersionCancellationCheck& cancellationCheck)
+{
+    validateProviderVersionRequest(request);
+    if (!runner) {
+        return FrontendProviderVersionResult{
+            FrontendProviderVersionOutcome::Rejected,
+            request.provider,
+            request.packIdentifier,
+            {},
+            "providers.versions.unavailable",
+            "Provider version selection is unavailable.",
+            true,
+        };
+    }
+
+    bool terminalProgressSeen = false;
+    FrontendTaskState terminalState = FrontendTaskState::Queued;
+    const auto progress = [&](const FrontendTaskSnapshot& snapshot) {
+        validateTaskSnapshot(snapshot);
+        if (snapshot.title.empty()) {
+            throw std::invalid_argument("Provider version progress requires a task title");
+        }
+        if (terminalProgressSeen) {
+            throw std::invalid_argument("Provider version loading cannot report progress after a terminal event");
+        }
+        if (isTerminalTaskState(snapshot.state)) {
+            terminalProgressSeen = true;
+            terminalState = snapshot.state;
+        }
+        if (progressHandler) {
+            progressHandler(snapshot);
+        }
+    };
+
+    auto result = runner(dataRoot, request, progress, cancellationCheck);
+    validateProviderVersionResult(result, request);
+    if (result.outcome == FrontendProviderVersionOutcome::Rejected) {
+        if (terminalProgressSeen) {
+            throw std::invalid_argument("Rejected provider version loading cannot report a terminal progress event");
+        }
+        return result;
+    }
+    if (!terminalProgressSeen || !isMatchingProviderTerminalState(result.outcome, terminalState)) {
+        throw std::invalid_argument("Provider version result must match its terminal progress event");
+    }
+    return result;
+}
+
 }  // namespace
 
 FrontendFacade::FrontendFacade(std::filesystem::path dataRoot, FrontendRuntimeDependencies runtimeDependencies)
@@ -2447,6 +2772,26 @@ FrontendInstanceExportResult FrontendFacade::exportInstance(
     ensureRunning(m_lifecycleState);
     return executeInstanceExport(
         m_runtimeDependencies.exportInstance, m_dataRoot, request, progressHandler, cancellationCheck);
+}
+
+FrontendProviderBrowseResult FrontendFacade::browseProvider(
+    const FrontendProviderBrowseRequest& request,
+    const FrontendRuntimeDependencies::ProviderBrowseProgressHandler& progressHandler,
+    const FrontendRuntimeDependencies::ProviderBrowseCancellationCheck& cancellationCheck) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeProviderBrowse(
+        m_runtimeDependencies.browseProvider, m_dataRoot, request, progressHandler, cancellationCheck);
+}
+
+FrontendProviderVersionResult FrontendFacade::providerVersions(
+    const FrontendProviderVersionRequest& request,
+    const FrontendRuntimeDependencies::ProviderVersionProgressHandler& progressHandler,
+    const FrontendRuntimeDependencies::ProviderVersionCancellationCheck& cancellationCheck) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeProviderVersions(
+        m_runtimeDependencies.loadProviderVersions, m_dataRoot, request, progressHandler, cancellationCheck);
 }
 
 FrontendOfflineLaunchIdentityLoadResult FrontendFacade::loadOfflineLaunchIdentity(

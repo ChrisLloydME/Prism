@@ -1455,6 +1455,264 @@ int main()
                (void) exportFacade.exportInstance(instanceExportRequest);
            });
 
+    FrontendProviderBrowseRequest providerBrowseRequest;
+    providerBrowseRequest.provider = FrontendProviderKind::Modrinth;
+    providerBrowseRequest.query = "fixture sky";
+    providerBrowseRequest.offset = 0;
+    providerBrowseRequest.pageSize = 20;
+    providerBrowseRequest.sort = FrontendProviderSort::Relevance;
+    providerBrowseRequest.gameVersions = { "1.21.1" };
+    providerBrowseRequest.loaders = { "fabric" };
+    providerBrowseRequest.categories = { "adventure" };
+    providerBrowseRequest.releaseTypes = { FrontendProviderReleaseType::Release };
+    providerBrowseRequest.side = FrontendProviderSide::Client;
+    providerBrowseRequest.openSource = true;
+    providerBrowseRequest.hideInstalled = false;
+    std::size_t providerBrowseCalls = 0;
+    std::size_t providerBrowseProgressEvents = 0;
+    bool providerBrowseRootMatches = true;
+    bool providerBrowseRequestPreserved = false;
+    bool providerBrowseCancellationObserved = false;
+    auto providerDependencies = makeFixtureDependencies();
+    providerDependencies.browseProvider = [&](
+                                              const std::filesystem::path& root,
+                                              const FrontendProviderBrowseRequest& request,
+                                              const FrontendRuntimeDependencies::ProviderBrowseProgressHandler& progress,
+                                              const FrontendRuntimeDependencies::ProviderBrowseCancellationCheck& isCancelled) {
+        providerBrowseRootMatches = providerBrowseRootMatches && root == fixtureRoot.lexically_normal();
+        ++providerBrowseCalls;
+        providerBrowseRequestPreserved = providerBrowseRequestPreserved
+            || (request.provider == providerBrowseRequest.provider && request.query == providerBrowseRequest.query
+                && request.offset == providerBrowseRequest.offset && request.pageSize == providerBrowseRequest.pageSize
+                && request.sort == providerBrowseRequest.sort && request.gameVersions == providerBrowseRequest.gameVersions
+                && request.loaders == providerBrowseRequest.loaders && request.categories == providerBrowseRequest.categories
+                && request.releaseTypes == providerBrowseRequest.releaseTypes
+                && request.side == providerBrowseRequest.side && request.openSource && !request.hideInstalled);
+        const std::string taskIdentifier = request.query == "fixture empty"
+            ? "provider-browse.empty"
+            : request.query == "fixture failure" ? "provider-browse.failure" : "provider-browse.fixture";
+        progress(FrontendTaskSnapshot{ taskIdentifier, "Browse Provider", FrontendTaskState::Queued,
+                                       FrontendTaskProgressKind::None, 0.0, true, {}, std::nullopt });
+        ++providerBrowseProgressEvents;
+        progress(FrontendTaskSnapshot{ taskIdentifier, "Browse Provider", FrontendTaskState::Running,
+                                       FrontendTaskProgressKind::Indeterminate, 0.0, true, {}, std::nullopt });
+        ++providerBrowseProgressEvents;
+        if (isCancelled && isCancelled()) {
+            providerBrowseCancellationObserved = true;
+            const FrontendTaskTerminalResult terminal{
+                FrontendTaskTerminalOutcome::Cancelled, "providers.browse.cancelled", {}, "Fixture cancelled", false };
+            progress(FrontendTaskSnapshot{ taskIdentifier, "Browse Provider", FrontendTaskState::Cancelled,
+                                           FrontendTaskProgressKind::Indeterminate, 0.0, false, {}, terminal });
+            ++providerBrowseProgressEvents;
+            return FrontendProviderBrowseResult{
+                FrontendProviderBrowseOutcome::Cancelled,
+                std::nullopt,
+                "providers.browse.cancelled",
+                "Fixture cancelled",
+                false,
+            };
+        }
+        if (request.query == "fixture failure") {
+            const FrontendTaskTerminalResult terminal{
+                FrontendTaskTerminalOutcome::Failed, "providers.browse.failed", {}, "Fixture provider failure", false };
+            progress(FrontendTaskSnapshot{ taskIdentifier, "Browse Provider", FrontendTaskState::Failed,
+                                           FrontendTaskProgressKind::Indeterminate, 0.0, false, {}, terminal });
+            ++providerBrowseProgressEvents;
+            return FrontendProviderBrowseResult{
+                FrontendProviderBrowseOutcome::Failed,
+                std::nullopt,
+                "providers.browse.failed",
+                "Fixture provider failure",
+                true,
+            };
+        }
+
+        FrontendProviderBrowsePage page;
+        page.provider = request.provider;
+        page.offset = request.offset;
+        page.pageSize = request.pageSize;
+        if (request.query != "fixture empty") {
+            FrontendProviderPackSnapshot pack;
+            pack.provider = request.provider;
+            pack.id = "pack.fixture.sky";
+            pack.name = "Fixture Sky Pack";
+            pack.slug = "fixture-sky-pack";
+            pack.summary = "A sanitized provider fixture.";
+            pack.author = "Fixture Author";
+            pack.categories = { "adventure" };
+            page.packs.push_back(pack);
+            page.nextOffset = request.offset + request.pageSize;
+        }
+        const FrontendTaskTerminalResult terminal{
+            FrontendTaskTerminalOutcome::Succeeded, "providers.browse.completed", {}, "", false };
+        progress(FrontendTaskSnapshot{ taskIdentifier, "Browse Provider", FrontendTaskState::Succeeded,
+                                       FrontendTaskProgressKind::Determinate, 1.0, false, {}, terminal });
+        ++providerBrowseProgressEvents;
+        return FrontendProviderBrowseResult{
+            FrontendProviderBrowseOutcome::Succeeded,
+            page,
+            "providers.browse.completed",
+            "",
+            false,
+        };
+    };
+
+    FrontendProviderVersionRequest providerVersionRequest;
+    providerVersionRequest.provider = FrontendProviderKind::Modrinth;
+    providerVersionRequest.packIdentifier = "pack.fixture.sky";
+    providerVersionRequest.gameVersions = { "1.21.1" };
+    providerVersionRequest.loaders = { "fabric" };
+    std::size_t providerVersionCalls = 0;
+    std::size_t providerVersionProgressEvents = 0;
+    bool providerVersionRequestPreserved = false;
+    bool providerVersionCancellationObserved = false;
+    providerDependencies.loadProviderVersions = [&](
+                                                    const std::filesystem::path& root,
+                                                    const FrontendProviderVersionRequest& request,
+                                                    const FrontendRuntimeDependencies::ProviderVersionProgressHandler& progress,
+                                                    const FrontendRuntimeDependencies::ProviderVersionCancellationCheck& isCancelled) {
+        providerBrowseRootMatches = providerBrowseRootMatches && root == fixtureRoot.lexically_normal();
+        ++providerVersionCalls;
+        providerVersionRequestPreserved = providerVersionRequestPreserved
+            || (request.provider == providerVersionRequest.provider
+                && request.packIdentifier == providerVersionRequest.packIdentifier
+                && request.gameVersions == providerVersionRequest.gameVersions
+                && request.loaders == providerVersionRequest.loaders);
+        progress(FrontendTaskSnapshot{ "provider-versions.fixture", "Load Provider Versions", FrontendTaskState::Queued,
+                                       FrontendTaskProgressKind::None, 0.0, true, {}, std::nullopt });
+        ++providerVersionProgressEvents;
+        progress(FrontendTaskSnapshot{ "provider-versions.fixture", "Load Provider Versions", FrontendTaskState::Running,
+                                       FrontendTaskProgressKind::Determinate, 0.5, true, {}, std::nullopt });
+        ++providerVersionProgressEvents;
+        if (isCancelled && isCancelled()) {
+            providerVersionCancellationObserved = true;
+            const FrontendTaskTerminalResult terminal{
+                FrontendTaskTerminalOutcome::Cancelled, "providers.versions.cancelled", {}, "Fixture cancelled", false };
+            progress(FrontendTaskSnapshot{ "provider-versions.fixture", "Load Provider Versions",
+                                           FrontendTaskState::Cancelled, FrontendTaskProgressKind::Determinate, 0.5,
+                                           false, {}, terminal });
+            ++providerVersionProgressEvents;
+            return FrontendProviderVersionResult{
+                FrontendProviderVersionOutcome::Cancelled,
+                request.provider,
+                request.packIdentifier,
+                {},
+                "providers.versions.cancelled",
+                "Fixture cancelled",
+                false,
+            };
+        }
+        FrontendProviderVersionSnapshot version;
+        version.provider = request.provider;
+        version.id = "version.fixture.sky.1";
+        version.packIdentifier = request.packIdentifier;
+        version.name = "1.0.0 Fabric";
+        version.version = "1.0.0";
+        version.gameVersions = { "1.21.1" };
+        version.loaders = { "fabric" };
+        version.releaseType = FrontendProviderReleaseType::Release;
+        version.publishedUnixSeconds = 123;
+        version.recommended = true;
+        const FrontendTaskTerminalResult terminal{
+            FrontendTaskTerminalOutcome::Succeeded, "providers.versions.completed", {}, "", false };
+        progress(FrontendTaskSnapshot{ "provider-versions.fixture", "Load Provider Versions",
+                                       FrontendTaskState::Succeeded, FrontendTaskProgressKind::Determinate, 1.0,
+                                       false, {}, terminal });
+        ++providerVersionProgressEvents;
+        return FrontendProviderVersionResult{
+            FrontendProviderVersionOutcome::Succeeded,
+            request.provider,
+            request.packIdentifier,
+            { version },
+            "providers.versions.completed",
+            "",
+            false,
+        };
+    };
+
+    FrontendFacade providerFacade(fixtureRoot / "nested" / "..", std::move(providerDependencies));
+    const auto providerBrowseResult = providerFacade.browseProvider(providerBrowseRequest);
+    const auto providerEmptyRequest = [&] {
+        auto request = providerBrowseRequest;
+        request.query = "fixture empty";
+        return request;
+    }();
+    const auto providerEmptyResult = providerFacade.browseProvider(providerEmptyRequest);
+    const auto providerFailureRequest = [&] {
+        auto request = providerBrowseRequest;
+        request.query = "fixture failure";
+        return request;
+    }();
+    const auto providerFailureResult = providerFacade.browseProvider(providerFailureRequest);
+    const auto cancelledProviderBrowse = providerFacade.browseProvider(providerBrowseRequest, {}, [] { return true; });
+    const auto providerVersionsResult = providerFacade.providerVersions(providerVersionRequest);
+    const auto cancelledProviderVersions = providerFacade.providerVersions(providerVersionRequest, {}, [] { return true; });
+    const bool providerContract = providerBrowseResult.outcome == FrontendProviderBrowseOutcome::Succeeded
+        && providerBrowseResult.page.has_value() && providerBrowseResult.page->packs.size() == 1
+        && providerBrowseResult.page->nextOffset == std::optional<std::size_t>(20)
+        && providerBrowseResult.page->packs.front().id == "pack.fixture.sky"
+        && providerEmptyResult.outcome == FrontendProviderBrowseOutcome::Succeeded
+        && providerEmptyResult.page.has_value() && providerEmptyResult.page->packs.empty()
+        && !providerEmptyResult.page->nextOffset.has_value()
+        && providerFailureResult.outcome == FrontendProviderBrowseOutcome::Failed && providerFailureResult.retryable
+        && cancelledProviderBrowse.outcome == FrontendProviderBrowseOutcome::Cancelled
+        && providerVersionsResult.outcome == FrontendProviderVersionOutcome::Succeeded
+        && providerVersionsResult.versions.size() == 1
+        && providerVersionsResult.versions.front().recommended
+        && cancelledProviderVersions.outcome == FrontendProviderVersionOutcome::Cancelled
+        && providerBrowseCalls == 4 && providerVersionCalls == 2 && providerBrowseProgressEvents == 12
+        && providerVersionProgressEvents == 6 && providerBrowseRootMatches && providerBrowseRequestPreserved
+        && providerVersionRequestPreserved && providerBrowseCancellationObserved && providerVersionCancellationObserved;
+    const bool rejectedInvalidProviderRequests = throwsInvalidArgument([&providerFacade] {
+        FrontendProviderBrowseRequest invalid;
+        invalid.pageSize = 0;
+        (void) providerFacade.browseProvider(invalid);
+    }) && throwsInvalidArgument([&providerFacade] {
+        FrontendProviderBrowseRequest invalid;
+        invalid.gameVersions = { "1.21", "1.21" };
+        (void) providerFacade.browseProvider(invalid);
+    }) && throwsInvalidArgument([&providerFacade] {
+        FrontendProviderVersionRequest invalid;
+        invalid.packIdentifier = "";
+        (void) providerFacade.providerVersions(invalid);
+    });
+    const bool missingProviderPortsAreSafe = emptyFacade.browseProvider(providerBrowseRequest).outcome
+        == FrontendProviderBrowseOutcome::Rejected
+        && emptyFacade.providerVersions(providerVersionRequest).outcome == FrontendProviderVersionOutcome::Rejected;
+    const bool rejectedInvalidProviderResults = [&] {
+        auto invalidDependencies = makeFixtureDependencies();
+        invalidDependencies.browseProvider = [](const std::filesystem::path&, const FrontendProviderBrowseRequest& request,
+                                                const FrontendRuntimeDependencies::ProviderBrowseProgressHandler& progress,
+                                                const FrontendRuntimeDependencies::ProviderBrowseCancellationCheck&) {
+            progress(FrontendTaskSnapshot{ "provider-invalid", "Browse Provider", FrontendTaskState::Succeeded,
+                                           FrontendTaskProgressKind::Determinate, 1.0, false, {},
+                                           FrontendTaskTerminalResult{ FrontendTaskTerminalOutcome::Succeeded,
+                                                                       "providers.browse.completed", {}, "", false } });
+            FrontendProviderBrowsePage page;
+            page.provider = request.provider;
+            page.offset = request.offset;
+            page.pageSize = request.pageSize;
+            FrontendProviderPackSnapshot pack;
+            pack.provider = request.provider;
+            pack.id = "duplicate";
+            pack.name = "Duplicate";
+            page.packs = { pack, pack };
+            return FrontendProviderBrowseResult{
+                FrontendProviderBrowseOutcome::Succeeded, page, "providers.browse.completed", "", false };
+        };
+        FrontendFacade invalidFacade(fixtureRoot, std::move(invalidDependencies));
+        return throwsInvalidArgument([&invalidFacade, &providerBrowseRequest] {
+            (void) invalidFacade.browseProvider(providerBrowseRequest);
+        });
+    }();
+    const bool rejectedPostShutdownProviderWork = providerFacade.shutdown()
+        && throwsLogicError([&providerFacade, &providerBrowseRequest] {
+               (void) providerFacade.browseProvider(providerBrowseRequest);
+           })
+        && throwsLogicError([&providerFacade, &providerVersionRequest] {
+               (void) providerFacade.providerVersions(providerVersionRequest);
+           });
+
     std::vector<std::string> launchCalls;
     std::vector<std::string> stopCalls;
     bool commandRootMatches = true;
@@ -1915,7 +2173,9 @@ int main()
                && rejectedInvalidCopyRequest && missingInstanceCopyPortIsSafe
                && rejectedPostShutdownInstanceCopy && instanceExportContract
                && rejectedInvalidExportRequest && missingInstanceExportPortIsSafe
-               && rejectedPostShutdownInstanceExport
+               && rejectedPostShutdownInstanceExport && providerContract
+               && rejectedInvalidProviderRequests && missingProviderPortsAreSafe
+               && rejectedInvalidProviderResults && rejectedPostShutdownProviderWork
                && rejectedEmptyRoot && rejectedRelativeRoot && rejectedIncompleteDependencies
                && lifecycleContract && callbacksRanExactlyOnce && destructorShutdownContract && !error
         ? 0

@@ -309,6 +309,86 @@ bool isKnownOfflineLaunchIdentityUpdateOutcome(PROfflineLaunchIdentityUpdateOutc
     return false;
 }
 
+bool isKnownProviderKind(PRProviderKind provider)
+{
+    switch (provider) {
+        case PRProviderKindModrinth:
+        case PRProviderKindCurseForge:
+        case PRProviderKindFTB:
+        case PRProviderKindATLauncher:
+        case PRProviderKindTechnic:
+        case PRProviderKindLegacyFTB:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownProviderSort(PRProviderSort sort)
+{
+    switch (sort) {
+        case PRProviderSortRelevance:
+        case PRProviderSortPopularity:
+        case PRProviderSortNewest:
+        case PRProviderSortUpdated:
+        case PRProviderSortName:
+        case PRProviderSortDownloads:
+        case PRProviderSortFollows:
+        case PRProviderSortGameVersion:
+        case PRProviderSortPlays:
+        case PRProviderSortInstalls:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownProviderReleaseType(PRProviderReleaseType releaseType)
+{
+    switch (releaseType) {
+        case PRProviderReleaseTypeUnknown:
+        case PRProviderReleaseTypeRelease:
+        case PRProviderReleaseTypeBeta:
+        case PRProviderReleaseTypeAlpha:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownProviderSide(PRProviderSide side)
+{
+    switch (side) {
+        case PRProviderSideAny:
+        case PRProviderSideClient:
+        case PRProviderSideServer:
+        case PRProviderSideUniversal:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownProviderBrowseOutcome(PRProviderBrowseOutcome outcome)
+{
+    switch (outcome) {
+        case PRProviderBrowseOutcomeSucceeded:
+        case PRProviderBrowseOutcomeFailed:
+        case PRProviderBrowseOutcomeCancelled:
+        case PRProviderBrowseOutcomeRejected:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownProviderVersionOutcome(PRProviderVersionOutcome outcome)
+{
+    switch (outcome) {
+        case PRProviderVersionOutcomeSucceeded:
+        case PRProviderVersionOutcomeFailed:
+        case PRProviderVersionOutcomeCancelled:
+        case PRProviderVersionOutcomeRejected:
+            return true;
+    }
+    return false;
+}
+
 std::string stableIdentifierFromFoundation(NSString *identifier)
 {
     if (![identifier isKindOfClass:NSString.class]) {
@@ -1942,6 +2022,271 @@ PRInstanceExportResult *instanceExportResultFromFacadeResult(const FrontendInsta
     return converted;
 }
 
+FrontendProviderKind providerKindFromFoundation(PRProviderKind provider)
+{
+    switch (provider) {
+        case PRProviderKindModrinth:
+            return FrontendProviderKind::Modrinth;
+        case PRProviderKindCurseForge:
+            return FrontendProviderKind::CurseForge;
+        case PRProviderKindFTB:
+            return FrontendProviderKind::FTB;
+        case PRProviderKindATLauncher:
+            return FrontendProviderKind::ATLauncher;
+        case PRProviderKindTechnic:
+            return FrontendProviderKind::Technic;
+        case PRProviderKindLegacyFTB:
+            return FrontendProviderKind::LegacyFTB;
+    }
+    throw std::invalid_argument("Unknown provider kind");
+}
+
+PRProviderKind providerKindFromFacadeKind(FrontendProviderKind provider)
+{
+    switch (provider) {
+        case FrontendProviderKind::Modrinth:
+            return PRProviderKindModrinth;
+        case FrontendProviderKind::CurseForge:
+            return PRProviderKindCurseForge;
+        case FrontendProviderKind::FTB:
+            return PRProviderKindFTB;
+        case FrontendProviderKind::ATLauncher:
+            return PRProviderKindATLauncher;
+        case FrontendProviderKind::Technic:
+            return PRProviderKindTechnic;
+        case FrontendProviderKind::LegacyFTB:
+            return PRProviderKindLegacyFTB;
+    }
+    throw std::invalid_argument("Facade returned an unknown provider kind");
+}
+
+FrontendProviderSort providerSortFromFoundation(PRProviderSort sort)
+{
+    switch (sort) {
+        case PRProviderSortRelevance:
+            return FrontendProviderSort::Relevance;
+        case PRProviderSortPopularity:
+            return FrontendProviderSort::Popularity;
+        case PRProviderSortNewest:
+            return FrontendProviderSort::Newest;
+        case PRProviderSortUpdated:
+            return FrontendProviderSort::Updated;
+        case PRProviderSortName:
+            return FrontendProviderSort::Name;
+        case PRProviderSortDownloads:
+            return FrontendProviderSort::Downloads;
+        case PRProviderSortFollows:
+            return FrontendProviderSort::Follows;
+        case PRProviderSortGameVersion:
+            return FrontendProviderSort::GameVersion;
+        case PRProviderSortPlays:
+            return FrontendProviderSort::Plays;
+        case PRProviderSortInstalls:
+            return FrontendProviderSort::Installs;
+    }
+    throw std::invalid_argument("Unknown provider sort");
+}
+
+FrontendProviderReleaseType providerReleaseTypeFromFoundation(PRProviderReleaseType releaseType)
+{
+    switch (releaseType) {
+        case PRProviderReleaseTypeUnknown:
+            return FrontendProviderReleaseType::Unknown;
+        case PRProviderReleaseTypeRelease:
+            return FrontendProviderReleaseType::Release;
+        case PRProviderReleaseTypeBeta:
+            return FrontendProviderReleaseType::Beta;
+        case PRProviderReleaseTypeAlpha:
+            return FrontendProviderReleaseType::Alpha;
+    }
+    throw std::invalid_argument("Unknown provider release type");
+}
+
+PRProviderReleaseType providerReleaseTypeFromFacadeType(FrontendProviderReleaseType releaseType)
+{
+    switch (releaseType) {
+        case FrontendProviderReleaseType::Unknown:
+            return PRProviderReleaseTypeUnknown;
+        case FrontendProviderReleaseType::Release:
+            return PRProviderReleaseTypeRelease;
+        case FrontendProviderReleaseType::Beta:
+            return PRProviderReleaseTypeBeta;
+        case FrontendProviderReleaseType::Alpha:
+            return PRProviderReleaseTypeAlpha;
+    }
+    throw std::invalid_argument("Facade returned an unknown provider release type");
+}
+
+FrontendProviderSide providerSideFromFoundation(PRProviderSide side)
+{
+    switch (side) {
+        case PRProviderSideAny:
+            return FrontendProviderSide::Any;
+        case PRProviderSideClient:
+            return FrontendProviderSide::Client;
+        case PRProviderSideServer:
+            return FrontendProviderSide::Server;
+        case PRProviderSideUniversal:
+            return FrontendProviderSide::Universal;
+    }
+    throw std::invalid_argument("Unknown provider side");
+}
+
+NSArray<NSString *> *foundationStringsFromUTF8(const std::vector<std::string>& values)
+{
+    NSMutableArray<NSString *> *converted = [NSMutableArray arrayWithCapacity:values.size()];
+    for (const auto& value : values) {
+        NSString *string = foundationStringFromUTF8(value);
+        if (!string || string.length == 0) {
+            throw std::invalid_argument("Facade returned an invalid provider string list");
+        }
+        [converted addObject:string];
+    }
+    return [converted copy];
+}
+
+std::vector<std::string> utf8StringsFromFoundation(NSArray<NSString *> *values, const char* description)
+{
+    if (![values isKindOfClass:NSArray.class]) {
+        throw std::invalid_argument(description);
+    }
+    std::vector<std::string> converted;
+    converted.reserve(values.count);
+    for (id value in values) {
+        if (![value isKindOfClass:NSString.class]) {
+            throw std::invalid_argument(description);
+        }
+        const std::string string = utf8TextFromFoundation((NSString *)value);
+        if (string.empty()) {
+            throw std::invalid_argument(description);
+        }
+        converted.push_back(string);
+    }
+    return converted;
+}
+
+PRProviderPack *providerPackFromFacadeSnapshot(const FrontendProviderPackSnapshot& pack)
+{
+    PRProviderPack *converted = [[PRProviderPack alloc]
+        initWithProvider:providerKindFromFacadeKind(pack.provider)
+              identifier:foundationStringFromUTF8(pack.id)
+                    name:foundationStringFromUTF8(pack.name)
+                     slug:foundationStringFromUTF8(pack.slug)
+                  summary:foundationStringFromUTF8(pack.summary)
+                   author:foundationStringFromUTF8(pack.author)
+               categories:foundationStringsFromUTF8(pack.categories)
+      versionsAvailable:pack.versionsAvailable
+ supportsVersionSelection:pack.supportsVersionSelection];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid provider pack");
+    }
+    return converted;
+}
+
+PRProviderBrowsePage *providerBrowsePageFromFacadePage(const FrontendProviderBrowsePage& page)
+{
+    NSMutableArray<PRProviderPack *> *packs = [NSMutableArray arrayWithCapacity:page.packs.size()];
+    for (const auto& pack : page.packs) {
+        [packs addObject:providerPackFromFacadeSnapshot(pack)];
+    }
+    NSNumber *nextOffset = page.nextOffset.has_value()
+        ? @(static_cast<NSInteger>(page.nextOffset.value()))
+        : nil;
+    PRProviderBrowsePage *converted = [[PRProviderBrowsePage alloc]
+        initWithProvider:providerKindFromFacadeKind(page.provider)
+                  offset:static_cast<NSInteger>(page.offset)
+                pageSize:static_cast<NSInteger>(page.pageSize)
+             nextOffset:nextOffset
+                   packs:packs];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid provider browse page");
+    }
+    return converted;
+}
+
+PRProviderBrowseOutcome providerBrowseOutcomeFromFacadeOutcome(FrontendProviderBrowseOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendProviderBrowseOutcome::Succeeded:
+            return PRProviderBrowseOutcomeSucceeded;
+        case FrontendProviderBrowseOutcome::Failed:
+            return PRProviderBrowseOutcomeFailed;
+        case FrontendProviderBrowseOutcome::Cancelled:
+            return PRProviderBrowseOutcomeCancelled;
+        case FrontendProviderBrowseOutcome::Rejected:
+            return PRProviderBrowseOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown provider browse outcome");
+}
+
+PRProviderBrowseResult *providerBrowseResultFromFacadeResult(const FrontendProviderBrowseResult& result)
+{
+    PRProviderBrowseResult *converted = [[PRProviderBrowseResult alloc]
+        initWithPage:result.page.has_value() ? providerBrowsePageFromFacadePage(*result.page) : nil
+              outcome:providerBrowseOutcomeFromFacadeOutcome(result.outcome)
+       localizationKey:foundationStringFromUTF8AllowEmpty(result.localizationKey)
+         diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+              retryable:result.retryable];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid provider browse result");
+    }
+    return converted;
+}
+
+PRProviderVersion *providerVersionFromFacadeSnapshot(const FrontendProviderVersionSnapshot& version)
+{
+    PRProviderVersion *converted = [[PRProviderVersion alloc]
+        initWithProvider:providerKindFromFacadeKind(version.provider)
+              identifier:foundationStringFromUTF8(version.id)
+          packIdentifier:foundationStringFromUTF8(version.packIdentifier)
+                    name:foundationStringFromUTF8(version.name)
+                 version:foundationStringFromUTF8(version.version)
+           gameVersions:foundationStringsFromUTF8(version.gameVersions)
+               loaders:foundationStringsFromUTF8(version.loaders)
+           releaseType:providerReleaseTypeFromFacadeType(version.releaseType)
+publishedUnixSeconds:static_cast<NSInteger>(version.publishedUnixSeconds)
+            recommended:version.recommended];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid provider version");
+    }
+    return converted;
+}
+
+PRProviderVersionOutcome providerVersionOutcomeFromFacadeOutcome(FrontendProviderVersionOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendProviderVersionOutcome::Succeeded:
+            return PRProviderVersionOutcomeSucceeded;
+        case FrontendProviderVersionOutcome::Failed:
+            return PRProviderVersionOutcomeFailed;
+        case FrontendProviderVersionOutcome::Cancelled:
+            return PRProviderVersionOutcomeCancelled;
+        case FrontendProviderVersionOutcome::Rejected:
+            return PRProviderVersionOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown provider version outcome");
+}
+
+PRProviderVersionResult *providerVersionResultFromFacadeResult(const FrontendProviderVersionResult& result)
+{
+    NSMutableArray<PRProviderVersion *> *versions = [NSMutableArray arrayWithCapacity:result.versions.size()];
+    for (const auto& version : result.versions) {
+        [versions addObject:providerVersionFromFacadeSnapshot(version)];
+    }
+    PRProviderVersionResult *converted = [[PRProviderVersionResult alloc]
+        initWithProvider:providerKindFromFacadeKind(result.provider)
+            packIdentifier:foundationStringFromUTF8(result.packIdentifier)
+                 versions:versions
+                  outcome:providerVersionOutcomeFromFacadeOutcome(result.outcome)
+           localizationKey:foundationStringFromUTF8AllowEmpty(result.localizationKey)
+             diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+                  retryable:result.retryable];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid provider version result");
+    }
+    return converted;
+}
+
 PRInstanceNotesUpdateOutcome notesUpdateOutcomeFromFacadeResult(FrontendInstanceNotesUpdateOutcome outcome)
 {
     switch (outcome) {
@@ -3095,6 +3440,66 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@interface PRBridgeProviderBrowseDelivery : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithProgress:(nullable PRTaskStatus *)progress
+                           result:(nullable PRProviderBrowseResult *)result
+                            error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRTaskStatus *progress;
+@property(nonatomic, strong, readonly, nullable) PRProviderBrowseResult *result;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeProviderBrowseDelivery
+
+- (instancetype)initWithProgress:(PRTaskStatus *)progress
+                           result:(PRProviderBrowseResult *)result
+                            error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _progress = progress;
+        _result = result;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
+@interface PRBridgeProviderVersionDelivery : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithProgress:(nullable PRTaskStatus *)progress
+                           result:(nullable PRProviderVersionResult *)result
+                            error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRTaskStatus *progress;
+@property(nonatomic, strong, readonly, nullable) PRProviderVersionResult *result;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeProviderVersionDelivery
+
+- (instancetype)initWithProgress:(PRTaskStatus *)progress
+                           result:(PRProviderVersionResult *)result
+                            error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _progress = progress;
+        _result = result;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
 @interface PRBridgeInstanceImportDelivery : NSObject
 
 - (instancetype)init NS_UNAVAILABLE;
@@ -3334,6 +3739,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *instanceImportRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *instanceCopyRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *instanceExportRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *providerBrowseRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *providerVersionRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *offlineIdentityLoadRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *offlineIdentityUpdateRequestStates;
 @property(nonatomic, strong) NSLock *observationLock;
@@ -3374,6 +3781,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 - (void)removeInstanceImportRequest:(PRBridgeObservationState *)request;
 - (void)removeInstanceCopyRequest:(PRBridgeObservationState *)request;
 - (void)removeInstanceExportRequest:(PRBridgeObservationState *)request;
+- (void)removeProviderBrowseRequest:(PRBridgeObservationState *)request;
+- (void)removeProviderVersionRequest:(PRBridgeObservationState *)request;
 - (void)removeOfflineIdentityLoadRequest:(PRBridgeObservationState *)request;
 - (void)removeOfflineIdentityUpdateRequest:(PRBridgeObservationState *)request;
 - (nullable PRBridgeObservationToken *)loadTaskStatusWithIdentifier:(NSString *)identifier
@@ -3501,6 +3910,93 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
 @property(nonatomic, assign, readwrite) BOOL retryable;
 @property(nonatomic, assign, readwrite) BOOL partialChangesRolledBack;
+
+@end
+
+@interface PRProviderBrowseRequest ()
+
+@property(nonatomic, assign, readwrite) PRProviderKind provider;
+@property(nonatomic, copy, readwrite) NSString *query;
+@property(nonatomic, assign, readwrite) NSInteger offset;
+@property(nonatomic, assign, readwrite) NSInteger pageSize;
+@property(nonatomic, assign, readwrite) PRProviderSort sort;
+@property(nonatomic, copy, readwrite) NSArray<NSString *> *gameVersions;
+@property(nonatomic, copy, readwrite) NSArray<NSString *> *loaders;
+@property(nonatomic, copy, readwrite) NSArray<NSString *> *categories;
+@property(nonatomic, copy, readwrite) NSArray<NSNumber *> *releaseTypes;
+@property(nonatomic, assign, readwrite) PRProviderSide side;
+@property(nonatomic, assign, readwrite) BOOL openSource;
+@property(nonatomic, assign, readwrite) BOOL hideInstalled;
+
+@end
+
+@interface PRProviderPack ()
+
+@property(nonatomic, assign, readwrite) PRProviderKind provider;
+@property(nonatomic, copy, readwrite) NSString *identifier;
+@property(nonatomic, copy, readwrite) NSString *name;
+@property(nonatomic, copy, readwrite, nullable) NSString *slug;
+@property(nonatomic, copy, readwrite, nullable) NSString *summary;
+@property(nonatomic, copy, readwrite, nullable) NSString *author;
+@property(nonatomic, copy, readwrite) NSArray<NSString *> *categories;
+@property(nonatomic, assign, readwrite) BOOL versionsAvailable;
+@property(nonatomic, assign, readwrite) BOOL supportsVersionSelection;
+
+@end
+
+@interface PRProviderBrowsePage ()
+
+@property(nonatomic, assign, readwrite) PRProviderKind provider;
+@property(nonatomic, assign, readwrite) NSInteger offset;
+@property(nonatomic, assign, readwrite) NSInteger pageSize;
+@property(nonatomic, strong, readwrite, nullable) NSNumber *nextOffset;
+@property(nonatomic, copy, readwrite) NSArray<PRProviderPack *> *packs;
+
+@end
+
+@interface PRProviderBrowseResult ()
+
+@property(nonatomic, strong, readwrite, nullable) PRProviderBrowsePage *page;
+@property(nonatomic, assign, readwrite) PRProviderBrowseOutcome outcome;
+@property(nonatomic, copy, readwrite) NSString *localizationKey;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readwrite) BOOL retryable;
+
+@end
+
+@interface PRProviderVersionRequest ()
+
+@property(nonatomic, assign, readwrite) PRProviderKind provider;
+@property(nonatomic, copy, readwrite) NSString *packIdentifier;
+@property(nonatomic, copy, readwrite) NSArray<NSString *> *gameVersions;
+@property(nonatomic, copy, readwrite) NSArray<NSString *> *loaders;
+
+@end
+
+@interface PRProviderVersion ()
+
+@property(nonatomic, assign, readwrite) PRProviderKind provider;
+@property(nonatomic, copy, readwrite) NSString *identifier;
+@property(nonatomic, copy, readwrite) NSString *packIdentifier;
+@property(nonatomic, copy, readwrite) NSString *name;
+@property(nonatomic, copy, readwrite) NSString *version;
+@property(nonatomic, copy, readwrite) NSArray<NSString *> *gameVersions;
+@property(nonatomic, copy, readwrite) NSArray<NSString *> *loaders;
+@property(nonatomic, assign, readwrite) PRProviderReleaseType releaseType;
+@property(nonatomic, assign, readwrite) NSInteger publishedUnixSeconds;
+@property(nonatomic, assign, readwrite) BOOL recommended;
+
+@end
+
+@interface PRProviderVersionResult ()
+
+@property(nonatomic, assign, readwrite) PRProviderKind provider;
+@property(nonatomic, copy, readwrite) NSString *packIdentifier;
+@property(nonatomic, copy, readwrite) NSArray<PRProviderVersion *> *versions;
+@property(nonatomic, assign, readwrite) PRProviderVersionOutcome outcome;
+@property(nonatomic, copy, readwrite) NSString *localizationKey;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readwrite) BOOL retryable;
 
 @end
 
@@ -4381,6 +4877,288 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.diagnosticText = [diagnosticText copy];
         self.retryable = retryable;
         self.partialChangesRolledBack = partialChangesRolledBack;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRProviderBrowseRequest
+
+- (instancetype)initWithProvider:(PRProviderKind)provider
+                             query:(NSString *)query
+                            offset:(NSInteger)offset
+                          pageSize:(NSInteger)pageSize
+                              sort:(PRProviderSort)sort
+                      gameVersions:(NSArray<NSString *> *)gameVersions
+                          loaders:(NSArray<NSString *> *)loaders
+                        categories:(NSArray<NSString *> *)categories
+                      releaseTypes:(NSArray<NSNumber *> *)releaseTypes
+                              side:(PRProviderSide)side
+                        openSource:(BOOL)openSource
+                     hideInstalled:(BOOL)hideInstalled
+{
+    if (!isKnownProviderKind(provider) || !isKnownProviderSort(sort) || !isKnownProviderSide(side)
+        || ![query isKindOfClass:NSString.class] || offset < 0 || pageSize <= 0 || pageSize > 100
+        || ![gameVersions isKindOfClass:NSArray.class] || ![loaders isKindOfClass:NSArray.class]
+        || ![categories isKindOfClass:NSArray.class] || ![releaseTypes isKindOfClass:NSArray.class]) {
+        return nil;
+    }
+    for (id value in gameVersions) {
+        if (![value isKindOfClass:NSString.class] || !isNonEmptyString(value)) {
+            return nil;
+        }
+    }
+    for (id value in loaders) {
+        if (![value isKindOfClass:NSString.class] || !isNonEmptyString(value)) {
+            return nil;
+        }
+    }
+    for (id value in categories) {
+        if (![value isKindOfClass:NSString.class] || !isNonEmptyString(value)) {
+            return nil;
+        }
+    }
+    for (id value in releaseTypes) {
+        if (![value isKindOfClass:NSNumber.class]
+            || !isKnownProviderReleaseType((PRProviderReleaseType)[value integerValue])) {
+            return nil;
+        }
+    }
+
+    self = [super init];
+    if (self) {
+        self.provider = provider;
+        self.query = [query copy];
+        self.offset = offset;
+        self.pageSize = pageSize;
+        self.sort = sort;
+        self.gameVersions = [gameVersions copy];
+        self.loaders = [loaders copy];
+        self.categories = [categories copy];
+        self.releaseTypes = [releaseTypes copy];
+        self.side = side;
+        self.openSource = openSource;
+        self.hideInstalled = hideInstalled;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRProviderPack
+
+- (instancetype)initWithProvider:(PRProviderKind)provider
+                         identifier:(NSString *)identifier
+                               name:(NSString *)name
+                                slug:(NSString *)slug
+                             summary:(NSString *)summary
+                              author:(NSString *)author
+                          categories:(NSArray<NSString *> *)categories
+                 versionsAvailable:(BOOL)versionsAvailable
+            supportsVersionSelection:(BOOL)supportsVersionSelection
+{
+    if (!isKnownProviderKind(provider) || !isNonEmptyString(identifier) || !isNonEmptyString(name)
+        || ![categories isKindOfClass:NSArray.class]) {
+        return nil;
+    }
+    for (id value in categories) {
+        if (![value isKindOfClass:NSString.class] || !isNonEmptyString(value)) {
+            return nil;
+        }
+    }
+
+    self = [super init];
+    if (self) {
+        self.provider = provider;
+        self.identifier = [identifier copy];
+        self.name = [name copy];
+        self.slug = nullableStringCopy(slug);
+        self.summary = nullableStringCopy(summary);
+        self.author = nullableStringCopy(author);
+        self.categories = [categories copy];
+        self.versionsAvailable = versionsAvailable;
+        self.supportsVersionSelection = supportsVersionSelection;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRProviderBrowsePage
+
+- (instancetype)initWithProvider:(PRProviderKind)provider
+                            offset:(NSInteger)offset
+                          pageSize:(NSInteger)pageSize
+                       nextOffset:(NSNumber *)nextOffset
+                             packs:(NSArray<PRProviderPack *> *)packs
+{
+    if (!isKnownProviderKind(provider) || offset < 0 || pageSize <= 0 || pageSize > 100
+        || ![packs isKindOfClass:NSArray.class] || (nextOffset && [nextOffset integerValue] <= offset)) {
+        return nil;
+    }
+    for (id value in packs) {
+        if (![value isKindOfClass:PRProviderPack.class] || ((PRProviderPack *)value).provider != provider) {
+            return nil;
+        }
+    }
+
+    self = [super init];
+    if (self) {
+        self.provider = provider;
+        self.offset = offset;
+        self.pageSize = pageSize;
+        self.nextOffset = [nextOffset copy];
+        self.packs = [packs copy];
+    }
+    return self;
+}
+
+@end
+
+@implementation PRProviderBrowseResult
+
+- (instancetype)initWithPage:(PRProviderBrowsePage *)page
+                       outcome:(PRProviderBrowseOutcome)outcome
+                localizationKey:(NSString *)localizationKey
+                  diagnosticText:(NSString *)diagnosticText
+                       retryable:(BOOL)retryable
+{
+    if (!isKnownProviderBrowseOutcome(outcome) || !isNonEmptyString(localizationKey)
+        || (outcome == PRProviderBrowseOutcomeSucceeded && !page)
+        || (outcome != PRProviderBrowseOutcomeSucceeded && page)) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.page = page;
+        self.outcome = outcome;
+        self.localizationKey = [localizationKey copy];
+        self.diagnosticText = [diagnosticText copy];
+        self.retryable = retryable;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRProviderVersionRequest
+
+- (instancetype)initWithProvider:(PRProviderKind)provider
+                    packIdentifier:(NSString *)packIdentifier
+                      gameVersions:(NSArray<NSString *> *)gameVersions
+                          loaders:(NSArray<NSString *> *)loaders
+{
+    if (!isKnownProviderKind(provider) || !isNonEmptyString(packIdentifier)
+        || ![gameVersions isKindOfClass:NSArray.class] || ![loaders isKindOfClass:NSArray.class]) {
+        return nil;
+    }
+    for (id value in gameVersions) {
+        if (![value isKindOfClass:NSString.class] || !isNonEmptyString(value)) {
+            return nil;
+        }
+    }
+    for (id value in loaders) {
+        if (![value isKindOfClass:NSString.class] || !isNonEmptyString(value)) {
+            return nil;
+        }
+    }
+
+    self = [super init];
+    if (self) {
+        self.provider = provider;
+        self.packIdentifier = [packIdentifier copy];
+        self.gameVersions = [gameVersions copy];
+        self.loaders = [loaders copy];
+    }
+    return self;
+}
+
+@end
+
+@implementation PRProviderVersion
+
+- (instancetype)initWithProvider:(PRProviderKind)provider
+                         identifier:(NSString *)identifier
+                     packIdentifier:(NSString *)packIdentifier
+                               name:(NSString *)name
+                            version:(NSString *)version
+                      gameVersions:(NSArray<NSString *> *)gameVersions
+                          loaders:(NSArray<NSString *> *)loaders
+                      releaseType:(PRProviderReleaseType)releaseType
+           publishedUnixSeconds:(NSInteger)publishedUnixSeconds
+                        recommended:(BOOL)recommended
+{
+    if (!isKnownProviderKind(provider) || !isKnownProviderReleaseType(releaseType) || !isNonEmptyString(identifier)
+        || !isNonEmptyString(packIdentifier) || !isNonEmptyString(name) || !isNonEmptyString(version)
+        || ![gameVersions isKindOfClass:NSArray.class] || ![loaders isKindOfClass:NSArray.class]) {
+        return nil;
+    }
+    for (id value in gameVersions) {
+        if (![value isKindOfClass:NSString.class] || !isNonEmptyString(value)) {
+            return nil;
+        }
+    }
+    for (id value in loaders) {
+        if (![value isKindOfClass:NSString.class] || !isNonEmptyString(value)) {
+            return nil;
+        }
+    }
+
+    self = [super init];
+    if (self) {
+        self.provider = provider;
+        self.identifier = [identifier copy];
+        self.packIdentifier = [packIdentifier copy];
+        self.name = [name copy];
+        self.version = [version copy];
+        self.gameVersions = [gameVersions copy];
+        self.loaders = [loaders copy];
+        self.releaseType = releaseType;
+        self.publishedUnixSeconds = publishedUnixSeconds;
+        self.recommended = recommended;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRProviderVersionResult
+
+- (instancetype)initWithProvider:(PRProviderKind)provider
+                    packIdentifier:(NSString *)packIdentifier
+                           versions:(NSArray<PRProviderVersion *> *)versions
+                            outcome:(PRProviderVersionOutcome)outcome
+                     localizationKey:(NSString *)localizationKey
+                       diagnosticText:(NSString *)diagnosticText
+                            retryable:(BOOL)retryable
+{
+    if (!isKnownProviderKind(provider) || !isKnownProviderVersionOutcome(outcome)
+        || !isNonEmptyString(packIdentifier) || ![versions isKindOfClass:NSArray.class]
+        || !isNonEmptyString(localizationKey)) {
+        return nil;
+    }
+    if (outcome != PRProviderVersionOutcomeSucceeded && versions.count != 0) {
+        return nil;
+    }
+    for (id value in versions) {
+        PRProviderVersion *version = (PRProviderVersion *)value;
+        if (![value isKindOfClass:PRProviderVersion.class] || version.provider != provider
+            || ![version.packIdentifier isEqualToString:packIdentifier]) {
+            return nil;
+        }
+    }
+
+    self = [super init];
+    if (self) {
+        self.provider = provider;
+        self.packIdentifier = [packIdentifier copy];
+        self.versions = [versions copy];
+        self.outcome = outcome;
+        self.localizationKey = [localizationKey copy];
+        self.diagnosticText = [diagnosticText copy];
+        self.retryable = retryable;
     }
     return self;
 }
@@ -5863,6 +6641,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.instanceImportRequestStates = [NSMutableArray array];
         self.instanceCopyRequestStates = [NSMutableArray array];
         self.instanceExportRequestStates = [NSMutableArray array];
+        self.providerBrowseRequestStates = [NSMutableArray array];
+        self.providerVersionRequestStates = [NSMutableArray array];
         self.offlineIdentityLoadRequestStates = [NSMutableArray array];
         self.offlineIdentityUpdateRequestStates = [NSMutableArray array];
         self.observationLock = [[NSLock alloc] init];
@@ -8771,6 +9551,238 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     return [[PRBridgeObservationToken alloc] initWithState:observation];
 }
 
+- (PRBridgeObservationToken *)browseProviderWithRequest:(PRProviderBrowseRequest *)request
+                                                progress:(PRProviderBrowseProgressHandler)progress
+                                              completion:(PRProviderBrowseCompletionHandler)completion
+{
+    if (!request || !completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    PRProviderBrowseRequest *requestCopy = request;
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *observation = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeProviderBrowseDelivery *delivery = (PRBridgeProviderBrowseDelivery *)value;
+        if (delivery.progress && progress) {
+            progress(delivery.progress);
+        }
+        if (delivery.result || delivery.error) {
+            [weakRequest cancel];
+            completion(delivery.result, delivery.error);
+        }
+    }];
+    weakRequest = observation;
+    observation.removalHandler = ^{
+        [weakBridge removeProviderBrowseRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [observation cancel];
+        return nil;
+    }
+    [self.providerBrowseRequestStates addObject:observation];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRProviderBrowseResult *result = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    FrontendProviderBrowseRequest browseRequest;
+                    browseRequest.provider = providerKindFromFoundation(requestCopy.provider);
+                    browseRequest.query = utf8TextFromFoundation(requestCopy.query);
+                    if (requestCopy.offset < 0 || requestCopy.pageSize <= 0) {
+                        throw std::invalid_argument("Provider browse pagination must be non-negative");
+                    }
+                    browseRequest.offset = static_cast<std::size_t>(requestCopy.offset);
+                    browseRequest.pageSize = static_cast<std::size_t>(requestCopy.pageSize);
+                    browseRequest.sort = providerSortFromFoundation(requestCopy.sort);
+                    browseRequest.gameVersions = utf8StringsFromFoundation(
+                        requestCopy.gameVersions, "Invalid provider game-version filters");
+                    browseRequest.loaders = utf8StringsFromFoundation(
+                        requestCopy.loaders, "Invalid provider loader filters");
+                    browseRequest.categories = utf8StringsFromFoundation(
+                        requestCopy.categories, "Invalid provider category filters");
+                    for (NSNumber *releaseType in requestCopy.releaseTypes) {
+                        if (![releaseType isKindOfClass:NSNumber.class]) {
+                            throw std::invalid_argument("Invalid provider release filters");
+                        }
+                        browseRequest.releaseTypes.push_back(
+                            providerReleaseTypeFromFoundation((PRProviderReleaseType)releaseType.integerValue));
+                    }
+                    browseRequest.side = providerSideFromFoundation(requestCopy.side);
+                    browseRequest.openSource = requestCopy.openSource;
+                    browseRequest.hideInstalled = requestCopy.hideInstalled;
+                    const FrontendProviderBrowseResult browseResult = bridge->_facade->browseProvider(
+                        browseRequest,
+                        [&](const FrontendTaskSnapshot& snapshot) {
+                            if (state.isCancelled) {
+                                return;
+                            }
+                            PRTaskStatus *convertedStatus = taskStatusFromFacadeSnapshot(snapshot);
+                            [state deliverOnMainActor:[[PRBridgeProviderBrowseDelivery alloc]
+                                initWithProgress:convertedStatus
+                                           result:nil
+                                            error:nil]];
+                        },
+                        [&] { return state.isCancelled; });
+                    result = providerBrowseResultFromFacadeResult(browseResult);
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid provider browse request"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Provider browse cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Provider browse unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown provider browse failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeProviderBrowseDelivery alloc]
+                initWithProgress:nil
+                           result:result
+                            error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:observation];
+}
+
+- (PRBridgeObservationToken *)loadProviderVersionsWithRequest:(PRProviderVersionRequest *)request
+                                                       progress:(PRProviderVersionProgressHandler)progress
+                                                     completion:(PRProviderVersionCompletionHandler)completion
+{
+    if (!request || !completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    PRProviderVersionRequest *requestCopy = request;
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *observation = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeProviderVersionDelivery *delivery = (PRBridgeProviderVersionDelivery *)value;
+        if (delivery.progress && progress) {
+            progress(delivery.progress);
+        }
+        if (delivery.result || delivery.error) {
+            [weakRequest cancel];
+            completion(delivery.result, delivery.error);
+        }
+    }];
+    weakRequest = observation;
+    observation.removalHandler = ^{
+        [weakBridge removeProviderVersionRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [observation cancel];
+        return nil;
+    }
+    [self.providerVersionRequestStates addObject:observation];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRProviderVersionResult *result = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    FrontendProviderVersionRequest versionRequest;
+                    versionRequest.provider = providerKindFromFoundation(requestCopy.provider);
+                    versionRequest.packIdentifier = stableIdentifierFromFoundation(requestCopy.packIdentifier);
+                    versionRequest.gameVersions = utf8StringsFromFoundation(
+                        requestCopy.gameVersions, "Invalid provider version game filters");
+                    versionRequest.loaders = utf8StringsFromFoundation(
+                        requestCopy.loaders, "Invalid provider version loader filters");
+                    const FrontendProviderVersionResult versionResult = bridge->_facade->providerVersions(
+                        versionRequest,
+                        [&](const FrontendTaskSnapshot& snapshot) {
+                            if (state.isCancelled) {
+                                return;
+                            }
+                            PRTaskStatus *convertedStatus = taskStatusFromFacadeSnapshot(snapshot);
+                            [state deliverOnMainActor:[[PRBridgeProviderVersionDelivery alloc]
+                                initWithProgress:convertedStatus
+                                           result:nil
+                                            error:nil]];
+                        },
+                        [&] { return state.isCancelled; });
+                    result = providerVersionResultFromFacadeResult(versionResult);
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid provider version request"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Provider version loading cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Provider version loading unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown provider version failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeProviderVersionDelivery alloc]
+                initWithProgress:nil
+                           result:result
+                            error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:observation];
+}
+
 - (PRBridgeObservationToken *)loadOfflineLaunchIdentityWithMode:(PROfflineLaunchIdentityMode)mode
                                                 accountIdentifier:(NSString *)accountIdentifier
                                                      fallbackName:(NSString *)fallbackName
@@ -9287,6 +10299,26 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.observationLock unlock];
 }
 
+- (void)removeProviderBrowseRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.providerBrowseRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.providerBrowseRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
+- (void)removeProviderVersionRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.providerVersionRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.providerVersionRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
 - (void)removeOfflineIdentityLoadRequest:(PRBridgeObservationState *)request
 {
     [self.observationLock lock];
@@ -9342,6 +10374,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [observations addObjectsFromArray:self.instanceImportRequestStates];
     [observations addObjectsFromArray:self.instanceCopyRequestStates];
     [observations addObjectsFromArray:self.instanceExportRequestStates];
+    [observations addObjectsFromArray:self.providerBrowseRequestStates];
+    [observations addObjectsFromArray:self.providerVersionRequestStates];
     [observations addObjectsFromArray:self.offlineIdentityLoadRequestStates];
     [observations addObjectsFromArray:self.offlineIdentityUpdateRequestStates];
     [self.instanceObservationStates removeAllObjects];
@@ -9375,6 +10409,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.instanceImportRequestStates removeAllObjects];
     [self.instanceCopyRequestStates removeAllObjects];
     [self.instanceExportRequestStates removeAllObjects];
+    [self.providerBrowseRequestStates removeAllObjects];
+    [self.providerVersionRequestStates removeAllObjects];
     [self.offlineIdentityLoadRequestStates removeAllObjects];
     [self.offlineIdentityUpdateRequestStates removeAllObjects];
     [self.observationLock unlock];

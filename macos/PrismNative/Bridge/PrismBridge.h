@@ -98,6 +98,12 @@ typedef void (^PRInstanceCopyCompletionHandler)(PRInstanceCopyResult * _Nullable
 typedef void (^PRInstanceExportProgressHandler)(PRTaskStatus *progress);
 typedef void (^PRInstanceExportCompletionHandler)(PRInstanceExportResult * _Nullable result,
                                                    PRBridgeError * _Nullable error);
+typedef void (^PRProviderBrowseProgressHandler)(PRTaskStatus *progress);
+typedef void (^PRProviderBrowseCompletionHandler)(PRProviderBrowseResult * _Nullable result,
+                                                   PRBridgeError * _Nullable error);
+typedef void (^PRProviderVersionProgressHandler)(PRTaskStatus *progress);
+typedef void (^PRProviderVersionCompletionHandler)(PRProviderVersionResult * _Nullable result,
+                                                    PRBridgeError * _Nullable error);
 typedef void (^PROfflineLaunchIdentityLoadCompletionHandler)(PROfflineLaunchIdentityLoadResult * _Nullable result,
                                                               PRBridgeError * _Nullable error);
 typedef void (^PROfflineLaunchIdentityUpdateCompletionHandler)(PROfflineLaunchIdentityUpdateResult * _Nullable result,
@@ -258,6 +264,20 @@ typedef void (^PROfflineLaunchIdentityUpdateCompletionHandler)(PROfflineLaunchId
 - (nullable PRBridgeObservationToken *)exportInstanceWithRequest:(PRInstanceExportRequest *)request
                                                           progress:(nullable PRInstanceExportProgressHandler)progress
                                                         completion:(PRInstanceExportCompletionHandler)completion;
+
+/// Runs a fixture-controlled provider browse request. Search, filters, and
+/// pagination remain immutable value data; provider services, credentials,
+/// caches, downloads, and installation mutations stay adapter-owned.
+- (nullable PRBridgeObservationToken *)browseProviderWithRequest:(PRProviderBrowseRequest *)request
+                                                          progress:(nullable PRProviderBrowseProgressHandler)progress
+                                                        completion:(PRProviderBrowseCompletionHandler)completion;
+
+/// Loads fixture-controlled versions for one selected provider pack. The
+/// returned values support native selection only; install/download semantics
+/// remain later work units.
+- (nullable PRBridgeObservationToken *)loadProviderVersionsWithRequest:(PRProviderVersionRequest *)request
+                                                               progress:(nullable PRProviderVersionProgressHandler)progress
+                                                             completion:(PRProviderVersionCompletionHandler)completion;
 
 /// Loads immutable, non-secret instance settings for a standard native Form.
 - (nullable PRBridgeObservationToken *)loadInstanceSettingsWithIdentifier:(NSString *)identifier
