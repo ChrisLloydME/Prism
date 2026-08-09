@@ -10,7 +10,7 @@ Current milestone: 11. Production backend adapters and complete launcher composi
 
 Active work unit: none
 
-Next ready work unit: M11-W3 Production Java discovery, validation, selection, and managed metadata
+Next ready work unit: M11-W4 Accounts and authentication
 
 Goal correction added 2026-08-09: this project must deliver a complete Minecraft launcher, not only native surfaces and fixture contracts. Historical M4-M9 `complete` labels mean surface/contract completion unless a later M11 unit proves production adapter and default-composition wiring. M10-W1 identified this gap; M10-W2 packaging and M10-W3 clean builds are complete infrastructure, not launcher parity. Qt retirement is moved to M12 and is forbidden until M11-W10 proves production parity.
 
@@ -2374,9 +2374,42 @@ Next ready work unit: M11-W3 Production Java discovery, validation, selection, a
 
 ### M11-W3: Production Java discovery, validation, selection, and managed metadata
 
-Status: ready
+Status: complete
 
 Prerequisite: M11-W2 is complete. Connect Java discovery, validation, selection, managed runtime metadata, and saved choice through production adapters and controlled filesystem/process ports. Distinguish system discovery from another launcher's saved state; do not execute an uncontrolled user Java binary or inspect upstream Java data.
+
+Outcome: the production runtime now owns Java discovery and selection for the bundle-scoped Native Prism root. It enumerates managed runtimes only below `<root>/java` using the existing AutoInstallJava layout (`<runtime>/bin/java` plus macOS JDK layout variants), scans only fixed macOS system JVM locations for host installations, validates candidates through sanitized Java property output and the existing `JavaVersion`/`SysInfo` domain helpers, classifies valid, incompatible, and unavailable rows, and returns a stable saved-selection identifier. Selection persists the existing `JavaPath`, `JavaVersion`, `JavaVendor`, `JavaArchitecture`, `JavaRealArchitecture`, and `JavaSignature` keys in the Native Prism `prismlauncher.cfg`; reconstruction resolves that choice only against the current discovered valid candidates.
+
+Files changed: `launcher/frontend/ProductionJavaRuntime.h`, `ProductionJavaRuntime.cpp`, `FrontendFacadeProductionJavaTest.cpp`, `CMakeLists.txt`, `FrontendFacade.h`, `FrontendFacade.cpp`, and `ProductionInstanceRuntime.cpp`; `macos/PrismNative/Bridge/PrismBridgeModels.h`, `PrismBridge.mm`, and `PrismNativeTests/PrismBridgeFacadeIntegrationTests.mm`; `macos/PrismNative/App/PrismJavaSettings.swift`, `PrismNativeApp.swift`, `PrismNativeTests/PrismNativeInfrastructureTests.swift`, and `PrismShellTests.swift`; this ledger and PLAN §17.
+
+Architecture and safety: `ProductionJavaRuntime` accepts one absolute data root and injected filesystem/process executors. The default process executor invokes only an absolute discovered executable, strips Java environment override variables, bounds the wait, and keeps raw stdout/stderr inside the adapter; tests inject a process executor and never execute a host Java binary. Managed roots and candidate paths reject symlink escapes and canonical paths outside `<root>/java`; a saved path outside the Native Prism root is not imported or executed. System discovery never reads another launcher's settings or metadata. Managed metadata is represented by the managed-root identity, managed flag, and validated version/vendor/architecture returned by the executable; no external launcher metadata sidecar is read. Objective-C++ remains the only C++/Foundation boundary and converts the optional saved identifier into immutable Foundation data. Swift uses only bridge observation tokens, generation guards, standard `List` selection, progress/error/retry/cancel state, and the confirmed-versus-draft selection model; production composition starts with an empty list and the real bridge, while fixture defaults remain test-only.
+
+HIG decision: no custom control or renderer was introduced. Java settings use the system SwiftUI `List(selection:)`, `ProgressView`, `ContentUnavailableView`, `Button`, `Label`, standard help/accessibility values, and the existing Settings scene. This follows Apple's [Settings HIG](https://developer.apple.com/design/human-interface-guidelines/settings), [SwiftUI List](https://developer.apple.com/documentation/swiftui/list), [ProgressView](https://developer.apple.com/documentation/swiftui/progressview), and [accessibility](https://developer.apple.com/documentation/swiftui/accessibility) guidance. No third-party UI framework, self-drawn system control, screenshot, recording, or visual snapshot was used; no new rendering exception was approved.
+
+Tests and exact commands:
+
+- `cmake -S launcher/frontend -B .deriveddata-prism-native-backend -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DCMAKE_OSX_ARCHITECTURES=arm64` — passed; reused the shared frontend backend build tree.
+- `cmake --build .deriveddata-prism-native-backend -j2` — passed, including `Launcher_frontend_production_java_test`.
+- `ctest --test-dir .deriveddata-prism-native-backend --output-on-failure` — passed, 8/8. `FrontendFacadeProductionJava` proves managed discovery, Java metadata validation, architecture rejection, unavailable metadata, exact process-call containment, rejection of a synthetic saved choice outside the Native root, persistence, and facade reconstruction.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -derivedDataPath .deriveddata-prism-native -destination 'platform=macOS,arch=arm64' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build` — passed.
+- The same command with `-configuration Release` — passed.
+- The same shared-path `test` command for Debug and Release — both passed, 173/173, 0 failed, 0 skipped. Retained result bundles: `Test-PrismNative-2026.08.09_19-10-53-+0800.xcresult` (Debug) and `Test-PrismNative-2026.08.09_19-11-25-+0800.xcresult` (Release). The bridge suite verifies saved-ID conversion, main-actor delivery, cancellation suppression, and fixture-only Java contracts; Swift tests verify saved selection application, stale generations, retry/error recovery, accessibility metadata, and standard controls.
+- `plutil -lint macos/PrismNative/Resources/Info.plist macos/PrismNative/Resources/PrismNative.entitlements` and built Debug/Release Info.plists — passed. `plutil -extract CFBundleIdentifier raw` returned `com.lloydME.Prism` for both `.deriveddata-prism-native/Build/Products/Debug/Prism.app` and `Release/Prism.app`.
+- Static scans for Qt/C++ ownership in Swift/public bridge headers, uncontrolled process/file APIs in Swift, fixture defaults in production composition, and custom drawing — passed. The existing full native suite supplies the localization, accessibility, keyboard, cancellation, and recovery checks. `git diff --check` — passed before documentation finalization.
+
+Build storage and cleanup: retained repository-local `.deriveddata-prism-native` and `.deriveddata-prism-native-backend`; retained the pre-existing `build-native` cache without modifying it. Retained only the two newest Xcode result bundles listed above; removed the two older W3-generated result bundles from the shared `Logs/Test` directory. No temporary `/private/tmp/prism-*` directory or synthetic Java fixture root remains. Final sizes are recorded after the ledger commit.
+
+Risks and limits: Java validation is intentionally synchronous inside the bridge's backend queue and request cancellation suppresses delivery while the bounded probe completes; interruptible process cancellation is deferred until the facade gains an operation cancellation port. System JVM discovery is limited to the fixed macOS locations defined here, and automatic Java installation/download or compatibility-major selection remains a later launch adapter. The existing global Java keys are preserved, but cross-process file locking is not added. Accounts/authentication, launch, resources, and remaining production workflows remain incomplete and are not implied by this unit.
+
+Commit: pending implementation commit; this entry is finalized in the following progress-ledger commit.
+
+Next ready work unit: M11-W4 Accounts and authentication. It must use production account persistence and fake HTTP/browser/Keychain ports with synthetic secrets; no credential or token may cross Swift DTOs, logs, fixtures, or progress records.
+
+### M11-W4: Accounts and authentication
+
+Status: ready
+
+Prerequisite: M11-W3 is complete. Connect account persistence, active-account selection, offline identity, Microsoft device-flow state, refresh/error recovery, and profile selection through existing authentication logic. Automated verification must use fake HTTP/browser/Keychain ports and synthetic secrets; no credential or token may enter Swift DTO descriptions, logs, fixtures, or progress documentation.
 
 ## Completed commit index
 

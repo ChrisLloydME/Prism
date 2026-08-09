@@ -1337,13 +1337,21 @@ typedef NS_ENUM(NSInteger, PRJavaDiscoveryOutcome) {
                                         outcome:(PRJavaDiscoveryOutcome)outcome
                                 localizationKey:(NSString *)localizationKey
                                   diagnosticText:(nullable NSString *)diagnosticText
-                                      retryable:(BOOL)retryable NS_DESIGNATED_INITIALIZER;
+                                      retryable:(BOOL)retryable;
+
+- (nullable instancetype)initWithInstallations:(NSArray<PRJavaInstallation *> *)installations
+                                        outcome:(PRJavaDiscoveryOutcome)outcome
+                                        localizationKey:(NSString *)localizationKey
+                                  diagnosticText:(nullable NSString *)diagnosticText
+                                      retryable:(BOOL)retryable
+                   selectedInstallationIdentifier:(nullable NSString *)selectedInstallationIdentifier NS_DESIGNATED_INITIALIZER;
 
 @property(nonatomic, copy, readonly) NSArray<PRJavaInstallation *> *installations;
 @property(nonatomic, assign, readonly) PRJavaDiscoveryOutcome outcome;
 @property(nonatomic, copy, readonly) NSString *localizationKey;
 @property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
 @property(nonatomic, assign, readonly) BOOL retryable;
+@property(nonatomic, copy, readonly, nullable) NSString *selectedInstallationIdentifier;
 
 @end
 

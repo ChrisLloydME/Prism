@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "ProductionInstanceRuntime.h"
+#include "ProductionJavaRuntime.h"
 #include "ProductionSettingsRuntime.h"
 
 #include "settings/INIFile.h"
@@ -303,6 +304,7 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
     const auto normalizedDataRoot = dataRoot.lexically_normal();
     auto runtime = makeProductionInstanceRuntime(normalizedDataRoot);
     auto settingsRuntime = makeProductionSettingsRuntime(normalizedDataRoot);
+    auto javaRuntime = makeProductionJavaRuntime(normalizedDataRoot);
     FrontendRuntimeDependencies dependencies;
     dependencies.dispatch = [](FrontendRuntimeDependencies::Work work) {
         if (work) {
@@ -311,9 +313,10 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
     };
     dependencies.now = [] { return std::chrono::system_clock::now(); };
     dependencies.cancelPendingWork = [runtime] { runtime->stopInstanceObservation(); };
-    dependencies.shutdown = [runtime, settingsRuntime] {
+    dependencies.shutdown = [runtime, settingsRuntime, javaRuntime] {
         runtime->shutdown();
         settingsRuntime->shutdown();
+        javaRuntime->shutdown();
     };
     dependencies.loadInstanceSnapshots = [runtime](const std::filesystem::path&) { return runtime->instanceSnapshots(); };
     dependencies.loadInstanceChanges = [runtime](const std::filesystem::path&) { return runtime->takeInstanceChanges(); };
@@ -345,5 +348,5 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
                                             const FrontendGlobalSettingsSnapshot& settings) {
         return settingsRuntime->updateGlobalSettings(settings);
     };
-    return dependencies;
+    return productionJavaRuntimeDependencies(std::move(javaRuntime), std::move(dependencies));
 }

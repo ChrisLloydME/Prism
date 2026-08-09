@@ -192,11 +192,15 @@ final class PrismJavaDiscoveryModel: ObservableObject {
     private let onDiscover: ((Int) -> Void)?
     private let onSelect: ((String, Int) -> Void)?
     private let onCancel: (() -> Void)?
+    private let bridge: PRPrismBridge?
+    private var discoveryToken: PRBridgeObservationToken?
+    private var selectionToken: PRBridgeObservationToken?
     private var generation = 0
 
     init(
         initialInstallations: [PrismJavaInstallation] = PrismJavaInstallation.fixture(),
         selectedInstallationID: String? = nil,
+        bridge: PRPrismBridge? = nil,
         onDiscover: ((Int) -> Void)? = nil,
         onSelect: ((String, Int) -> Void)? = nil,
         onCancel: (() -> Void)? = nil
@@ -206,6 +210,7 @@ final class PrismJavaDiscoveryModel: ObservableObject {
         self.state = initialInstallations.isEmpty ? .empty : .content(initialInstallations)
         self.confirmedSelectionID = confirmedID
         self.draftSelectionID = confirmedID
+        self.bridge = bridge
         self.onDiscover = onDiscover
         self.onSelect = onSelect
         self.onCancel = onCancel
@@ -253,7 +258,19 @@ final class PrismJavaDiscoveryModel: ObservableObject {
         let activeGeneration = generation
         state = .loading(generation: activeGeneration)
         selectionState = .idle
-        onDiscover?(activeGeneration)
+        discoveryToken?.cancel()
+        if let bridge {
+            discoveryToken = bridge.loadJavaInstallations { [weak self] result, error in
+                self?.discoveryToken = nil
+                if let result {
+                    _ = self?.apply(discoveryResult: result, generation: activeGeneration)
+                } else if let error {
+                    _ = self?.apply(error: error, generation: activeGeneration)
+                }
+            }
+        } else {
+            onDiscover?(activeGeneration)
+        }
         return true
     }
 
@@ -263,6 +280,8 @@ final class PrismJavaDiscoveryModel: ObservableObject {
             return false
         }
         generation += 1
+        discoveryToken?.cancel()
+        discoveryToken = nil
         onCancel?()
         state = .cancelled
         return true
@@ -282,8 +301,18 @@ final class PrismJavaDiscoveryModel: ObservableObject {
                 state = .failed(Self.failure(key: "java.discovery.invalidResult", diagnostic: nil, recovery: .retry))
                 return false
             }
+            if let selectedIdentifier = discoveryResult.selectedInstallationIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !selectedIdentifier.isEmpty {
+                guard let selected = mapped.first(where: { $0.id == selectedIdentifier }), selected.isSelectable else {
+                    state = .failed(Self.failure(key: "java.discovery.invalidSelection", diagnostic: nil, recovery: .retry))
+                    return false
+                }
+                confirmedSelectionID = selected.id
+                draftSelectionID = selected.id
+            } else {
+                preserveSelection(in: mapped)
+            }
             state = mapped.isEmpty ? .empty : .content(mapped)
-            preserveSelection(in: mapped)
         case .failed, .rejected:
             state = .failed(
                 Self.failure(
@@ -330,7 +359,17 @@ final class PrismJavaDiscoveryModel: ObservableObject {
         generation += 1
         let activeGeneration = generation
         selectionState = .saving(generation: activeGeneration)
-        if let onSelect {
+        selectionToken?.cancel()
+        if let bridge {
+            selectionToken = bridge.selectJavaInstallation(withIdentifier: id) { [weak self] result, error in
+                self?.selectionToken = nil
+                if let result {
+                    _ = self?.apply(selectionResult: result, generation: activeGeneration)
+                } else if let error {
+                    _ = self?.apply(error: error, toSelectionGeneration: activeGeneration)
+                }
+            }
+        } else if let onSelect {
             onSelect(id, activeGeneration)
         } else {
             confirmedSelectionID = id
@@ -412,7 +451,17 @@ final class PrismJavaDiscoveryModel: ObservableObject {
         generation += 1
         let activeGeneration = generation
         selectionState = .saving(generation: activeGeneration)
-        if let onSelect {
+        selectionToken?.cancel()
+        if let bridge {
+            selectionToken = bridge.selectJavaInstallation(withIdentifier: installation.id) { [weak self] result, error in
+                self?.selectionToken = nil
+                if let result {
+                    _ = self?.apply(selectionResult: result, generation: activeGeneration)
+                } else if let error {
+                    _ = self?.apply(error: error, toSelectionGeneration: activeGeneration)
+                }
+            }
+        } else if let onSelect {
             onSelect(installation.id, activeGeneration)
         } else {
             confirmedSelectionID = installation.id
@@ -423,6 +472,10 @@ final class PrismJavaDiscoveryModel: ObservableObject {
 
     func clear() {
         generation += 1
+        discoveryToken?.cancel()
+        discoveryToken = nil
+        selectionToken?.cancel()
+        selectionToken = nil
         state = .empty
         confirmedSelectionID = nil
         draftSelectionID = nil
@@ -490,6 +543,11 @@ struct PrismJavaSettingsView: View {
         .padding()
         .frame(minWidth: 500, minHeight: 300)
         .accessibilityIdentifier("prism.settings.java")
+        .onAppear {
+            if case .empty = model.state {
+                _ = model.refresh()
+            }
+        }
     }
 
     private var loadingView: some View {

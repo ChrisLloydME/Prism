@@ -1132,6 +1132,7 @@ FrontendRuntimeDependencies baseFixtureDependencies()
             "",
             "",
             false,
+            "fixture-managed",
         };
     };
     dependencies.selectJavaInstallation = [selectionRootMatches, selectionCalls, fixtureRoot](
@@ -1162,12 +1163,14 @@ FrontendRuntimeDependencies baseFixtureDependencies()
 
     XCTestExpectation *discoveryCompletion = [self expectationWithDescription:@"Java discovery completed"];
     __block NSArray<PRJavaInstallation *> *receivedInstallations = nil;
+    __block NSString *receivedSelectedInstallationIdentifier = nil;
     __block PRBridgeError *receivedDiscoveryError = nil;
     __block BOOL discoveryRanOnMainThread = NO;
     PRBridgeObservationToken *discoveryToken = [bridge loadJavaInstallationsWithCompletion:^(PRJavaDiscoveryResult *result,
                                                                                                PRBridgeError *error) {
         discoveryRanOnMainThread = [NSThread isMainThread];
         receivedInstallations = result.installations;
+        receivedSelectedInstallationIdentifier = result.selectedInstallationIdentifier;
         receivedDiscoveryError = error;
         XCTAssertEqual(result.outcome, PRJavaDiscoveryOutcomeSucceeded);
         [discoveryCompletion fulfill];
@@ -1184,6 +1187,7 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     XCTAssertEqualObjects(receivedInstallations[1].version, @"8.0.392");
     XCTAssertEqual(receivedInstallations[1].validity, PRJavaInstallationValidityIncompatible);
     XCTAssertEqual(receivedInstallations[2].validity, PRJavaInstallationValidityUnavailable);
+    XCTAssertEqualObjects(receivedSelectedInstallationIdentifier, @"fixture-managed");
 
     XCTestExpectation *selectionCompletion = [self expectationWithDescription:@"Java selection completed"];
     __block PRJavaSelectionResult *receivedSelection = nil;

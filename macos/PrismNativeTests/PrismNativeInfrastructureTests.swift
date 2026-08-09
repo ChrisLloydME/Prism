@@ -212,6 +212,8 @@ final class PrismNativeInfrastructureTests: XCTestCase {
 
         XCTAssertTrue(appSource.contains("PrismGlobalSettingsModel(initialSettings: nil, bridge: runtime.bridge)"))
         XCTAssertFalse(appSource.contains("@StateObject private var globalSettingsModel = PrismGlobalSettingsModel()"))
+        XCTAssertTrue(appSource.contains("PrismJavaDiscoveryModel(initialInstallations: [], bridge: runtime.bridge)"))
+        XCTAssertFalse(appSource.contains("@StateObject private var javaDiscoveryModel = PrismJavaDiscoveryModel()"))
         XCTAssertTrue(contentSource.contains("PrismInstanceSettingsModel(bridge: bridge)"))
         XCTAssertTrue(contentSource.contains("loadIfNeeded(identifier: details.id)"))
     }

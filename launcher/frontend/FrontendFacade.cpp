@@ -440,6 +440,18 @@ void validateJavaDiscoveryResult(const FrontendJavaDiscoveryResult& result)
     if (result.outcome != FrontendJavaDiscoveryOutcome::Succeeded && result.localizationKey.empty()) {
         throw std::invalid_argument("Failed Java discovery requires a localization key");
     }
+    if (result.selectedInstallationIdentifier.has_value()) {
+        if (result.outcome != FrontendJavaDiscoveryOutcome::Succeeded
+            || !identifiers.contains(*result.selectedInstallationIdentifier)) {
+            throw std::invalid_argument("Java discovery selection must identify a discovered installation");
+        }
+        const auto selected = std::find_if(result.installations.begin(), result.installations.end(), [&](const auto& installation) {
+            return installation.id == *result.selectedInstallationIdentifier;
+        });
+        if (selected == result.installations.end() || selected->validity != FrontendJavaInstallationValidity::Valid) {
+            throw std::invalid_argument("Java discovery selection must identify a valid installation");
+        }
+    }
 }
 
 bool isKnownJavaSelectionOutcome(FrontendJavaSelectionOutcome outcome) noexcept

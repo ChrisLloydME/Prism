@@ -410,6 +410,7 @@ struct FrontendJavaDiscoveryResult final {
     std::string localizationKey;
     std::string diagnosticText;
     bool retryable = false;
+    std::optional<std::string> selectedInstallationIdentifier;
 };
 
 enum class FrontendJavaSelectionOutcome : std::uint8_t { Succeeded, UnknownInstallation, Rejected };

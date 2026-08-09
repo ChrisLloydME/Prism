@@ -11,14 +11,18 @@ set(LAUNCHER_FRONTEND_PUBLIC_HEADERS
     FrontendFacade.h
     ProductionInstanceRuntime.h
     ProductionSettingsRuntime.h
+    ProductionJavaRuntime.h
 )
 
 add_library(Launcher_frontend STATIC
     FrontendFacade.cpp
     ProductionInstanceRuntime.cpp
     ProductionSettingsRuntime.cpp
+    ProductionJavaRuntime.cpp
     ../HardwareInfo.cpp
     ../SysInfo.cpp
+    ../StringUtils.cpp
+    ../java/JavaVersion.cpp
     ../settings/INIFile.cpp
     ${LAUNCHER_FRONTEND_PUBLIC_HEADERS}
     ../settings/INIFile.h
@@ -83,4 +87,12 @@ if(BUILD_TESTING)
     target_include_directories(Launcher_frontend_production_settings_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
     target_link_libraries(Launcher_frontend_production_settings_test PRIVATE Launcher_frontend)
     add_test(NAME FrontendFacadeProductionSettings COMMAND Launcher_frontend_production_settings_test)
+
+    add_executable(Launcher_frontend_production_java_test
+        FrontendFacadeProductionJavaTest.cpp
+    )
+    target_compile_features(Launcher_frontend_production_java_test PRIVATE cxx_std_20)
+    target_include_directories(Launcher_frontend_production_java_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+    target_link_libraries(Launcher_frontend_production_java_test PRIVATE Launcher_frontend)
+    add_test(NAME FrontendFacadeProductionJava COMMAND Launcher_frontend_production_java_test)
 endif()

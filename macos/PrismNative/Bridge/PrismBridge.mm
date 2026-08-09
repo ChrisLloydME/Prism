@@ -1704,7 +1704,8 @@ PRJavaDiscoveryResult *javaDiscoveryResultFromFacadeResult(const FrontendJavaDis
                        outcome:javaDiscoveryOutcomeFromFacadeResult(result.outcome)
                localizationKey:foundationStringFromUTF8AllowEmpty(result.localizationKey)
                  diagnosticText:foundationStringFromUTF8(result.diagnosticText)
-                     retryable:result.retryable];
+                     retryable:result.retryable
+        selectedInstallationIdentifier:foundationStringFromUTF8(result.selectedInstallationIdentifier.value_or(std::string()))];
     if (!converted) {
         throw std::invalid_argument("Facade returned an invalid Java discovery result");
     }
@@ -4769,6 +4770,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, copy, readwrite) NSString *localizationKey;
 @property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
 @property(nonatomic, assign, readwrite) BOOL retryable;
+@property(nonatomic, copy, readwrite, nullable) NSString *selectedInstallationIdentifier;
 
 @end
 
@@ -6693,6 +6695,21 @@ resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentif
                           diagnosticText:(NSString *)diagnosticText
                               retryable:(BOOL)retryable
 {
+    return [self initWithInstallations:installations
+                               outcome:outcome
+                       localizationKey:localizationKey
+                         diagnosticText:diagnosticText
+                             retryable:retryable
+          selectedInstallationIdentifier:nil];
+}
+
+- (instancetype)initWithInstallations:(NSArray<PRJavaInstallation *> *)installations
+                                outcome:(PRJavaDiscoveryOutcome)outcome
+                        localizationKey:(NSString *)localizationKey
+                          diagnosticText:(NSString *)diagnosticText
+                              retryable:(BOOL)retryable
+           selectedInstallationIdentifier:(NSString *)selectedInstallationIdentifier
+{
     if (![installations isKindOfClass:NSArray.class] || !isKnownJavaDiscoveryOutcome(outcome)
         || ![localizationKey isKindOfClass:NSString.class]
         || (outcome != PRJavaDiscoveryOutcomeSucceeded && !isNonEmptyString(localizationKey))) {
@@ -6706,6 +6723,21 @@ resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentif
     if (diagnosticText && ![diagnosticText isKindOfClass:NSString.class]) {
         return nil;
     }
+    if (selectedInstallationIdentifier && !isNonEmptyString(selectedInstallationIdentifier)) {
+        return nil;
+    }
+    if (selectedInstallationIdentifier) {
+        BOOL found = NO;
+        for (PRJavaInstallation *installation in installations) {
+            if ([installation.identifier isEqualToString:selectedInstallationIdentifier]) {
+                found = installation.validity == PRJavaInstallationValidityValid;
+                break;
+            }
+        }
+        if (!found || outcome != PRJavaDiscoveryOutcomeSucceeded) {
+            return nil;
+        }
+    }
 
     self = [super init];
     if (self) {
@@ -6714,6 +6746,7 @@ resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentif
         self.localizationKey = [localizationKey copy];
         self.diagnosticText = [diagnosticText copy];
         self.retryable = retryable;
+        self.selectedInstallationIdentifier = [selectedInstallationIdentifier copy];
     }
     return self;
 }

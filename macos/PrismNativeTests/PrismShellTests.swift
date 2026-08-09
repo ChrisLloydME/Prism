@@ -2345,6 +2345,11 @@ final class PrismShellTests: XCTestCase {
             ".disabled(!installation.isSelectable)",
             "accessibilityIdentifier(\"prism.settings.java",
             "cup.and.saucer",
+            "selectedInstallationIdentifier",
+            "discoveryToken",
+            "selectionToken",
+            "bridge.loadJavaInstallations",
+            "bridge.selectJavaInstallation",
             "PrismJavaInstallation.fixture()"
         ] {
             XCTAssertTrue(javaSource.contains(requiredToken), "Missing Java Settings contract: \(requiredToken)")
@@ -2430,6 +2435,36 @@ final class PrismShellTests: XCTestCase {
         } else {
             XCTFail("Successful empty Java discovery should expose the empty state")
         }
+
+        let savedInstallation = try XCTUnwrap(PrismJavaInstallation.fixture().first(where: { $0.isSelectable }))
+        let savedBridgeInstallation = try XCTUnwrap(
+            PRJavaInstallation(
+                identifier: savedInstallation.id,
+                version: savedInstallation.version,
+                vendor: savedInstallation.vendor,
+                architecture: savedInstallation.architecture,
+                executablePath: savedInstallation.executablePath,
+                is64Bit: savedInstallation.is64Bit,
+                managed: savedInstallation.managed,
+                validity: .valid,
+                diagnosticText: nil
+            )
+        )
+        let savedResult = try XCTUnwrap(
+            PRJavaDiscoveryResult(
+                installations: [savedBridgeInstallation],
+                outcome: .succeeded,
+                localizationKey: "",
+                diagnosticText: nil,
+                retryable: false,
+                selectedInstallationIdentifier: savedInstallation.id
+            )
+        )
+        XCTAssertTrue(model.refresh())
+        let savedDiscoveryGeneration = try XCTUnwrap(discoveryGenerations.last)
+        XCTAssertTrue(model.apply(discoveryResult: savedResult, generation: savedDiscoveryGeneration))
+        XCTAssertEqual(model.confirmedSelectionID, savedInstallation.id)
+        XCTAssertEqual(model.draftSelectionID, savedInstallation.id)
 
         XCTAssertTrue(model.refresh())
         let failedResult = try XCTUnwrap(
