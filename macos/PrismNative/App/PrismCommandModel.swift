@@ -11,6 +11,9 @@ enum PrismCommandID: String, CaseIterable, Hashable, Sendable {
     case settings
     case closeWindow
     case about
+    case news
+    case checkForUpdates
+    case createShortcut
 }
 
 enum PrismCommandMenu: String, Sendable {
@@ -209,6 +212,36 @@ struct PrismCommandDescriptor: Identifiable, Equatable, Sendable {
             shortcut: nil,
             requiresSelection: false
         ),
+        Self(
+            id: .news,
+            menu: .app,
+            titleKey: "News…",
+            accessibilityLabelKey: "News",
+            helpKey: "Show Prism news.",
+            systemImage: "newspaper",
+            shortcut: nil,
+            requiresSelection: false
+        ),
+        Self(
+            id: .checkForUpdates,
+            menu: .app,
+            titleKey: "Check for Updates…",
+            accessibilityLabelKey: "Check for Updates",
+            helpKey: "Check whether a newer Prism version is available.",
+            systemImage: "arrow.triangle.2.circlepath",
+            shortcut: nil,
+            requiresSelection: false
+        ),
+        Self(
+            id: .createShortcut,
+            menu: .instance,
+            titleKey: "Create Shortcut…",
+            accessibilityLabelKey: "Create Shortcut for Selected Instance",
+            helpKey: "Create a shortcut for the selected instance.",
+            systemImage: "link",
+            shortcut: nil,
+            requiresSelection: true
+        ),
     ]
 
     static func descriptor(for id: PrismCommandID) -> Self {
@@ -238,6 +271,7 @@ final class PrismCommandModel: ObservableObject {
         .stopSelected,
         .editSelected,
         .deleteSelected,
+        .createShortcut,
     ]
 
     var onCommand: ((PrismCommandID) -> Void)?
@@ -265,9 +299,9 @@ final class PrismCommandModel: ObservableObject {
 
     func isEnabled(_ command: PrismCommandID) -> Bool {
         switch command {
-        case .newInstance, .importInstance, .settings, .closeWindow, .about:
+        case .newInstance, .importInstance, .settings, .closeWindow, .about, .news, .checkForUpdates:
             return true
-        case .launchSelected, .editSelected, .deleteSelected:
+        case .launchSelected, .editSelected, .deleteSelected, .createShortcut:
             return selectedInstanceID != nil
         case .stopSelected:
             return selectedInstanceID != nil && selectedInstanceID == runningInstanceID

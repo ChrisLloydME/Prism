@@ -4,9 +4,12 @@ import SwiftUI
 struct PrismCommands: Commands {
     @ObservedObject private var model: PrismCommandModel
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
+    private let onPrepareShortcut: ((String) -> Void)?
 
-    init(model: PrismCommandModel) {
+    init(model: PrismCommandModel, onPrepareShortcut: ((String) -> Void)? = nil) {
         _model = ObservedObject(wrappedValue: model)
+        self.onPrepareShortcut = onPrepareShortcut
     }
 
     var body: some Commands {
@@ -21,6 +24,12 @@ struct PrismCommands: Commands {
             Divider()
             PrismCommandButton(model: model, command: .editSelected, usesKeyboardShortcut: true)
             PrismCommandButton(model: model, command: .deleteSelected, usesKeyboardShortcut: true)
+            PrismCommandButton(model: model, command: .createShortcut, usesKeyboardShortcut: true) {
+                if let identifier = model.selectedInstanceID {
+                    onPrepareShortcut?(identifier)
+                    openWindow(id: "prism.create-shortcut")
+                }
+            }
         }
 
         CommandGroup(after: .undoRedo) {
@@ -34,7 +43,18 @@ struct PrismCommands: Commands {
         }
 
         CommandGroup(replacing: .appInfo) {
-            PrismCommandButton(model: model, command: .about, usesKeyboardShortcut: true)
+            PrismCommandButton(model: model, command: .about, usesKeyboardShortcut: true) {
+                openWindow(id: "prism.about")
+            }
+        }
+
+        CommandGroup(after: .appInfo) {
+            PrismCommandButton(model: model, command: .news, usesKeyboardShortcut: true) {
+                openWindow(id: "prism.news")
+            }
+            PrismCommandButton(model: model, command: .checkForUpdates, usesKeyboardShortcut: true) {
+                openWindow(id: "prism.updates")
+            }
         }
 
         CommandGroup(after: .windowArrangement) {

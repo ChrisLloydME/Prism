@@ -142,7 +142,7 @@ final class PrismCommandTests: XCTestCase {
         )
         XCTAssertEqual(
             PrismCommandModel.contextMenuCommandIDs,
-            [.launchSelected, .stopSelected, .editSelected, .deleteSelected]
+            [.launchSelected, .stopSelected, .editSelected, .deleteSelected, .createShortcut]
         )
 
         for command in PrismCommandModel.toolbarCommandIDs + PrismCommandModel.contextMenuCommandIDs {

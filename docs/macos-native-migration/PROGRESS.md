@@ -6,11 +6,11 @@ Branch: `macos-native`
 
 Plan: `docs/macos-native-migration/PLAN.md`
 
-Current milestone: Milestone 8, Creation, discovery, and installation
+Current milestone: Milestone 9, Remaining utilities and rendering exceptions
 
-Active work unit: none (M8-W7 complete)
+Active work unit: none (M9-W1 complete)
 
-Next ready work unit: M9-W1
+Next ready work unit: M9-W2
 
 ## Safety baseline
 
@@ -35,8 +35,8 @@ Next ready work unit: M9-W1
 | 5. Launch, tasks, and logs | complete | Deterministic launch-task and log contracts are tested |
 | 6. Instance detail and editing | complete | Instance management surfaces have native contracts |
 | 7. Settings, Java, and accounts | complete | Settings, fake-account workflows, offline identity, and secret-boundary evidence are covered |
-| 8. Creation, discovery, and installation | active | All supported providers and import flows are covered |
-| 9. Utilities and rendering exceptions | queued | Remaining dialogs are classified and migrated |
+| 8. Creation, discovery, and installation | complete | All supported providers and import flows are covered |
+| 9. Utilities and rendering exceptions | active | Remaining dialogs are classified and migrated |
 | 10. Native cutover | queued | Final acceptance matrix is complete |
 
 ## Legacy feature inventory (M1-W2)
@@ -2002,6 +2002,26 @@ Commit: `e94b3f35c` (implementation); this entry is completed in the following p
 
 Next after completion: M9-W1, classify and migrate the remaining About/news/update/shortcut/provider-choice/recovery utility surfaces. Do not start M9-W1 in the same work unit.
 
+### M9-W1: About, news, updates, shortcuts, provider choices, and recovery messages
+
+Status: complete
+
+Outcome: completed native utility presentation contracts for About, News, update decisions, shortcut creation, provider-choice decisions, and recovery messages. Added typed Foundation state seams with injected fixture callbacks, standard SwiftUI/AppKit windows and system controls, cancellation and stale-result guards, and command routing without importing Qt widget ownership or live service access.
+
+Legacy evidence: `AboutDialog` supplies build metadata, repository/license links, credits, and About Qt; `NewsDialog` supplies article selection, content, and list visibility; `UpdateAvailableDialog` supplies install/remind-later/skip decisions; `CreateShortcutDialog` supplies instance, world/server, profile, and destination choices; `ChooseProviderDialog` supplies provider selection, skip/confirm-one/confirm-all, and try-others semantics; custom/network/scroll/review messages supply selectable details, retry/edit/cancel recovery, and review-resource choices. Native destinations use Window scenes, `TabView`, `Form`, `NavigationSplitView`, `List`, `ContentUnavailableView`, `ProgressView`, `Link`, and shared `NSSavePanel` behavior for the Other shortcut destination.
+
+Changed files: `macos/PrismNative/App/PrismUtilitySurfaces.swift`, `PrismCommandModel.swift`, `PrismCommands.swift`, `PrismNativeApp.swift`, `PrismNativeTests/PrismUtilitySurfacesTests.swift`, `PrismCommandTests.swift`, `PrismNative.xcodeproj/project.pbxproj`, and this ledger.
+
+Verification: focused command and utility XCTest passed 17/17 (10 command cases and 7 utility cases); Debug build and full native XCTest passed 156/156; Release build and full native XCTest passed 156/156; `plutil` returned `com.lloydME.Prism` for both products; `file`/`lipo -info` confirmed `x86_64 arm64` for both native products and the universal `libLauncher_frontend.a`; Objective-C header and Objective-C++ bridge syntax checks, HIG/accessibility/localization/keyboard/menu/boundary/no-drawing/legacy-picker structural scans, and `git diff --check` passed. No backend files changed, so no CMake/CTest invocation was required for this unit. No application launch, screenshot, visual snapshot, upstream data, credential, Keychain, live network, signing, publishing, installation, or production state was accessed.
+
+HIG decision: use native Window scenes, system menus, `TabView`, `Form`, `NavigationSplitView`/`List`, `ContentUnavailableView`, `ProgressView`, `Link`, `NSSavePanel`, and the system pasteboard only for an explicit Copy Details action. No custom controls, custom system-dialog drawing, third-party UI framework, or rendering exception was introduced.
+
+Architecture and risk: Swift owns only Foundation values and main-actor state; injected callback seams are typed and generation-guarded, with no C++/Qt/ownership types or direct backend access. The default News/Updates models remain unavailable/fixture-controlled until a later approved backend adapter is wired, and the shortcut window uses the selected identifier plus fixture choices; backend news/update/shortcut ownership is not claimed by this unit. M9-W2 remains the next independent unit.
+
+Commit: pending implementation commit; this entry is finalized by the following progress-ledger commit.
+
+Next after completion: M9-W2, skin management and preview; do not start M9-W2 in the same work unit.
+
 ## Completed commit index
 
 | Commit | Outcome | Verification |
@@ -2058,6 +2078,7 @@ Next after completion: M9-W1, classify and migrate the remaining About/news/upda
 | `53f08c808` | Added the fixture-controlled provider installation contract for Modrinth, CurseForge/Flame, FTB variants, ATLauncher, Technic archive/Solder, FTB App directories, and custom archives with Foundation bridge conversion and native SwiftUI installation state | Focused M8-W5 XCTest; universal and arm64 macOS 14 facade CTest 4/4; arm64 Qt Prism target; full Debug/Release XCTest 143/143; Debug/Release builds; Bundle ID `com.lloydME.Prism`; universal `x86_64 arm64` artifacts; Objective-C/Objective-C++ syntax; accessibility/localization/boundary/no-drawing scans; `git diff --check` |
 | `0918f41b1` | Added typed optional/blocked-file decisions and provider/network/disk recovery prompts with Foundation bridge conversion, native SwiftUI recovery controls, rollback/cancellation contracts, and fixture evidence | Focused M8-W6 XCTest 5/5; universal and arm64 macOS 14 facade CTest 5/5; arm64 Qt Prism target; full Debug/Release XCTest 145/145; Debug/Release builds; Bundle ID `com.lloydME.Prism`; universal `x86_64 arm64` artifacts; Objective-C/Objective-C++ syntax; accessibility/localization/boundary/no-drawing scans; `git diff --check` |
 | `e94b3f35c` | Replaced native import, provider-installation, and export pickers with shared AppKit system open/save panels, Foundation URL validation, cancellation preservation, stale-result suppression, and non-launch UI contract tests | Focused M8-W7 XCTest 18/18; universal and arm64 facade CTest 5/5; arm64 Qt Prism target; full Debug/Release XCTest 149/149; Debug/Release builds; Bundle ID `com.lloydME.Prism`; universal `x86_64 arm64` artifacts; Objective-C/Objective-C++ syntax; accessibility/localization/boundary/no-drawing scans; `git diff --check` |
+| `PENDING` | Added native About, News, update, shortcut, provider-choice, and recovery utility surfaces with typed Foundation state, standard system controls, command/window routing, cancellation, stale-result suppression, and non-launch fixture evidence | Focused command and utility XCTest 17/17; full Debug/Release XCTest 156/156; Debug/Release builds; Bundle ID `com.lloydME.Prism`; universal `x86_64 arm64` native and facade artifacts; Objective-C/Objective-C++ syntax; accessibility/localization/keyboard/boundary/no-drawing/legacy-picker scans; `git diff --check` |
 
 ## Current architecture findings
 
@@ -2117,6 +2138,7 @@ Next after completion: M9-W1, classify and migrate the remaining About/news/upda
 52. M8-W5 establishes one typed provider-installation boundary across nine existing backend task families: Modrinth, CurseForge/Flame, FTB, Legacy FTB, FTB App import, ATLauncher, Technic single-archive, Technic Solder, and custom archive import. The facade owns only normalized fixture-root request/result/task invariants and explicit rollback outcome values; Objective-C++ alone converts Foundation values, local archive/directory paths, task snapshots, cancellation, and callback lifetime; Swift owns only main-actor draft/progress/recovery state and system archive/directory selection. Existing backend tasks retain manifests, resource resolution, staging, downloads/copy/extraction, final instance commits, optional/blocked decisions, and task cancellation. The default composition remains fixture/unavailable, so live provider wiring, optional/blocked selection, network/disk recovery, and production rollback remain M8-W6 or later adapter work.
 53. M8-W6 makes provider-install recovery explicit without importing legacy task or filesystem ownership: optional and blocked choices cross as stable file metadata and confirmed identifier lists, while provider/network/disk failures cross as typed retryable prompts with rollback status. The facade validates category/action/list invariants and terminal task alignment; Objective-C++ is the only Foundation/C++ and callback-lifetime boundary; Swift owns only main-actor toggles, retry/continue/cancel state, generation guards, accessibility metadata, and localized system controls. Existing Modrinth, Flame, ATLauncher, FTB, Technic, and custom-pack tasks remain the source of truth for manifests, local sources, staging, downloads, extraction, filesystem recovery, rollback, and cancellation; W7 owns system open/save panels.
 54. M8-W7 centralizes local archive, provider directory/archive, and export destination selection behind AppKit `NSOpenPanel`/`NSSavePanel` wrappers with explicit `UTType` and file/directory policy. Swift owns only main-actor draft state and Foundation URLs; generation tickets preserve cancellation and suppress stale results when source, kind, task state, or reset changes. The legacy `QFileDialog` calls and backend archive/task/filesystem ownership remain outside the native view layer; no custom-rendering exception or live adapter was added.
+55. M9-W1 classifies the remaining utility dialogs as native Window scenes and standard SwiftUI/AppKit surfaces: About metadata, News article state, update decisions, shortcut creation, provider choices, and recovery messages cross only as Foundation values and typed injected callbacks. Swift owns main-actor draft/presentation state and generation guards; no C++/Qt/ownership types, live service, or backend task ownership crosses into the views. `NSSavePanel` remains the only system panel needed for the shortcut Other destination, and no custom-rendering exception was introduced; live News/Updates/Shortcut adapters remain a later contract.
 
 ## Custom rendering exceptions
 
@@ -2130,4 +2152,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read PLAN.md and PROGRESS.md, run git status --short --branch -uall, inspect the last five commits, then activate only ready M9-W1. M6-W1 is complete in d3f319c494a61d5596434a6253a3ec8c495df3; M6-W2 is complete in 467bb275e04a087e00a4dd85365273bdcf130185; M6-W3 is complete in 789502d804528d39098fd21fd227d4572ae18040; M6-W4 is complete in 891138f6ea639c3af718d74e8f63f65e74650cf6; M6-W5 is complete in ebcccb3761bbfdbf66d042e75dae85ace9450823; M6-W6 is complete in ed31c77fbedcacfcd5e691d0f67ab08c25dff9e4; M6-W7 is complete in a0c6456c1; M7-W1 is complete in 6149bb3a2; M7-W2 is complete in 12c6ba49a; M7-W3 is complete in 76cfc19dd; M7-W4 is complete in 5a4cef365; M7-W5 is complete in 15d2863af; M7-W6 is complete in 4eac74821; M7-W7 is complete in 40c3ffd7f with its progress-ledger update in the following commit; M8-W1 is complete in ee0fd45e7 with its progress-ledger update in the following commit; M8-W2 is complete in 341a209af with its progress-ledger update in the following commit; M8-W3 is complete in d2250b3fd with its progress-ledger update in the following commit; M8-W4 is complete in 54feea9c4 with its progress-ledger update in the following commit; M8-W5 is complete in 53f08c808 with its progress-ledger update in 646590d83; M8-W6 is complete in 0918f41b1 with its progress-ledger update in the following commit; M8-W7 is complete in e94b3f35c with this progress-ledger update. Preserve all existing fixture-root, Bundle ID, no-launch, no-secrets, and Objective-C++ boundary constraints; do not reopen completed M6, M7, or M8-W1/M8-W2/M8-W3/M8-W4/M8-W5/M8-W6/M8-W7 evidence.
+Read PLAN.md and PROGRESS.md, run git status --short --branch -uall, inspect the last five commits, then activate only ready M9-W2. M6-W1 is complete in d3f319c494a61d5596434a6253a3ec8c495df3; M6-W2 is complete in 467bb275e04a087e00a4dd85365273bdcf130185; M6-W3 is complete in 789502d804528d39098fd21fd227d4572ae18040; M6-W4 is complete in 891138f6ea639c3af718d74e8f63f65e74650cf6; M6-W5 is complete in ebcccb3761bbfdbf66d042e75dae85ace9450823; M6-W6 is complete in ed31c77fbedcacfcd5e691d0f67ab08c25dff9e4; M6-W7 is complete in a0c6456c1; M7-W1 is complete in 6149bb3a2; M7-W2 is complete in 12c6ba49a; M7-W3 is complete in 76cfc19dd; M7-W4 is complete in 5a4cef365; M7-W5 is complete in 15d2863af; M7-W6 is complete in 4eac74821; M7-W7 is complete in 40c3ffd7f with its progress-ledger update in the following commit; M8-W1 is complete in ee0fd45e7 with its progress-ledger update in the following commit; M8-W2 is complete in 341a209af with its progress-ledger update in the following commit; M8-W3 is complete in d2250b3fd with its progress-ledger update in the following commit; M8-W4 is complete in 54feea9c4 with its progress-ledger update in the following commit; M8-W5 is complete in 53f08c808 with its progress-ledger update in 646590d83; M8-W6 is complete in 0918f41b1 with its progress-ledger update in the following commit; M8-W7 is complete in e94b3f35c with this progress-ledger update; M9-W1 is complete in the implementation commit recorded above and its following progress-ledger commit. Preserve all existing fixture-root, Bundle ID, no-launch, no-secrets, and Objective-C++ boundary constraints; do not reopen completed M6, M7, M8-W1/M8-W2/M8-W3/M8-W4/M8-W5/M8-W6/M8-W7, or M9-W1 evidence.
