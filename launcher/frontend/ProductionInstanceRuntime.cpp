@@ -2,6 +2,7 @@
 
 #include "ProductionInstanceRuntime.h"
 #include "ProductionAccountRuntime.h"
+#include "ProductionInstanceDetailRuntime.h"
 #include "ProductionJavaRuntime.h"
 #include "ProductionLaunchRuntime.h"
 #include "ProductionSettingsRuntime.h"
@@ -308,6 +309,7 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
     auto settingsRuntime = makeProductionSettingsRuntime(normalizedDataRoot);
     auto javaRuntime = makeProductionJavaRuntime(normalizedDataRoot);
     auto accountRuntime = makeProductionAccountRuntime(normalizedDataRoot);
+    auto detailRuntime = makeProductionInstanceDetailRuntime(normalizedDataRoot);
     auto launchRuntime = makeProductionLaunchRuntime(
         normalizedDataRoot,
         {},
@@ -325,11 +327,12 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
         runtime->stopInstanceObservation();
         launchRuntime->cancelPendingWork();
     };
-    dependencies.shutdown = [runtime, settingsRuntime, javaRuntime, accountRuntime, launchRuntime] {
+    dependencies.shutdown = [runtime, settingsRuntime, javaRuntime, accountRuntime, detailRuntime, launchRuntime] {
         runtime->shutdown();
         settingsRuntime->shutdown();
         javaRuntime->shutdown();
         accountRuntime->shutdown();
+        static_cast<void>(detailRuntime);
         launchRuntime->shutdown();
     };
     dependencies.loadInstanceSnapshots = [runtime](const std::filesystem::path&) { return runtime->instanceSnapshots(); };
@@ -343,6 +346,75 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
             return runtime->startInstanceObservation(std::move(handler));
         };
     dependencies.stopInstanceObservation = [runtime] { runtime->stopInstanceObservation(); };
+    dependencies.loadInstanceDetails = [detailRuntime](const std::filesystem::path&, const std::string& identifier) {
+        return detailRuntime->instanceDetails(identifier);
+    };
+    dependencies.loadInstanceComponents = [detailRuntime](const std::filesystem::path&, const std::string& identifier) {
+        return detailRuntime->instanceComponents(identifier);
+    };
+    dependencies.loadInstanceResources = [detailRuntime](
+                                             const std::filesystem::path&,
+                                             const std::string& identifier,
+                                             FrontendInstanceResourceKind kind) {
+        return detailRuntime->instanceResources(identifier, kind);
+    };
+    dependencies.mutateInstanceResource = [detailRuntime](
+                                             const std::filesystem::path&,
+                                             const std::string& identifier,
+                                             FrontendInstanceResourceKind kind,
+                                             const FrontendInstanceResourceMutationRequest& request) {
+        return detailRuntime->mutateInstanceResource(identifier, kind, request);
+    };
+    dependencies.loadInstanceWorlds = [detailRuntime](const std::filesystem::path&, const std::string& identifier) {
+        return detailRuntime->instanceWorlds(identifier);
+    };
+    dependencies.loadInstanceServers = [detailRuntime](const std::filesystem::path&, const std::string& identifier) {
+        return detailRuntime->instanceServers(identifier);
+    };
+    dependencies.loadInstanceScreenshots = [detailRuntime](const std::filesystem::path&, const std::string& identifier) {
+        return detailRuntime->instanceScreenshots(identifier);
+    };
+    dependencies.loadInstanceLogFiles = [detailRuntime](const std::filesystem::path&, const std::string& identifier) {
+        return detailRuntime->instanceLogFiles(identifier);
+    };
+    dependencies.loadInstanceLog = [detailRuntime](
+                                      const std::filesystem::path&,
+                                      const std::string& identifier,
+                                      const std::string& logIdentifier) {
+        return detailRuntime->instanceLog(identifier, logIdentifier);
+    };
+    dependencies.mutateInstanceDetail = [detailRuntime](
+                                           const std::filesystem::path&,
+                                           const std::string& identifier,
+                                           const FrontendInstanceDetailMutationRequest& request) {
+        return detailRuntime->mutateInstanceDetail(identifier, request);
+    };
+    dependencies.updateInstanceNotes = [detailRuntime](
+                                         const std::filesystem::path&,
+                                         const std::string& identifier,
+                                         const std::string& notes) {
+        return detailRuntime->updateInstanceNotes(identifier, notes);
+    };
+    dependencies.deleteInstance = [detailRuntime](
+                                      const std::filesystem::path&,
+                                      const std::string& identifier,
+                                      bool confirmed) {
+        return detailRuntime->deleteInstance(identifier, confirmed);
+    };
+    dependencies.copyInstance = [detailRuntime](
+                                    const std::filesystem::path&,
+                                    const FrontendInstanceCopyRequest& request,
+                                    const FrontendRuntimeDependencies::InstanceCopyProgressHandler& progress,
+                                    const FrontendRuntimeDependencies::InstanceCopyCancellationCheck& cancellation) {
+        return detailRuntime->copyInstance(request, progress, cancellation);
+    };
+    dependencies.exportInstance = [detailRuntime](
+                                      const std::filesystem::path&,
+                                      const FrontendInstanceExportRequest& request,
+                                      const FrontendRuntimeDependencies::InstanceExportProgressHandler& progress,
+                                      const FrontendRuntimeDependencies::InstanceExportCancellationCheck& cancellation) {
+        return detailRuntime->exportInstance(request, progress, cancellation);
+    };
     dependencies.loadInstanceSettings = [settingsRuntime](
                                             const std::filesystem::path&,
                                             const std::string& identifier) {

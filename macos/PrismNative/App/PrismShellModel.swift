@@ -563,6 +563,30 @@ enum PrismInstanceResourcesMutationState: Equatable, Sendable {
     case failed(PrismInstanceResourceFailure)
 }
 
+private func prismInstanceResourceMutationFailure(
+    error: PRBridgeError,
+    instanceIdentifier: String,
+    kind: PrismInstanceResourceKind,
+    intent: PrismInstanceResourceMutationIntent
+) -> PrismInstanceResourceFailure? {
+    let identifier = instanceIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+    let localizationKey = error.localizationKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !identifier.isEmpty, !localizationKey.isEmpty else {
+        return nil
+    }
+
+    return PrismInstanceResourceFailure(
+        instanceIdentifier: identifier,
+        kind: kind,
+        action: intent.action,
+        resourceIdentifier: intent.resourceIdentifier,
+        localizationKey: localizationKey,
+        diagnosticText: error.diagnosticText,
+        partialChangesRolledBack: error.partialChangesRolledBack,
+        recoveryAction: error.recoveryKind == .retry ? .retry : .none
+    )
+}
+
 @MainActor
 final class PrismInstanceResourcesModel: ObservableObject {
     @Published private(set) var kind: PrismInstanceResourceKind = .mods
@@ -745,6 +769,24 @@ final class PrismInstanceResourcesModel: ObservableObject {
             )
             mutationState = .failed(failure)
         }
+        return true
+    }
+
+    @discardableResult
+    func apply(mutationError error: PRBridgeError, instanceIdentifier: String) -> Bool {
+        guard let activeIdentifier,
+              activeIdentifier == instanceIdentifier.trimmingCharacters(in: .whitespacesAndNewlines),
+              let lastMutationIntent,
+              let failure = prismInstanceResourceMutationFailure(
+                  error: error,
+                  instanceIdentifier: activeIdentifier,
+                  kind: kind,
+                  intent: lastMutationIntent
+              ) else {
+            return false
+        }
+
+        mutationState = .failed(failure)
         return true
     }
 
@@ -3502,6 +3544,29 @@ private func prismInstanceDetailMutationFailure(
     )
 }
 
+private func prismInstanceDetailMutationFailure(
+    error: PRBridgeError,
+    instanceIdentifier: String,
+    intent: PrismInstanceDetailMutationIntent
+) -> PrismInstanceDetailMutationFailure? {
+    let identifier = instanceIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+    let localizationKey = error.localizationKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !identifier.isEmpty, !localizationKey.isEmpty else {
+        return nil
+    }
+
+    return PrismInstanceDetailMutationFailure(
+        kind: intent.kind,
+        action: intent.action,
+        instanceIdentifier: identifier,
+        itemIdentifier: intent.itemIdentifier,
+        localizationKey: localizationKey,
+        diagnosticText: error.diagnosticText,
+        partialChangesRolledBack: error.partialChangesRolledBack,
+        recoveryAction: error.recoveryKind == .retry ? .retry : .none
+    )
+}
+
 @MainActor
 final class PrismInstanceWorldsModel: ObservableObject {
     @Published private(set) var state: PrismInstanceWorldsState = .empty
@@ -3664,6 +3729,23 @@ final class PrismInstanceWorldsModel: ObservableObject {
             return beginLoading(identifier: activeIdentifier)
         }
         guard let failure = prismInstanceDetailMutationFailure(result: result, instanceIdentifier: activeIdentifier) else { return false }
+        mutationState = .failed(failure)
+        return true
+    }
+
+    @discardableResult
+    func apply(mutationError error: PRBridgeError, instanceIdentifier: String) -> Bool {
+        guard let activeIdentifier,
+              activeIdentifier == instanceIdentifier.trimmingCharacters(in: .whitespacesAndNewlines),
+              let lastMutationIntent,
+              let failure = prismInstanceDetailMutationFailure(
+                  error: error,
+                  instanceIdentifier: activeIdentifier,
+                  intent: lastMutationIntent
+              ) else {
+            return false
+        }
+
         mutationState = .failed(failure)
         return true
     }
@@ -3888,6 +3970,26 @@ final class PrismInstanceServersModel: ObservableObject {
         }
         guard let failure = prismInstanceDetailMutationFailure(result: result, instanceIdentifier: activeIdentifier) else { return false }
         if PrismInstanceDetailMutationPresentationPolicy.policy(for: .servers, action: action) == .optimisticServerEdit {
+            restoreConfirmedServerPresentation()
+        }
+        mutationState = .failed(failure)
+        return true
+    }
+
+    @discardableResult
+    func apply(mutationError error: PRBridgeError, instanceIdentifier: String) -> Bool {
+        guard let activeIdentifier,
+              activeIdentifier == instanceIdentifier.trimmingCharacters(in: .whitespacesAndNewlines),
+              let lastMutationIntent,
+              let failure = prismInstanceDetailMutationFailure(
+                  error: error,
+                  instanceIdentifier: activeIdentifier,
+                  intent: lastMutationIntent
+              ) else {
+            return false
+        }
+
+        if PrismInstanceDetailMutationPresentationPolicy.policy(for: lastMutationIntent.kind, action: lastMutationIntent.action) == .optimisticServerEdit {
             restoreConfirmedServerPresentation()
         }
         mutationState = .failed(failure)
@@ -4139,6 +4241,23 @@ final class PrismInstanceScreenshotsModel: ObservableObject {
     }
 
     @discardableResult
+    func apply(mutationError error: PRBridgeError, instanceIdentifier: String) -> Bool {
+        guard let activeIdentifier,
+              activeIdentifier == instanceIdentifier.trimmingCharacters(in: .whitespacesAndNewlines),
+              let lastMutationIntent,
+              let failure = prismInstanceDetailMutationFailure(
+                  error: error,
+                  instanceIdentifier: activeIdentifier,
+                  intent: lastMutationIntent
+              ) else {
+            return false
+        }
+
+        mutationState = .failed(failure)
+        return true
+    }
+
+    @discardableResult
     func retry() -> Bool {
         if case .failed(let failure) = state, failure.isRetryAvailable { return beginLoading(identifier: failure.instanceIdentifier) }
         guard let intent = lastMutationIntent, let activeIdentifier,
@@ -4372,6 +4491,23 @@ final class PrismInstanceLogsModel: ObservableObject {
     }
 
     @discardableResult
+    func apply(mutationError error: PRBridgeError, instanceIdentifier: String) -> Bool {
+        guard let activeIdentifier,
+              activeIdentifier == instanceIdentifier.trimmingCharacters(in: .whitespacesAndNewlines),
+              let lastMutationIntent,
+              let failure = prismInstanceDetailMutationFailure(
+                  error: error,
+                  instanceIdentifier: activeIdentifier,
+                  intent: lastMutationIntent
+              ) else {
+            return false
+        }
+
+        mutationState = .failed(failure)
+        return true
+    }
+
+    @discardableResult
     func retry() -> Bool {
         if case .failed(let failure) = state, failure.isRetryAvailable { return beginLoading(identifier: failure.instanceIdentifier) }
         guard let intent = lastMutationIntent, let activeIdentifier,
@@ -4406,5 +4542,444 @@ final class PrismInstanceLogsModel: ObservableObject {
         mutationState = .pending(intent)
         onMutate?(activeIdentifier, intent)
         return true
+    }
+}
+
+/// Coordinates the production Foundation bridge with the detail ViewModels.
+/// The models own presentation state and validation; this object owns only
+/// request cancellation, selected-instance generations, and DTO dispatch.
+@MainActor
+final class PrismInstanceDetailCoordinator: ObservableObject {
+    private weak var bridge: PRPrismBridge?
+    private weak var detailsModel: PrismInstanceDetailsModel?
+    private weak var componentsModel: PrismInstanceComponentsModel?
+    private weak var resourcesModel: PrismInstanceResourcesModel?
+    private weak var worldsModel: PrismInstanceWorldsModel?
+    private weak var serversModel: PrismInstanceServersModel?
+    private weak var screenshotsModel: PrismInstanceScreenshotsModel?
+    private weak var logsModel: PrismInstanceLogsModel?
+    private weak var copyModel: PrismInstanceCopyModel?
+    private weak var exportModel: PrismInstanceExportModel?
+    private weak var deleteModel: PrismInstanceDeleteModel?
+
+    private var requests: [String: PRBridgeObservationToken] = [:]
+    private var selectedIdentifier: String?
+    private var selectionGeneration = 0
+
+    init(bridge: PRPrismBridge?) {
+        self.bridge = bridge
+    }
+
+    func bind(
+        detailsModel: PrismInstanceDetailsModel,
+        componentsModel: PrismInstanceComponentsModel,
+        resourcesModel: PrismInstanceResourcesModel,
+        worldsModel: PrismInstanceWorldsModel,
+        serversModel: PrismInstanceServersModel,
+        screenshotsModel: PrismInstanceScreenshotsModel,
+        logsModel: PrismInstanceLogsModel,
+        copyModel: PrismInstanceCopyModel,
+        exportModel: PrismInstanceExportModel,
+        deleteModel: PrismInstanceDeleteModel
+    ) {
+        self.detailsModel = detailsModel
+        self.componentsModel = componentsModel
+        self.resourcesModel = resourcesModel
+        self.worldsModel = worldsModel
+        self.serversModel = serversModel
+        self.screenshotsModel = screenshotsModel
+        self.logsModel = logsModel
+        self.copyModel = copyModel
+        self.exportModel = exportModel
+        self.deleteModel = deleteModel
+    }
+
+    func select(identifier: String?) {
+        let normalizedIdentifier = identifier?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nextIdentifier = normalizedIdentifier?.isEmpty == true ? nil : normalizedIdentifier
+        guard nextIdentifier != selectedIdentifier else { return }
+
+        selectionGeneration += 1
+        cancelAllRequests()
+        selectedIdentifier = nextIdentifier
+
+        guard let nextIdentifier, bridge != nil else {
+            clearModels()
+            return
+        }
+
+        _ = detailsModel?.beginLoading(identifier: nextIdentifier)
+        _ = componentsModel?.beginLoading(identifier: nextIdentifier)
+        _ = resourcesModel?.beginLoading(identifier: nextIdentifier, kind: .mods)
+        _ = worldsModel?.beginLoading(identifier: nextIdentifier)
+        _ = serversModel?.beginLoading(identifier: nextIdentifier)
+        _ = screenshotsModel?.beginLoading(identifier: nextIdentifier)
+        _ = logsModel?.beginLoading(identifier: nextIdentifier)
+        copyModel?.configure(sourceInstanceIdentifier: nextIdentifier)
+        exportModel?.configure(sourceInstanceIdentifier: nextIdentifier)
+        deleteModel?.reset()
+    }
+
+    func loadDetails(identifier: String) {
+        guard let bridge, isCurrent(identifier: identifier) else { return }
+        let generation = selectionGeneration
+        let key = "details"
+        cancelRequest(key: key)
+        let token = bridge.loadInstanceDetails(withIdentifier: identifier) { [weak self] details, error in
+            guard let self, self.isCurrent(identifier: identifier, generation: generation) else { return }
+            self.finishRequest(key: key)
+            if let details {
+                _ = self.detailsModel?.apply(details: details)
+            } else if let error {
+                _ = self.detailsModel?.apply(error: error, instanceIdentifier: identifier)
+            }
+        }
+        requests[key] = token
+    }
+
+    func loadComponents(identifier: String) {
+        guard let bridge, isCurrent(identifier: identifier) else { return }
+        let generation = selectionGeneration
+        let key = "components"
+        cancelRequest(key: key)
+        let token = bridge.loadInstanceComponents(withIdentifier: identifier) { [weak self] components, error in
+            guard let self, self.isCurrent(identifier: identifier, generation: generation) else { return }
+            self.finishRequest(key: key)
+            if let components {
+                _ = self.componentsModel?.apply(components: components)
+            } else if let error {
+                _ = self.componentsModel?.apply(error: error, instanceIdentifier: identifier)
+            }
+        }
+        requests[key] = token
+    }
+
+    func loadResources(identifier: String, kind: PrismInstanceResourceKind) {
+        guard let bridge, isCurrent(identifier: identifier) else { return }
+        let generation = selectionGeneration
+        let key = "resources.\(kind.rawValue)"
+        cancelRequest(key: key)
+        let token = bridge.loadInstanceResources(withIdentifier: identifier, kind: kind.bridgeKind) { [weak self] resources, error in
+            guard let self, self.isCurrent(identifier: identifier, generation: generation) else { return }
+            self.finishRequest(key: key)
+            if let resources {
+                _ = self.resourcesModel?.apply(resources: resources)
+            } else if let error {
+                _ = self.resourcesModel?.apply(error: error, instanceIdentifier: identifier, kind: kind)
+            }
+        }
+        requests[key] = token
+    }
+
+    func mutateResource(
+        identifier: String,
+        kind: PrismInstanceResourceKind,
+        intent: PrismInstanceResourceMutationIntent
+    ) {
+        guard let bridge, isCurrent(identifier: identifier) else { return }
+        let generation = selectionGeneration
+        let key = "resource-mutation.\(kind.rawValue)"
+        cancelRequest(key: key)
+        let token = bridge.applyInstanceResourceAction(
+            withIdentifier: identifier,
+            kind: kind.bridgeKind,
+            action: intent.action.bridgeAction,
+            resourceIdentifier: intent.resourceIdentifier,
+            sourceURL: intent.sourceURL,
+            confirmed: intent.confirmed
+        ) { [weak self] result, error in
+            guard let self, self.isCurrent(identifier: identifier, generation: generation) else { return }
+            self.finishRequest(key: key)
+            if let result {
+                _ = self.resourcesModel?.apply(mutationResult: result, instanceIdentifier: identifier)
+            } else if let error {
+                _ = self.resourcesModel?.apply(mutationError: error, instanceIdentifier: identifier)
+            }
+        }
+        requests[key] = token
+    }
+
+    func loadWorlds(identifier: String) {
+        guard let bridge, isCurrent(identifier: identifier) else { return }
+        let generation = selectionGeneration
+        let key = "worlds"
+        cancelRequest(key: key)
+        let token = bridge.loadInstanceWorlds(withIdentifier: identifier) { [weak self] worlds, error in
+            guard let self, self.isCurrent(identifier: identifier, generation: generation) else { return }
+            self.finishRequest(key: key)
+            if let worlds {
+                _ = self.worldsModel?.apply(worlds: worlds)
+            } else if let error {
+                _ = self.worldsModel?.apply(error: error, instanceIdentifier: identifier)
+            }
+        }
+        requests[key] = token
+    }
+
+    func loadServers(identifier: String) {
+        guard let bridge, isCurrent(identifier: identifier) else { return }
+        let generation = selectionGeneration
+        let key = "servers"
+        cancelRequest(key: key)
+        let token = bridge.loadInstanceServers(withIdentifier: identifier) { [weak self] servers, error in
+            guard let self, self.isCurrent(identifier: identifier, generation: generation) else { return }
+            self.finishRequest(key: key)
+            if let servers {
+                _ = self.serversModel?.apply(servers: servers)
+            } else if let error {
+                _ = self.serversModel?.apply(error: error, instanceIdentifier: identifier)
+            }
+        }
+        requests[key] = token
+    }
+
+    func loadScreenshots(identifier: String) {
+        guard let bridge, isCurrent(identifier: identifier) else { return }
+        let generation = selectionGeneration
+        let key = "screenshots"
+        cancelRequest(key: key)
+        let token = bridge.loadInstanceScreenshots(withIdentifier: identifier) { [weak self] screenshots, error in
+            guard let self, self.isCurrent(identifier: identifier, generation: generation) else { return }
+            self.finishRequest(key: key)
+            if let screenshots {
+                _ = self.screenshotsModel?.apply(screenshots: screenshots)
+            } else if let error {
+                _ = self.screenshotsModel?.apply(error: error, instanceIdentifier: identifier)
+            }
+        }
+        requests[key] = token
+    }
+
+    func loadLogs(identifier: String) {
+        guard let bridge, isCurrent(identifier: identifier) else { return }
+        let generation = selectionGeneration
+        let key = "logs"
+        cancelRequest(key: key)
+        let token = bridge.loadInstanceLogFiles(withIdentifier: identifier) { [weak self] logFiles, error in
+            guard let self, self.isCurrent(identifier: identifier, generation: generation) else { return }
+            self.finishRequest(key: key)
+            if let logFiles {
+                _ = self.logsModel?.apply(logFiles: logFiles)
+            } else if let error {
+                _ = self.logsModel?.apply(error: error, instanceIdentifier: identifier)
+            }
+        }
+        requests[key] = token
+    }
+
+    func loadLogContent(identifier: String, logIdentifier: String) {
+        guard let bridge, isCurrent(identifier: identifier) else { return }
+        let generation = selectionGeneration
+        let key = "log-content.\(logIdentifier)"
+        cancelRequest(key: key)
+        let token = bridge.loadInstanceLog(
+            withIdentifier: identifier,
+            logIdentifier: logIdentifier
+        ) { [weak self] snapshot, error in
+            guard let self, self.isCurrent(identifier: identifier, generation: generation) else { return }
+            self.finishRequest(key: key)
+            if let snapshot {
+                _ = self.logsModel?.apply(content: snapshot)
+            } else if let error {
+                _ = self.logsModel?.apply(
+                    contentError: error,
+                    instanceIdentifier: identifier,
+                    logIdentifier: logIdentifier
+                )
+            }
+        }
+        requests[key] = token
+    }
+
+    func mutateDetail(identifier: String, intent: PrismInstanceDetailMutationIntent) {
+        guard let bridge, isCurrent(identifier: identifier) else { return }
+        let generation = selectionGeneration
+        let key = "detail-mutation.\(intent.kind.rawValue)"
+        cancelRequest(key: key)
+        let request = intent.bridgeRequest()
+        let token = bridge.applyInstanceDetailAction(
+            withIdentifier: identifier,
+            request: request
+        ) { [weak self] result, error in
+            guard let self, self.isCurrent(identifier: identifier, generation: generation) else { return }
+            self.finishRequest(key: key)
+            if let result {
+                self.applyDetailMutation(result: result, identifier: identifier)
+            } else if let error {
+                self.applyDetailMutation(error: error, identifier: identifier, intent: intent)
+            }
+        }
+        requests[key] = token
+    }
+
+    func updateNotes(identifier: String, notes: String) {
+        guard let bridge, isCurrent(identifier: identifier) else { return }
+        let generation = selectionGeneration
+        let key = "notes"
+        cancelRequest(key: key)
+        let token = bridge.updateInstanceNotes(withIdentifier: identifier, notes: notes) { [weak self] result, error in
+            guard let self, self.isCurrent(identifier: identifier, generation: generation) else { return }
+            self.finishRequest(key: key)
+            if let result {
+                _ = self.detailsModel?.apply(notesResult: result)
+            } else if let error {
+                _ = self.detailsModel?.apply(error: error, instanceIdentifier: identifier)
+            }
+        }
+        requests[key] = token
+    }
+
+    func copyInstance(request: PRInstanceCopyRequest, generation resultGeneration: Int) {
+        guard let bridge,
+              let identifier = selectedIdentifier,
+              request.sourceInstanceIdentifier == identifier,
+              isCurrent(identifier: identifier) else {
+            return
+        }
+
+        let selectionGeneration = self.selectionGeneration
+        let key = "copy"
+        cancelRequest(key: key)
+        let token = bridge.copyInstance(with: request, progress: { [weak self] progress in
+            guard let self,
+                  self.isCurrent(identifier: identifier, generation: selectionGeneration) else {
+                return
+            }
+            _ = self.copyModel?.apply(progress: progress, generation: resultGeneration)
+        }, completion: { [weak self] result, error in
+            guard let self,
+                  self.isCurrent(identifier: identifier, generation: selectionGeneration) else {
+                return
+            }
+            self.finishRequest(key: key)
+            if let result {
+                _ = self.copyModel?.apply(result: result, generation: resultGeneration)
+            } else if let error {
+                _ = self.copyModel?.apply(error: error, generation: resultGeneration)
+            }
+        })
+        requests[key] = token
+    }
+
+    func cancelCopy() {
+        cancelRequest(key: "copy")
+    }
+
+    func exportInstance(request: PRInstanceExportRequest, generation resultGeneration: Int) {
+        guard let bridge,
+              let identifier = selectedIdentifier,
+              request.sourceInstanceIdentifier == identifier,
+              isCurrent(identifier: identifier) else {
+            return
+        }
+
+        let selectionGeneration = self.selectionGeneration
+        let key = "export"
+        cancelRequest(key: key)
+        let token = bridge.exportInstance(with: request, progress: { [weak self] progress in
+            guard let self,
+                  self.isCurrent(identifier: identifier, generation: selectionGeneration) else {
+                return
+            }
+            _ = self.exportModel?.apply(progress: progress, generation: resultGeneration)
+        }, completion: { [weak self] result, error in
+            guard let self,
+                  self.isCurrent(identifier: identifier, generation: selectionGeneration) else {
+                return
+            }
+            self.finishRequest(key: key)
+            if let result {
+                _ = self.exportModel?.apply(result: result, generation: resultGeneration)
+            } else if let error {
+                _ = self.exportModel?.apply(error: error, generation: resultGeneration)
+            }
+        })
+        requests[key] = token
+    }
+
+    func cancelExport() {
+        cancelRequest(key: "export")
+    }
+
+    func deleteInstance(identifier: String) {
+        guard let bridge, isCurrent(identifier: identifier) else { return }
+        let generation = selectionGeneration
+        let key = "delete"
+        cancelRequest(key: key)
+        let token = bridge.deleteInstance(withIdentifier: identifier, confirmed: true) { [weak self] result, error in
+            guard let self, self.isCurrent(identifier: identifier, generation: generation) else { return }
+            self.finishRequest(key: key)
+            if let result {
+                _ = self.deleteModel?.apply(result: result)
+            } else if let error {
+                _ = self.deleteModel?.apply(error: error)
+            }
+        }
+        requests[key] = token
+    }
+
+    func cancelDelete() {
+        cancelRequest(key: "delete")
+    }
+
+    private func applyDetailMutation(result: PRInstanceDetailMutationResult, identifier: String) {
+        guard let kind = PrismInstanceDetailKind(bridgeKind: result.kind) else { return }
+        switch kind {
+        case .worlds:
+            _ = worldsModel?.apply(mutationResult: result, instanceIdentifier: identifier)
+        case .servers:
+            _ = serversModel?.apply(mutationResult: result, instanceIdentifier: identifier)
+        case .screenshots:
+            _ = screenshotsModel?.apply(mutationResult: result, instanceIdentifier: identifier)
+        case .logs:
+            _ = logsModel?.apply(mutationResult: result, instanceIdentifier: identifier)
+        }
+    }
+
+    private func applyDetailMutation(
+        error: PRBridgeError,
+        identifier: String,
+        intent: PrismInstanceDetailMutationIntent
+    ) {
+        switch intent.kind {
+        case .worlds:
+            _ = worldsModel?.apply(mutationError: error, instanceIdentifier: identifier)
+        case .servers:
+            _ = serversModel?.apply(mutationError: error, instanceIdentifier: identifier)
+        case .screenshots:
+            _ = screenshotsModel?.apply(mutationError: error, instanceIdentifier: identifier)
+        case .logs:
+            _ = logsModel?.apply(mutationError: error, instanceIdentifier: identifier)
+        }
+    }
+
+    private func isCurrent(identifier: String, generation: Int? = nil) -> Bool {
+        identifier == selectedIdentifier && (generation == nil || generation == selectionGeneration)
+    }
+
+    private func clearModels() {
+        detailsModel?.clear()
+        componentsModel?.clear()
+        resourcesModel?.clear()
+        worldsModel?.clear()
+        serversModel?.clear()
+        screenshotsModel?.clear()
+        logsModel?.clear()
+        copyModel?.reset()
+        exportModel?.reset()
+        deleteModel?.reset()
+    }
+
+    private func cancelRequest(key: String) {
+        requests.removeValue(forKey: key)?.cancel()
+    }
+
+    private func cancelAllRequests() {
+        requests.values.forEach { _ = $0.cancel() }
+        requests.removeAll()
+    }
+
+    private func finishRequest(key: String) {
+        requests.removeValue(forKey: key)
     }
 }

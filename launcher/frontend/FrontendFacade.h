@@ -264,6 +264,20 @@ enum class FrontendLifecycleState : std::uint8_t { Running, ShuttingDown, Stoppe
 
 enum class FrontendInstanceCommandResult : std::uint8_t { Succeeded, UnknownInstance, Rejected };
 
+enum class FrontendInstanceDeleteOutcome : std::uint8_t { Succeeded, UnknownInstance, Rejected, Failed };
+
+/// Confirmed instance deletion result. Production adapters may retain the
+/// removed tree in an isolated, recoverable staging area; no system Trash or
+/// upstream data path is part of this contract.
+struct FrontendInstanceDeleteResult final {
+    FrontendInstanceDeleteOutcome outcome = FrontendInstanceDeleteOutcome::Rejected;
+    std::string instanceIdentifier;
+    std::string localizationKey;
+    std::string diagnosticText;
+    bool retryable = false;
+    bool partialChangesRolledBack = false;
+};
+
 enum class FrontendInstanceNotesUpdateOutcome : std::uint8_t { Succeeded, UnknownInstance, Rejected };
 
 struct FrontendInstanceNotesUpdateResult final {
@@ -1035,6 +1049,8 @@ struct FrontendRuntimeDependencies final {
     using TaskObservationStarter = std::function<bool(TaskObservationHandler)>;
     using TaskObservationStopper = std::function<void()>;
     using InstanceCommand = std::function<FrontendInstanceCommandResult(const std::filesystem::path&, const std::string&)>;
+    using InstanceDeleter = std::function<FrontendInstanceDeleteResult(
+        const std::filesystem::path&, const std::string&, bool)>;
     using InstanceNotesUpdater = std::function<FrontendInstanceNotesUpdateResult(
         const std::filesystem::path&, const std::string&, const std::string&)>;
     using InstanceSettingsLoader = std::function<std::optional<FrontendInstanceSettingsSnapshot>(
@@ -1134,6 +1150,7 @@ struct FrontendRuntimeDependencies final {
     TaskObservationStopper stopTaskObservation;
     InstanceCommand launchInstance;
     InstanceCommand stopInstance;
+    InstanceDeleter deleteInstance;
     InstanceNotesUpdater updateInstanceNotes;
     InstanceSettingsLoader loadInstanceSettings;
     InstanceSettingsUpdater updateInstanceSettings;
@@ -1210,6 +1227,7 @@ class FrontendFacade final {
     std::vector<FrontendInstanceChange> instanceChanges() const;
     FrontendInstanceCommandResult launchInstance(const std::string& instanceIdentifier) const;
     FrontendInstanceCommandResult stopInstance(const std::string& instanceIdentifier) const;
+    FrontendInstanceDeleteResult deleteInstance(const std::string& instanceIdentifier, bool confirmed) const;
     FrontendInstanceNotesUpdateResult updateInstanceNotes(
         const std::string& instanceIdentifier, const std::string& notes) const;
     std::optional<FrontendInstanceSettingsSnapshot> instanceSettings(const std::string& instanceIdentifier) const;

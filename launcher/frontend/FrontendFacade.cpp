@@ -1822,6 +1822,18 @@ bool isKnownInstanceCommandResult(FrontendInstanceCommandResult result) noexcept
     return false;
 }
 
+bool isKnownInstanceDeleteOutcome(FrontendInstanceDeleteOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendInstanceDeleteOutcome::Succeeded:
+        case FrontendInstanceDeleteOutcome::UnknownInstance:
+        case FrontendInstanceDeleteOutcome::Rejected:
+        case FrontendInstanceDeleteOutcome::Failed:
+            return true;
+    }
+    return false;
+}
+
 bool isKnownInstanceNotesUpdateOutcome(FrontendInstanceNotesUpdateOutcome outcome) noexcept
 {
     switch (outcome) {
@@ -1848,6 +1860,35 @@ FrontendInstanceCommandResult executeInstanceCommand(
     const auto result = command(dataRoot, instanceIdentifier);
     if (!isKnownInstanceCommandResult(result)) {
         throw std::invalid_argument("Instance command returned an unknown result");
+    }
+    return result;
+}
+
+FrontendInstanceDeleteResult executeInstanceDelete(
+    const FrontendRuntimeDependencies::InstanceDeleter& deleter,
+    const std::filesystem::path& dataRoot,
+    const std::string& instanceIdentifier,
+    bool confirmed)
+{
+    if (instanceIdentifier.empty()) {
+        throw std::invalid_argument("Instance deletion requires a stable identifier");
+    }
+    if (!confirmed) {
+        throw std::invalid_argument("Deleting an instance requires explicit confirmation");
+    }
+    if (!deleter) {
+        return { FrontendInstanceDeleteOutcome::Rejected,
+                 instanceIdentifier,
+                 "instances.delete.unavailable",
+                 "Instance deletion is unavailable.",
+                 true,
+                 false };
+    }
+
+    auto result = deleter(dataRoot, instanceIdentifier, confirmed);
+    if (!isKnownInstanceDeleteOutcome(result.outcome) || result.instanceIdentifier != instanceIdentifier
+        || result.localizationKey.empty()) {
+        throw std::invalid_argument("Instance deletion returned an invalid confirmed result");
     }
     return result;
 }
@@ -2997,6 +3038,12 @@ FrontendInstanceCommandResult FrontendFacade::stopInstance(const std::string& in
 {
     ensureRunning(m_lifecycleState);
     return executeInstanceCommand(m_runtimeDependencies.stopInstance, m_dataRoot, instanceIdentifier);
+}
+
+FrontendInstanceDeleteResult FrontendFacade::deleteInstance(const std::string& instanceIdentifier, bool confirmed) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeInstanceDelete(m_runtimeDependencies.deleteInstance, m_dataRoot, instanceIdentifier, confirmed);
 }
 
 FrontendInstanceNotesUpdateResult FrontendFacade::updateInstanceNotes(

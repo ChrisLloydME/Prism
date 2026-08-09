@@ -58,6 +58,13 @@ typedef NS_ENUM(NSInteger, PRInstanceNotesUpdateOutcome) {
     PRInstanceNotesUpdateOutcomeRejected,
 };
 
+typedef NS_ENUM(NSInteger, PRInstanceDeleteOutcome) {
+    PRInstanceDeleteOutcomeSucceeded = 0,
+    PRInstanceDeleteOutcomeUnknownInstance,
+    PRInstanceDeleteOutcomeRejected,
+    PRInstanceDeleteOutcomeFailed,
+};
+
 /// Immutable instance metadata that is safe to pass into Swift state.
 @interface PRInstanceSummary : NSObject
 
@@ -1090,6 +1097,27 @@ typedef NS_ENUM(NSInteger, PRInstanceServerStatus) {
 @property(nonatomic, copy, readonly) NSString *identifier;
 @property(nonatomic, copy, readonly) NSString *notes;
 @property(nonatomic, assign, readonly) PRInstanceNotesUpdateOutcome outcome;
+
+@end
+
+/// Immutable confirmed result for one explicitly confirmed instance deletion.
+/// The adapter may retain the removed tree in an isolated recovery directory.
+@interface PRInstanceDeleteResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithIdentifier:(NSString *)identifier
+                                     outcome:(PRInstanceDeleteOutcome)outcome
+                              localizationKey:(NSString *)localizationKey
+                               diagnosticText:(nullable NSString *)diagnosticText
+                                   retryable:(BOOL)retryable
+                    partialChangesRolledBack:(BOOL)partialChangesRolledBack NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, assign, readonly) PRInstanceDeleteOutcome outcome;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL retryable;
+@property(nonatomic, assign, readonly) BOOL partialChangesRolledBack;
 
 @end
 

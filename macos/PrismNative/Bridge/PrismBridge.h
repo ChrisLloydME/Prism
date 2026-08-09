@@ -78,6 +78,8 @@ typedef void (^PRInstanceCommandCompletionHandler)(PRInstanceCommandResult * _Nu
                                                     PRBridgeError * _Nullable error);
 typedef void (^PRInstanceNotesUpdateCompletionHandler)(PRInstanceNotesUpdateResult * _Nullable result,
                                                         PRBridgeError * _Nullable error);
+typedef void (^PRInstanceDeleteCompletionHandler)(PRInstanceDeleteResult * _Nullable result,
+                                                   PRBridgeError * _Nullable error);
 typedef void (^PRInstanceSettingsCompletionHandler)(PRInstanceSettings * _Nullable settings,
                                                      PRBridgeError * _Nullable error);
 typedef void (^PRInstanceSettingsUpdateCompletionHandler)(PRInstanceSettingsUpdateResult * _Nullable result,
@@ -257,6 +259,13 @@ typedef void (^PROfflineLaunchIdentityUpdateCompletionHandler)(PROfflineLaunchId
 - (nullable PRBridgeObservationToken *)updateInstanceNotesWithIdentifier:(NSString *)identifier
                                                                     notes:(NSString *)notes
                                                                 completion:(PRInstanceNotesUpdateCompletionHandler)completion;
+
+/// Deletes one selected instance only after explicit confirmation. The
+/// production adapter keeps the removed tree inside the isolated native root
+/// so recovery remains possible without touching system Trash.
+- (nullable PRBridgeObservationToken *)deleteInstanceWithIdentifier:(NSString *)identifier
+                                                           confirmed:(BOOL)confirmed
+                                                          completion:(PRInstanceDeleteCompletionHandler)completion;
 
 /// Runs the fixture-controlled vanilla creation contract. Progress uses the
 /// existing immutable task DTO; cancellation of the returned token is

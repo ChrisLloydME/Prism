@@ -3604,6 +3604,71 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     XCTAssertEqual(cancellationCompletionCount, (NSUInteger)0);
 }
 
+- (void)testInstanceDeleteRequiresConfirmationAndConvertsFoundationValues
+{
+    auto receivedIdentifier = std::make_shared<std::string>();
+    auto receivedConfirmation = std::make_shared<bool>(false);
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.deleteInstance = [receivedIdentifier, receivedConfirmation](
+                                      const std::filesystem::path&,
+                                      const std::string& identifier,
+                                      bool confirmed) {
+        *receivedIdentifier = identifier;
+        *receivedConfirmation = confirmed;
+        return FrontendInstanceDeleteResult{
+            FrontendInstanceDeleteOutcome::Succeeded,
+            identifier,
+            "instances.delete.completed",
+            "",
+            false,
+            false,
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    XCTestExpectation *unconfirmedCompletion = [self expectationWithDescription:@"Unconfirmed delete rejected"];
+    __block PRInstanceDeleteResult *unconfirmedResult = nil;
+    __block PRBridgeError *unconfirmedError = nil;
+    PRBridgeObservationToken *unconfirmedToken = [bridge
+        deleteInstanceWithIdentifier:@" fixture.one "
+                                  confirmed:NO
+                                 completion:^(PRInstanceDeleteResult *result, PRBridgeError *error) {
+        unconfirmedResult = result;
+        unconfirmedError = error;
+        [unconfirmedCompletion fulfill];
+    }];
+    XCTAssertNotNil(unconfirmedToken);
+    [self waitForExpectations:@[ unconfirmedCompletion ] timeout:2.0];
+    XCTAssertNil(unconfirmedResult);
+    XCTAssertEqual(unconfirmedError.code, PRBridgeErrorCodeInvalidInput);
+    XCTAssertFalse(*receivedConfirmation);
+
+    XCTestExpectation *deleteCompletion = [self expectationWithDescription:@"Confirmed delete completed"];
+    __block PRInstanceDeleteResult *deleteResult = nil;
+    __block PRBridgeError *deleteError = nil;
+    PRBridgeObservationToken *deleteToken = [bridge
+        deleteInstanceWithIdentifier:@" fixture.one "
+                                  confirmed:YES
+                                 completion:^(PRInstanceDeleteResult *result, PRBridgeError *error) {
+        deleteResult = result;
+        deleteError = error;
+        [deleteCompletion fulfill];
+    }];
+    XCTAssertNotNil(deleteToken);
+    [self waitForExpectations:@[ deleteCompletion ] timeout:2.0];
+    XCTAssertNil(deleteError);
+    XCTAssertTrue(deleteToken.isCancelled);
+    XCTAssertEqual(*receivedIdentifier, "fixture.one");
+    XCTAssertTrue(*receivedConfirmation);
+    XCTAssertEqual(deleteResult.outcome, PRInstanceDeleteOutcomeSucceeded);
+    XCTAssertEqualObjects(deleteResult.identifier, @"fixture.one");
+    XCTAssertEqualObjects(deleteResult.localizationKey, @"instances.delete.completed");
+}
+
 - (void)testProviderBrowseAndVersionConvertFoundationValuesAndSuppressCancelledDelivery
 {
     auto receivedBrowseRequest = std::make_shared<FrontendProviderBrowseRequest>();

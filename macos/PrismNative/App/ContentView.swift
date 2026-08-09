@@ -4,14 +4,18 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @StateObject private var shellModel: PrismShellModel
-    @StateObject private var instanceDetailsModel = PrismInstanceDetailsModel()
+    @StateObject private var detailCoordinator: PrismInstanceDetailCoordinator
+    @StateObject private var instanceDetailsModel: PrismInstanceDetailsModel
     @StateObject private var instanceSettingsModel: PrismInstanceSettingsModel
-    @StateObject private var instanceComponentsModel = PrismInstanceComponentsModel()
-    @StateObject private var instanceResourcesModel = PrismInstanceResourcesModel()
-    @StateObject private var worldsModel = PrismInstanceWorldsModel()
-    @StateObject private var serversModel = PrismInstanceServersModel()
-    @StateObject private var screenshotsModel = PrismInstanceScreenshotsModel()
-    @StateObject private var instanceLogsModel = PrismInstanceLogsModel()
+    @StateObject private var instanceComponentsModel: PrismInstanceComponentsModel
+    @StateObject private var instanceResourcesModel: PrismInstanceResourcesModel
+    @StateObject private var worldsModel: PrismInstanceWorldsModel
+    @StateObject private var serversModel: PrismInstanceServersModel
+    @StateObject private var screenshotsModel: PrismInstanceScreenshotsModel
+    @StateObject private var instanceLogsModel: PrismInstanceLogsModel
+    @StateObject private var instanceCopyModel: PrismInstanceCopyModel
+    @StateObject private var instanceExportModel: PrismInstanceExportModel
+    @StateObject private var instanceDeleteModel: PrismInstanceDeleteModel
     @ObservedObject private var logModel: PrismTaskLogPresentationModel
     @ObservedObject private var commandModel: PrismCommandModel
     @ObservedObject private var taskModel: PrismTaskPresentationModel
@@ -22,8 +26,118 @@ struct ContentView: View {
         logModel: PrismTaskLogPresentationModel? = nil,
         bridge: PRPrismBridge? = nil
     ) {
+        let detailCoordinator = PrismInstanceDetailCoordinator(bridge: bridge)
+        let detailsModel = PrismInstanceDetailsModel(
+            onLoad: { [weak detailCoordinator] identifier in
+                detailCoordinator?.loadDetails(identifier: identifier)
+            },
+            onSaveNotes: { [weak detailCoordinator] identifier, notes in
+                detailCoordinator?.updateNotes(identifier: identifier, notes: notes)
+            }
+        )
+        let componentsModel = PrismInstanceComponentsModel(
+            onLoad: { [weak detailCoordinator] identifier in
+                detailCoordinator?.loadComponents(identifier: identifier)
+            }
+        )
+        let resourcesModel = PrismInstanceResourcesModel(
+            onLoad: { [weak detailCoordinator] identifier, kind in
+                detailCoordinator?.loadResources(identifier: identifier, kind: kind)
+            },
+            onMutate: { [weak detailCoordinator] identifier, kind, intent in
+                detailCoordinator?.mutateResource(identifier: identifier, kind: kind, intent: intent)
+            }
+        )
+        let worldsModel = PrismInstanceWorldsModel(
+            onLoad: { [weak detailCoordinator] identifier in
+                detailCoordinator?.loadWorlds(identifier: identifier)
+            },
+            onMutate: { [weak detailCoordinator] identifier, intent in
+                detailCoordinator?.mutateDetail(identifier: identifier, intent: intent)
+            }
+        )
+        let serversModel = PrismInstanceServersModel(
+            onLoad: { [weak detailCoordinator] identifier in
+                detailCoordinator?.loadServers(identifier: identifier)
+            },
+            onMutate: { [weak detailCoordinator] identifier, intent in
+                detailCoordinator?.mutateDetail(identifier: identifier, intent: intent)
+            }
+        )
+        let screenshotsModel = PrismInstanceScreenshotsModel(
+            onLoad: { [weak detailCoordinator] identifier in
+                detailCoordinator?.loadScreenshots(identifier: identifier)
+            },
+            onMutate: { [weak detailCoordinator] identifier, intent in
+                detailCoordinator?.mutateDetail(identifier: identifier, intent: intent)
+            }
+        )
+        let logsModel = PrismInstanceLogsModel(
+            onLoad: { [weak detailCoordinator] identifier in
+                detailCoordinator?.loadLogs(identifier: identifier)
+            },
+            onLoadContent: { [weak detailCoordinator] identifier, logIdentifier in
+                detailCoordinator?.loadLogContent(identifier: identifier, logIdentifier: logIdentifier)
+            },
+            onMutate: { [weak detailCoordinator] identifier, intent in
+                detailCoordinator?.mutateDetail(identifier: identifier, intent: intent)
+            }
+        )
+        let copyModel = PrismInstanceCopyModel(
+            sourceInstanceIdentifier: "",
+            onCopy: { [weak detailCoordinator] request, generation in
+                detailCoordinator?.copyInstance(request: request, generation: generation)
+            },
+            onCancel: { [weak detailCoordinator] in
+                detailCoordinator?.cancelCopy()
+            }
+        )
+        let exportModel = PrismInstanceExportModel(
+            sourceInstanceIdentifier: "",
+            onExport: { [weak detailCoordinator] request, generation in
+                detailCoordinator?.exportInstance(request: request, generation: generation)
+            },
+            onCancel: { [weak detailCoordinator] in
+                detailCoordinator?.cancelExport()
+            }
+        )
+        let deleteModel = PrismInstanceDeleteModel(
+            onDelete: { [weak detailCoordinator] identifier in
+                detailCoordinator?.deleteInstance(identifier: identifier)
+            },
+            onCancel: { [weak detailCoordinator] in
+                detailCoordinator?.cancelDelete()
+            }
+        )
+        commandModel.onDeleteRequest = { [weak deleteModel] identifier in
+            _ = deleteModel?.request(identifier: identifier)
+        }
+        detailCoordinator.bind(
+            detailsModel: detailsModel,
+            componentsModel: componentsModel,
+            resourcesModel: resourcesModel,
+            worldsModel: worldsModel,
+            serversModel: serversModel,
+            screenshotsModel: screenshotsModel,
+            logsModel: logsModel,
+            copyModel: copyModel,
+            exportModel: exportModel,
+            deleteModel: deleteModel
+        )
+
         _shellModel = StateObject(wrappedValue: PrismShellModel(bridge: bridge))
+        _detailCoordinator = StateObject(wrappedValue: detailCoordinator)
+        _instanceDetailsModel = StateObject(wrappedValue: detailsModel)
         _instanceSettingsModel = StateObject(wrappedValue: PrismInstanceSettingsModel(bridge: bridge))
+        _instanceComponentsModel = StateObject(wrappedValue: componentsModel)
+        _instanceResourcesModel = StateObject(wrappedValue: resourcesModel)
+        _worldsModel = StateObject(wrappedValue: worldsModel)
+        _serversModel = StateObject(wrappedValue: serversModel)
+        _screenshotsModel = StateObject(wrappedValue: screenshotsModel)
+        _instanceLogsModel = StateObject(wrappedValue: logsModel)
+        _instanceCopyModel = StateObject(wrappedValue: copyModel)
+        _instanceExportModel = StateObject(wrappedValue: exportModel)
+        _instanceDeleteModel = StateObject(wrappedValue: deleteModel)
         _commandModel = ObservedObject(wrappedValue: commandModel)
         _taskModel = ObservedObject(wrappedValue: taskModel)
         _logModel = ObservedObject(wrappedValue: logModel ?? PrismTaskLogPresentationModel(bridge: bridge))
@@ -82,13 +196,37 @@ struct ContentView: View {
                         worldsModel: worldsModel,
                         serversModel: serversModel,
                         screenshotsModel: screenshotsModel,
-                        logsModel: instanceLogsModel
+                        logsModel: instanceLogsModel,
+                        copyModel: instanceCopyModel,
+                        exportModel: instanceExportModel,
+                        deleteModel: instanceDeleteModel
                     )
                 } else {
                     PrismShellDetailView(
                         state: shellModel.detailState,
                         onRetry: { shellModel.retry() }
                     )
+                }
+                if instanceDeleteModel.isDeleting {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Deleting Instance")
+                    }
+                    .accessibilityLabel(Text("Deleting Instance"))
+                    .accessibilityIdentifier("prism.instance-delete.progress")
+                }
+                if let failure = instanceDeleteModel.failure {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Label("Unable to Delete Instance", systemImage: "exclamationmark.triangle")
+                        if failure.retryable {
+                            Button("Retry") { _ = instanceDeleteModel.retry() }
+                                .keyboardShortcut(.defaultAction)
+                        }
+                        Button("Dismiss", role: .cancel) { instanceDeleteModel.reset() }
+                    }
+                    .accessibilityValue(Text(failure.diagnosticText ?? failure.localizationKey))
+                    .accessibilityIdentifier("prism.instance-delete.failure")
                 }
             }
             .contextMenu {
@@ -111,6 +249,33 @@ struct ContentView: View {
                 PrismCommandButton(model: commandModel, command: .launchSelected)
                 PrismCommandButton(model: commandModel, command: .stopSelected)
             }
+        }
+        .onAppear {
+            detailCoordinator.select(identifier: shellModel.selectedInstanceID)
+        }
+        .onChange(of: shellModel.selectedInstanceID) { _, identifier in
+            detailCoordinator.select(identifier: identifier)
+        }
+        .confirmationDialog(
+            "Delete Instance?",
+            isPresented: Binding(
+                get: { instanceDeleteModel.isConfirmationPending },
+                set: { isPresented in
+                    if !isPresented {
+                        instanceDeleteModel.cancel()
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                _ = instanceDeleteModel.confirm()
+            }
+            Button("Cancel", role: .cancel) {
+                instanceDeleteModel.cancel()
+            }
+        } message: {
+            Text("The instance will be moved into Prism's isolated recovery area.")
         }
     }
 }
@@ -397,6 +562,12 @@ private struct PrismInstanceDetailsView: View {
     @ObservedObject var serversModel: PrismInstanceServersModel
     @ObservedObject var screenshotsModel: PrismInstanceScreenshotsModel
     @ObservedObject var logsModel: PrismInstanceLogsModel
+    @ObservedObject var copyModel: PrismInstanceCopyModel
+    @ObservedObject var exportModel: PrismInstanceExportModel
+    @ObservedObject var deleteModel: PrismInstanceDeleteModel
+
+    @State private var showingCopy = false
+    @State private var showingExport = false
 
     var body: some View {
         switch model.state {
@@ -464,6 +635,32 @@ private struct PrismInstanceDetailsView: View {
                     .accessibilityLabel(Text("Open Instance Settings"))
                     .help(Text("Edit standard settings for this instance."))
                     .accessibilityIdentifier("prism.instance-details.settings-link")
+                    Button {
+                        copyModel.configure(sourceInstanceIdentifier: details.id)
+                        showingCopy = true
+                    } label: {
+                        Label("Copy Instance", systemImage: "plus.square.on.square")
+                    }
+                    .accessibilityLabel(Text("Copy Instance"))
+                    .help(Text("Create a copy of this instance."))
+                    .accessibilityIdentifier("prism.instance-details.copy-link")
+                    Button {
+                        exportModel.configure(sourceInstanceIdentifier: details.id, instanceName: details.name)
+                        showingExport = true
+                    } label: {
+                        Label("Export Instance", systemImage: "square.and.arrow.up")
+                    }
+                    .accessibilityLabel(Text("Export Instance"))
+                    .help(Text("Export this instance to a local file."))
+                    .accessibilityIdentifier("prism.instance-details.export-link")
+                    Button(role: .destructive) {
+                        _ = deleteModel.request(identifier: details.id)
+                    } label: {
+                        Label("Delete Instance", systemImage: "trash")
+                    }
+                    .accessibilityLabel(Text("Delete Instance"))
+                    .help(Text("Move this instance to Prism's isolated recovery area."))
+                    .accessibilityIdentifier("prism.instance-details.delete-link")
                     NavigationLink {
                         PrismInstanceComponentsView(model: componentsModel)
                     } label: {
@@ -567,6 +764,16 @@ private struct PrismInstanceDetailsView: View {
             .formStyle(.grouped)
             .navigationTitle(details.name)
             .accessibilityIdentifier("prism.instance-details.form")
+            .sheet(isPresented: $showingCopy) {
+                PrismInstanceCopyView(model: copyModel) {
+                    showingCopy = false
+                }
+            }
+            .sheet(isPresented: $showingExport) {
+                PrismInstanceExportView(model: exportModel) {
+                    showingExport = false
+                }
+            }
         }
     }
 }

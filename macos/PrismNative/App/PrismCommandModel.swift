@@ -277,15 +277,18 @@ final class PrismCommandModel: ObservableObject {
 
     var onCommand: ((PrismCommandID) -> Void)?
     var onInstanceCommand: ((PrismInstanceCommandIntent) -> Void)?
+    var onDeleteRequest: ((String) -> Void)?
 
     init(
         onCommand: ((PrismCommandID) -> Void)? = nil,
         onInstanceCommand: ((PrismInstanceCommandIntent) -> Void)? = nil,
+        onDeleteRequest: ((String) -> Void)? = nil,
         bridge: PRPrismBridge? = nil
     ) {
         self.bridge = bridge
         self.onCommand = onCommand
         self.onInstanceCommand = onInstanceCommand
+        self.onDeleteRequest = onDeleteRequest
     }
 
     func setSelectedInstanceID(_ identifier: String?) {
@@ -335,6 +338,13 @@ final class PrismCommandModel: ObservableObject {
         }
 
         lastInvokedCommand = command
+        if command == .deleteSelected, let identifier = selectedInstanceID {
+            onDeleteRequest?(identifier)
+            if onDeleteRequest == nil {
+                onCommand?(command)
+            }
+            return true
+        }
         if let intent = instanceCommandIntent(for: command) {
             if let onInstanceCommand {
                 onInstanceCommand(intent)
@@ -360,6 +370,130 @@ final class PrismCommandModel: ObservableObject {
         }
         let normalized = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
         return normalized.isEmpty ? nil : normalized
+    }
+}
+
+struct PrismInstanceDeleteFailure: Equatable, Sendable {
+    let instanceIdentifier: String
+    let localizationKey: String
+    let diagnosticText: String?
+    let retryable: Bool
+    let partialChangesRolledBack: Bool
+}
+
+enum PrismInstanceDeleteState: Equatable, Sendable {
+    case idle
+    case confirming(identifier: String)
+    case deleting(identifier: String)
+    case succeeded(identifier: String)
+    case failed(PrismInstanceDeleteFailure)
+}
+
+@MainActor
+final class PrismInstanceDeleteModel: ObservableObject {
+    @Published private(set) var state: PrismInstanceDeleteState = .idle
+
+    private let onDelete: ((String) -> Void)?
+    private let onCancel: (() -> Void)?
+
+    init(onDelete: ((String) -> Void)? = nil, onCancel: (() -> Void)? = nil) {
+        self.onDelete = onDelete
+        self.onCancel = onCancel
+    }
+
+    var pendingIdentifier: String? {
+        guard case .confirming(let identifier) = state else { return nil }
+        return identifier
+    }
+
+    var isConfirmationPending: Bool { pendingIdentifier != nil }
+    var isDeleting: Bool {
+        if case .deleting = state { return true }
+        return false
+    }
+    var failure: PrismInstanceDeleteFailure? {
+        guard case .failed(let failure) = state else { return nil }
+        return failure
+    }
+
+    @discardableResult
+    func request(identifier: String) -> Bool {
+        let normalized = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty, !isDeleting else { return false }
+        state = .confirming(identifier: normalized)
+        return true
+    }
+
+    @discardableResult
+    func confirm() -> Bool {
+        guard case .confirming(let identifier) = state else { return false }
+        state = .deleting(identifier: identifier)
+        onDelete?(identifier)
+        return true
+    }
+
+    func cancel() {
+        if isDeleting {
+            onCancel?()
+        }
+        state = .idle
+    }
+
+    @discardableResult
+    func apply(result: PRInstanceDeleteResult) -> Bool {
+        guard case .deleting(let identifier) = state,
+              result.identifier == identifier else { return false }
+        let localizationKey = result.localizationKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !localizationKey.isEmpty else { return false }
+        switch result.outcome {
+        case .succeeded:
+            state = .succeeded(identifier: identifier)
+        case .unknownInstance, .rejected, .failed:
+            state = .failed(
+                PrismInstanceDeleteFailure(
+                    instanceIdentifier: identifier,
+                    localizationKey: localizationKey,
+                    diagnosticText: result.diagnosticText,
+                    retryable: result.retryable,
+                    partialChangesRolledBack: result.partialChangesRolledBack
+                )
+            )
+        @unknown default:
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
+    func apply(error: PRBridgeError) -> Bool {
+        guard case .deleting(let identifier) = state else { return false }
+        let localizationKey = error.localizationKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !localizationKey.isEmpty else { return false }
+        state = .failed(
+            PrismInstanceDeleteFailure(
+                instanceIdentifier: identifier,
+                localizationKey: localizationKey,
+                diagnosticText: error.diagnosticText,
+                retryable: error.recoveryKind == .retry,
+                partialChangesRolledBack: error.partialChangesRolledBack
+            )
+        )
+        return true
+    }
+
+    @discardableResult
+    func retry() -> Bool {
+        guard case .failed(let failure) = state, failure.retryable else { return false }
+        state = .deleting(identifier: failure.instanceIdentifier)
+        onDelete?(failure.instanceIdentifier)
+        return true
+    }
+
+    func reset() {
+        if isDeleting {
+            onCancel?()
+        }
+        state = .idle
     }
 }
 

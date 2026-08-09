@@ -798,6 +798,64 @@ final class PrismShellTests: XCTestCase {
         XCTAssertTrue(mutationRequests.isEmpty)
     }
 
+    func testDetailMutationBridgeErrorsPreserveRecoveryAndOptimisticRollback() throws {
+        var resourceMutations: [PrismInstanceResourceMutationIntent] = []
+        let resourcesModel = PrismInstanceResourcesModel(onMutate: { resourceMutations.append($2) })
+        XCTAssertTrue(resourcesModel.beginLoading(identifier: "fixture.one", kind: .mods))
+        let resource = try makeInstanceResource(
+            identifier: "mod.one",
+            name: "Fixture Mod",
+            version: "1.0",
+            fileName: "fixture-mod.jar"
+        )
+        XCTAssertTrue(resourcesModel.apply(resources: [resource]))
+        XCTAssertTrue(resourcesModel.setEnabled(false, for: "mod.one"))
+        let resourceError = try XCTUnwrap(
+            PRBridgeError(
+                code: .permissionDenied,
+                localizationKey: "instance.resource.permissionDenied",
+                substitutionValues: ["instanceIdentifier": "fixture.one"],
+                diagnosticText: "fixture permission failure",
+                recoveryKind: .retry,
+                partialChangesRolledBack: true
+            )
+        )
+        XCTAssertTrue(resourcesModel.apply(mutationError: resourceError, instanceIdentifier: "fixture.one"))
+        XCTAssertEqual(resourcesModel.mutationFailure?.localizationKey, "instance.resource.permissionDenied")
+        XCTAssertTrue(resourcesModel.mutationFailure?.partialChangesRolledBack == true)
+        XCTAssertTrue(resourcesModel.retry())
+        XCTAssertEqual(resourceMutations.count, 2)
+
+        var serverMutations: [PrismInstanceDetailMutationIntent] = []
+        let serversModel = PrismInstanceServersModel(onMutate: { serverMutations.append($1) })
+        XCTAssertTrue(serversModel.beginLoading(identifier: "fixture.one"))
+        let server = try makeInstanceServer(
+            identifier: "server.one",
+            name: "Original",
+            address: "original.example:25565"
+        )
+        XCTAssertTrue(serversModel.apply(servers: [server]))
+        serversModel.selectServer("server.one")
+        serversModel.setDraftName("Optimistic")
+        XCTAssertTrue(serversModel.updateSelected())
+        XCTAssertEqual(serversModel.servers.first?.name, "Optimistic")
+        let serverError = try XCTUnwrap(
+            PRBridgeError(
+                code: .dataUnavailable,
+                localizationKey: "instance.server.unavailable",
+                substitutionValues: ["instanceIdentifier": "fixture.one"],
+                diagnosticText: "fixture server failure",
+                recoveryKind: .retry,
+                partialChangesRolledBack: false
+            )
+        )
+        XCTAssertTrue(serversModel.apply(mutationError: serverError, instanceIdentifier: "fixture.one"))
+        XCTAssertEqual(serversModel.servers.first?.name, "Original")
+        XCTAssertEqual(serversModel.mutationFailure?.localizationKey, "instance.server.unavailable")
+        XCTAssertTrue(serversModel.retry())
+        XCTAssertEqual(serverMutations.count, 2)
+    }
+
     func testInstanceResourcesSourceUsesNativeMutationRecoveryAPIs() throws {
         let contentSource = try contentSource()
         let shellModelSource = try shellModelSource()
@@ -1300,6 +1358,9 @@ final class PrismShellTests: XCTestCase {
             "PrismInstanceServersView",
             "PrismInstanceScreenshotsView",
             "PrismInstanceLogsView",
+            "PrismInstanceCopyView",
+            "PrismInstanceExportView",
+            "prism.instance-details.delete-link",
             "Table(model.visibleWorlds, selection:",
             "Table(model.visibleServers, selection:",
             "Table(model.visibleScreenshots, selection:",
@@ -1309,6 +1370,13 @@ final class PrismShellTests: XCTestCase {
             ".confirmationDialog(",
             "role: .destructive",
             "PrismTaskLogTextView(text: log.renderedText)",
+            "@StateObject private var detailCoordinator: PrismInstanceDetailCoordinator",
+            "PrismInstanceDetailCoordinator(bridge: bridge)",
+            "detailCoordinator.bind(",
+            ".onChange(of: shellModel.selectedInstanceID)",
+            "prism.instance-details.copy-link",
+            "prism.instance-details.export-link",
+            ".sheet(isPresented:",
             "prism.instance-worlds.table",
             "prism.instance-servers.table",
             "prism.instance-screenshots.table",
@@ -1330,7 +1398,24 @@ final class PrismShellTests: XCTestCase {
             "PRInstanceLogSnapshot",
             "totalByteCount",
             "func selectLog(_ identifier: String?)",
-            "func retry() -> Bool"
+            "func retry() -> Bool",
+            "final class PrismInstanceDetailCoordinator",
+            "func loadDetails(identifier:",
+            "func loadComponents(identifier:",
+            "func loadResources(identifier: String, kind:",
+            "func mutateResource(",
+            "func loadLogContent(identifier: String, logIdentifier:",
+            "func mutateDetail(identifier: String, intent:",
+            "func copyInstance(request: PRInstanceCopyRequest",
+            "func exportInstance(request: PRInstanceExportRequest",
+            "copyModel?.apply(progress:",
+            "exportModel?.apply(progress:",
+            "func deleteInstance(identifier:",
+            "deleteModel?.apply(result:",
+            "deleteModel?.apply(error:",
+            "selectionGeneration",
+            "cancelAllRequests()",
+            "apply(mutationError error: PRBridgeError"
         ] {
             XCTAssertTrue(shellModelSource.contains(requiredToken), "Missing detail state contract: \(requiredToken)")
         }
@@ -1342,7 +1427,9 @@ final class PrismShellTests: XCTestCase {
             "loadInstanceLogFilesWithIdentifier",
             "loadInstanceLogWithIdentifier",
             "applyInstanceDetailActionWithIdentifier",
-            "PRInstanceDetailMutationRequest"
+            "PRInstanceDetailMutationRequest",
+            "deleteInstanceWithIdentifier",
+            "PRInstanceDeleteResult"
         ] {
             XCTAssertTrue(bridgeHeaderSource.contains(requiredToken), "Missing bridge detail API: \(requiredToken)")
         }
@@ -1354,12 +1441,15 @@ final class PrismShellTests: XCTestCase {
             "PRInstanceLogFile",
             "PRInstanceLogSnapshot",
             "PRInstanceDetailMutationResult",
-            "PRTaskLogEntry"
+            "PRTaskLogEntry",
+            "PRInstanceDeleteResult"
         ] {
             XCTAssertTrue(bridgeModelsSource.contains(requiredToken), "Missing Foundation DTO: \(requiredToken)")
         }
 
         XCTAssertFalse(contentSource.contains("Canvas("))
+        XCTAssertFalse(contentSource.contains("@StateObject private var instanceDetailsModel = PrismInstanceDetailsModel()"))
+        XCTAssertFalse(contentSource.contains("@StateObject private var worldsModel = PrismInstanceWorldsModel()"))
         XCTAssertFalse(contentSource.contains("draw("))
         XCTAssertFalse(contentSource.contains("Path("))
         XCTAssertFalse(contentSource.contains("NSBezierPath"))

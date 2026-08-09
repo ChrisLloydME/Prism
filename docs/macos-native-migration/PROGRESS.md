@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: 11. Production backend adapters and complete launcher composition
 
-Active work unit: none
+Active work unit: none (M11-W6 complete; activate M11-W7 next)
 
-Next ready work unit: M11-W6 Instance library and detail operations
+Next ready work unit: M11-W7 Creation and import
 
 Goal correction added 2026-08-09: this project must deliver a complete Minecraft launcher, not only native surfaces and fixture contracts. Historical M4-M9 `complete` labels mean surface/contract completion unless a later M11 unit proves production adapter and default-composition wiring. M10-W1 identified this gap; M10-W2 packaging and M10-W3 clean builds are complete infrastructure, not launcher parity. Qt retirement is moved to M12 and is forbidden until M11-W10 proves production parity.
 
@@ -2463,13 +2463,38 @@ Risks and limits: wrapper-command execution, pre/post-launch task chains, asset/
 
 Commit: `5146ca0fa` (implementation and detailed M11-W5 ledger update).
 
-Next ready work unit: M11-W6 Instance library and detail operations. It must connect production instance discovery/change observation, metadata, notes, versions/components, mods/resource packs/shaders, worlds, servers, screenshots, logs, copy/delete/export, filesystem mutation, archive validation, rollback, permission errors, conflicts, and symlink containment through disposable real-format trees.
+M11-W6 follows this work unit and is now complete; the current next ready work unit is M11-W7 Creation and import.
 
 ### M11-W6: Instance library and detail operations
 
-Status: ready
+Status: complete
 
 Prerequisite: M11-W5 is complete. Connect instance discovery/change observation, metadata, notes, versions/components, mods/resource packs/shaders, worlds, servers, screenshots, logs, copy, delete, export, and filesystem mutations. Use disposable fixture trees matching real formats and prove persistence after reconstruction, permission errors, conflicts, archive validation, rollback, and symlink containment.
+
+Outcome: completed the production instance-library and detail vertical slice against disposable real-format Prism trees. The default native composition now loads persistent instance metadata, notes, ordered versions/components, mods/resource packs/shaders, worlds from gzip/NBT `level.dat`, servers from NBT `servers.dat`, case-insensitive screenshots, bounded/redacted current and compressed historical logs, and change observations through the QWidget-free production runtime. It also performs confirmed resource/detail mutations, safe world archive import, filesystem-confined copy, atomic ZIP/mod-list export, and explicit confirmed instance deletion into an isolated recovery directory.
+
+Files changed: `launcher/frontend/CMakeLists.txt`, `FrontendFacade.h`, `FrontendFacade.cpp`, `ProductionInstanceRuntime.cpp`, new `ProductionInstanceDetailRuntime.h`, new `ProductionInstanceDetailRuntime.cpp`, and new `FrontendFacadeProductionInstanceDetailTest.cpp`; `macos/PrismNative.xcodeproj/project.pbxproj`; `macos/PrismNative/Bridge/PrismBridge.h`, `PrismBridge.mm`, and `PrismBridgeModels.h`; `macos/PrismNative/App/ContentView.swift`, `PrismCommandModel.swift`, `PrismInstanceCopyExport.swift`, and `PrismShellModel.swift`; `macos/PrismNativeTests/PrismBridgeFacadeIntegrationTests.mm`, `PrismCommandTests.swift`, `PrismShellTests.swift`; and this ledger.
+
+Architecture and safety: `ProductionInstanceDetailRuntime` accepts only the explicit absolute Native Prism root and uses Prism's existing QtCore `INIFile`, `OneSixVersionFormat`, `VersionFile`, gzip, NBT, and archive readers/writers behind the facade. It owns path validation, direct-child instance containment, symlink rejection, atomic metadata writes, conflict detection, resource state transitions, world NBT/archive parsing, log bounds and redaction, copy staging/commit, export staging/commit, deletion serialization, and failure reporting. Copy requests carrying symbolic-link, hard-link, or clone policies are explicitly rejected rather than silently changing semantics. Confirmed top-level deletion atomically moves the instance tree beneath `<root>/instances/.prism-native-trash`; it never invokes system Trash or an upstream path, so a recovery copy remains inside the isolated root. `FrontendRuntimeDependencies` exposes production detail, copy, export, and delete ports; `ProductionInstanceRuntime` injects them into one shared facade composition. Objective-C++ remains the sole C++/Foundation boundary, owns asynchronous bridge tokens and facade lifetime, normalizes stable identifiers, and delivers immutable delete/copy/export/detail DTOs on the main actor. Swift owns only validated models and intents: `PrismInstanceDetailCoordinator` routes selection generations, cancellation, bridge errors, optimistic server rollback, copy/export progress, and confirmed deletion; `ContentView` composes production detail models instead of fixture/default models.
+
+HIG/API decision: use SwiftUI `Form`, `Table`, `NavigationLink`, standard `Button`/`Label`, `.sheet`, `.confirmationDialog`, `ProgressView`, accessibility metadata, and the existing AppKit system save panel. No system control is custom-drawn, no third-party UI framework was added, and no HIG exception was needed. Destructive instance deletion has an explicit confirmation dialog and an isolated recovery destination; resource/world/screenshot/log destructive actions retain their existing confirmation contracts. No app launch, screenshot, recording, or visual snapshot test was used.
+
+Verification:
+
+- Focused production C++ command `cmake --build .deriveddata-prism-native-backend --target Launcher_frontend_production_instance_detail_test -j 4 && .deriveddata-prism-native-backend/Launcher_frontend_production_instance_detail_test` — passed. The test used only a disposable root and covered real-format metadata/components/resources/worlds/servers/screenshots/logs, notes and mutations, permission/conflict errors, invalid/valid archives, symlink rollback/containment, copy observation and persistence, ZIP/mod-list export, confirmed-delete recovery, unconfirmed-delete rejection, unsafe recovery-path rejection, and reconstruction. The invalid archive diagnostic from libarchive was expected and the test still exited successfully.
+- Shared arm64 Debug backend `cmake -S launcher/frontend -B .deriveddata-prism-native-backend -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0`, `cmake --build .deriveddata-prism-native-backend --parallel 4`, and `ctest --test-dir .deriveddata-prism-native-backend --output-on-failure` — passed, 11/11. Shared Release reconfiguration/build plus CTest — passed, 11/11. One earlier Release CTest invocation reported a transient write-permission error from the unrelated Java temporary fixture; direct execution of `Launcher_frontend_production_java_test` and the immediate full CTest rerun passed, with no source change or persistent temporary directory left behind.
+- Shared-path `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -derivedDataPath .deriveddata-prism-native -destination 'platform=macOS,arch=arm64' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build` — passed; the corresponding Debug `test` — passed, 178/178, 0 failed, 0 skipped, result bundle `Test-PrismNative-2026.08.09_22-22-34-+0800.xcresult`.
+- The same shared-path Release build and `test` — passed, 178/178, 0 failed, 0 skipped, result bundle `Test-PrismNative-2026.08.09_22-25-32-+0800.xcresult`. The native suite includes the new ObjC++ delete conversion, production-detail source wiring, command confirmation callback, copy/export model routing, accessibility identifiers, menu/shortcut, localization, cancellation, retry, and rollback tests.
+- `plutil -lint macos/PrismNative/Resources/Info.plist macos/PrismNative/Resources/PrismNative.entitlements` — both OK. `plutil -extract CFBundleIdentifier raw` on `.deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` and `.deriveddata-prism-native/Build/Products/Release/Prism.app/Contents/Info.plist` — both returned `com.lloydME.Prism`.
+- `git diff --check` — passed. Static source checks found no `QWidget`, `QDialog`, `QApplication`, or `QtWidgets` API/include in native production code (only the explanatory `QWidget-free` comment), no Swift Qt/C++ ownership types, no fixture/default instance model construction in `ContentView`, and no custom drawing. No upstream application/support data, accounts, Keychain, credentials, network service, signing, installation, publishing, push, or process launch was used.
+
+Build storage and cleanup: retained shared `.deriveddata-prism-native` (659M), `.deriveddata-prism-native-backend` (132M), and the pre-existing `build-native` cache (2.3G). Only `Test-PrismNative-2026.08.09_22-22-34-+0800.xcresult` and `Test-PrismNative-2026.08.09_22-25-32-+0800.xcresult` remain in the shared Xcode test log. The focused C++ and all fixture trees self-cleaned under the temporary directory; no task-owned `/private/tmp/prism-*` directory remains.
+
+Risks and limits: the copy adapter intentionally rejects advanced link/clone policies; current production component metadata has no provider/version/author/URL values, so unavailable mod-list fields remain blank; world archive import through the detail mutation port has no separate cancellation callback and therefore uses the facade's synchronous detail contract. Delete is logically destructive but retains the tree in the isolated recovery directory; the existing `undoDelete` menu command remains disabled until a later recovery/utility port exposes restoration. Existing legacy Qt `Application`/`InstanceList`/detail callers remain retained until M11-W10 parity and M12 retirement gates. These are explicit non-blocking limits; no fixture or unavailable default remains in the connected instance-detail production path.
+
+Commit: implementation commit followed by the progress-ledger finalization commit.
+
+Next ready work unit: M11-W7 Creation and import. It must connect vanilla creation, local/URL import, staging, archive inspection, download/copy, cancellation, rollback, and final atomic commit through existing backend tasks using fake network responses and disposable roots.
 
 ## Completed commit index
 

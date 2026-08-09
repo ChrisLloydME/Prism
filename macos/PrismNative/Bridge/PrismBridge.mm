@@ -222,6 +222,18 @@ bool isKnownInstanceCommandKind(PRInstanceCommandKind kind)
     return false;
 }
 
+bool isKnownInstanceDeleteOutcome(PRInstanceDeleteOutcome outcome)
+{
+    switch (outcome) {
+        case PRInstanceDeleteOutcomeSucceeded:
+        case PRInstanceDeleteOutcomeUnknownInstance:
+        case PRInstanceDeleteOutcomeRejected:
+        case PRInstanceDeleteOutcomeFailed:
+            return true;
+    }
+    return false;
+}
+
 bool isKnownInstanceCommandOutcome(PRInstanceCommandOutcome outcome)
 {
     switch (outcome) {
@@ -641,6 +653,21 @@ PRInstanceCommandOutcome commandOutcomeFromFacadeResult(FrontendInstanceCommandR
             return PRInstanceCommandOutcomeRejected;
     }
     throw std::invalid_argument("Facade returned an unknown instance command result");
+}
+
+PRInstanceDeleteOutcome instanceDeleteOutcomeFromFacadeResult(FrontendInstanceDeleteOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendInstanceDeleteOutcome::Succeeded:
+            return PRInstanceDeleteOutcomeSucceeded;
+        case FrontendInstanceDeleteOutcome::UnknownInstance:
+            return PRInstanceDeleteOutcomeUnknownInstance;
+        case FrontendInstanceDeleteOutcome::Rejected:
+            return PRInstanceDeleteOutcomeRejected;
+        case FrontendInstanceDeleteOutcome::Failed:
+            return PRInstanceDeleteOutcomeFailed;
+    }
+    throw std::invalid_argument("Facade returned an unknown instance delete outcome");
 }
 
 bool isKnownInstanceChangeKind(PRInstanceChangeKind kind)
@@ -3485,6 +3512,31 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@interface PRBridgeDeleteResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithResult:(nullable PRInstanceDeleteResult *)result
+                          error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRInstanceDeleteResult *result;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeDeleteResult
+
+- (instancetype)initWithResult:(PRInstanceDeleteResult *)result error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _result = result;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
 @interface PRBridgeNotesUpdateResult : NSObject
 
 - (instancetype)init NS_UNAVAILABLE;
@@ -4646,6 +4698,17 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, assign, readwrite) PRInstanceCommandKind kind;
 @property(nonatomic, copy, readwrite) NSString *identifier;
 @property(nonatomic, assign, readwrite) PRInstanceCommandOutcome outcome;
+
+@end
+
+@interface PRInstanceDeleteResult ()
+
+@property(nonatomic, copy, readwrite) NSString *identifier;
+@property(nonatomic, assign, readwrite) PRInstanceDeleteOutcome outcome;
+@property(nonatomic, copy, readwrite) NSString *localizationKey;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readwrite) BOOL retryable;
+@property(nonatomic, assign, readwrite) BOOL partialChangesRolledBack;
 
 @end
 
@@ -6390,6 +6453,35 @@ resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentif
         self.kind = kind;
         self.identifier = [identifier copy];
         self.outcome = outcome;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRInstanceDeleteResult
+
+- (instancetype)initWithIdentifier:(NSString *)identifier
+                             outcome:(PRInstanceDeleteOutcome)outcome
+                      localizationKey:(NSString *)localizationKey
+                       diagnosticText:(NSString *)diagnosticText
+                           retryable:(BOOL)retryable
+            partialChangesRolledBack:(BOOL)partialChangesRolledBack
+{
+    if (!isNonEmptyString(identifier) || !isKnownInstanceDeleteOutcome(outcome)
+        || !isNonEmptyString(localizationKey)
+        || (diagnosticText && ![diagnosticText isKindOfClass:NSString.class])) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.identifier = [identifier copy];
+        self.outcome = outcome;
+        self.localizationKey = [localizationKey copy];
+        self.diagnosticText = [diagnosticText copy];
+        self.retryable = retryable;
+        self.partialChangesRolledBack = partialChangesRolledBack;
     }
     return self;
 }
@@ -9136,6 +9228,97 @@ resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentif
                                                 completion:(PRInstanceCommandCompletionHandler)completion
 {
     return [self performInstanceCommand:PRInstanceCommandKindStop identifier:identifier completion:completion];
+}
+
+- (PRBridgeObservationToken *)deleteInstanceWithIdentifier:(NSString *)identifier
+                                                  confirmed:(BOOL)confirmed
+                                                 completion:(PRInstanceDeleteCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    NSString *identifierCopy = [identifier copy];
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeDeleteResult *deleteResult = (PRBridgeDeleteResult *)value;
+        [weakRequest cancel];
+        completion(deleteResult.result, deleteResult.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeCommandRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.commandRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRInstanceDeleteResult *result = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    const std::string instanceIdentifier = stableIdentifierFromFoundation(identifierCopy);
+                    const FrontendInstanceDeleteResult deleteResult =
+                        bridge->_facade->deleteInstance(instanceIdentifier, confirmed);
+                    result = [[PRInstanceDeleteResult alloc]
+                        initWithIdentifier:foundationStringFromUTF8(instanceIdentifier)
+                                   outcome:instanceDeleteOutcomeFromFacadeResult(deleteResult.outcome)
+                            localizationKey:foundationStringFromUTF8AllowEmpty(deleteResult.localizationKey)
+                             diagnosticText:foundationStringFromUTF8(deleteResult.diagnosticText)
+                                 retryable:deleteResult.retryable
+                  partialChangesRolledBack:deleteResult.partialChangesRolledBack];
+                    if (!result) {
+                        throw std::invalid_argument("Facade returned an invalid instance delete result");
+                    }
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid instance delete request"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Instance delete cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Instance delete unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown instance delete failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeDeleteResult alloc] initWithResult:result error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
 }
 
 - (PRBridgeObservationToken *)updateInstanceNotesWithIdentifier:(NSString *)identifier

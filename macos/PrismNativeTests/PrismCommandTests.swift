@@ -120,6 +120,15 @@ final class PrismCommandTests: XCTestCase {
         )
     }
 
+    func testCommandModelRoutesDeleteThroughTheConfirmationBoundary() {
+        var identifiers: [String] = []
+        let model = PrismCommandModel(onDeleteRequest: { identifiers.append($0) })
+
+        model.setSelectedInstanceID(" fixture.one ")
+        XCTAssertTrue(model.invoke(.deleteSelected))
+        XCTAssertEqual(identifiers, ["fixture.one"])
+    }
+
     func testTaskCommandIntentsPreserveStableIdentifiersAndActions() {
         XCTAssertEqual(
             PrismTaskCommandIntent(action: .cancel, identifier: "task.fixture"),
@@ -198,7 +207,8 @@ final class PrismCommandTests: XCTestCase {
             ".keyboardShortcut(",
             ".accessibilityLabel(",
             ".accessibilityIdentifier(descriptor.accessibilityIdentifier)",
-            ".help("
+            ".help(",
+            "onDeleteRequest"
         ] {
             XCTAssertTrue(source.contains(requiredToken), "Missing native command API: \(requiredToken)")
         }
@@ -217,6 +227,8 @@ final class PrismCommandTests: XCTestCase {
             ".contextMenu {",
             "PrismCommandButton(model: commandModel",
             "PrismInstanceContextMenu(model: commandModel)",
+            ".confirmationDialog(",
+            "instanceDeleteModel",
         ] {
             XCTAssertTrue(source.contains(requiredToken), "Missing native command surface API: \(requiredToken)")
         }

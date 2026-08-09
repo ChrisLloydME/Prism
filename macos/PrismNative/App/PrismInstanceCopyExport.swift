@@ -141,6 +141,14 @@ final class PrismInstanceCopyModel: ObservableObject {
         draft.iconKey = iconKey
     }
 
+    func configure(sourceInstanceIdentifier: String) {
+        let normalizedIdentifier = sourceInstanceIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedIdentifier.isEmpty else { return }
+        generation += 1
+        state = .editing
+        draft.sourceInstanceIdentifier = normalizedIdentifier
+    }
+
     func makeBridgeRequest() -> PRInstanceCopyRequest? {
         let normalized = draft.normalized
         guard normalized.validationMessage == nil else { return nil }
@@ -399,7 +407,7 @@ final class PrismInstanceExportModel: ObservableObject {
     @Published var draft: PrismInstanceExportDraft
     @Published private(set) var state: PrismInstanceExportState = .editing
 
-    private let instanceName: String
+    private var instanceName: String
     private let onExport: ((PRInstanceExportRequest, Int) -> Void)?
     private let onCancel: (() -> Void)?
     private var generation = 0
@@ -450,6 +458,21 @@ final class PrismInstanceExportModel: ObservableObject {
         case .modList:
             let suffix = draft.modListFormat == .html ? "html" : "txt"
             return baseName + "." + suffix
+        }
+    }
+
+    func configure(sourceInstanceIdentifier: String, instanceName: String? = nil) {
+        let normalizedIdentifier = sourceInstanceIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedIdentifier.isEmpty else { return }
+        generation += 1
+        savePanelGeneration += 1
+        state = .editing
+        draft.sourceInstanceIdentifier = normalizedIdentifier
+        if let instanceName {
+            let normalizedName = instanceName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !normalizedName.isEmpty {
+                self.instanceName = normalizedName
+            }
         }
     }
 
