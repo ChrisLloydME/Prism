@@ -6,11 +6,13 @@ Branch: `macos-native`
 
 Plan: `docs/macos-native-migration/PLAN.md`
 
-Current milestone: 10. Native cutover
+Current milestone: 11. Production backend adapters and complete launcher composition
 
 Active work unit: none
 
-Next ready work unit: none (M10-W3 is complete; M10-W4 remains queued until the M10-W1 parity gaps are resolved)
+Next ready work unit: `M11-W1 Production composition foundation`
+
+Goal correction added 2026-08-09: this project must deliver a complete Minecraft launcher, not only native surfaces and fixture contracts. Historical M4-M9 `complete` labels mean surface/contract completion unless a later M11 unit proves production adapter and default-composition wiring. M10-W1 identified this gap; M10-W2 packaging and M10-W3 clean builds are complete infrastructure, not launcher parity. Qt retirement is moved to M12 and is forbidden until M11-W10 proves production parity.
 
 User-reported safety incident: Native Prism Settings displayed account and Java information belonging to the user's normal Prism Launcher installation. Do not inspect the user's real Application Support data to reproduce this. The report invalidates the previous generic `Prism` data-root assumption and blocks all remaining migration/cutover work until `S0-W1` is complete.
 
@@ -37,14 +39,16 @@ Build-storage constraint added 2026-08-09: all future work must reuse `.derivedd
 | 1. Contracts, tests, and inventory | complete | Native contract tests, complete feature ledger, and automated bridge/fixture infrastructure |
 | 2. QWidget-free backend facade | complete | Facade lists fixture instances without UI headers |
 | 3. Objective-C++ bridge foundation | complete | Swift receives real fixture snapshots and events |
-| 4. Native shell and instance library | complete | System-native shell state and commands are tested |
-| 5. Launch, tasks, and logs | complete | Deterministic launch-task and log contracts are tested |
-| 6. Instance detail and editing | complete | Instance management surfaces have native contracts |
-| 7. Settings, Java, and accounts | complete | Settings, fake-account workflows, offline identity, and secret-boundary evidence are covered |
-| 8. Creation, discovery, and installation | complete | All supported providers and import flows are covered |
+| 4. Native shell and instance library | contract complete, production pending | System-native shell contracts are tested; M11-W1 must connect real instance persistence and observation |
+| 5. Launch, tasks, and logs | contract complete, production pending | Deterministic contracts exist; M11-W5 must connect launch/process/task/log owners |
+| 6. Instance detail and editing | contract complete, production pending | Native contracts exist; M11-W6 must connect real domain/filesystem operations |
+| 7. Settings, Java, and accounts | contract complete, production pending | Fixture/fake contracts exist; M11-W2 through M11-W4 must connect persistence, Java, and authentication owners |
+| 8. Creation, discovery, and installation | contract complete, production pending | Provider/import contracts exist; M11-W7 and M11-W8 must connect staging, archive, network, and install owners |
 | Safety remediation. Storage namespace isolation | complete | Production storage is bundle-scoped and every upstream/generic persistence path is rejected by the native composition contract |
-| 9. Utilities and rendering exceptions | complete | M9-W4 rendering exception and non-screenshot acceptance gate passed after the former Xcode/task-log blocker was resolved |
-| 10. Native cutover | queued | Final acceptance matrix is complete |
+| 9. Utilities and rendering exceptions | contract complete, production pending | Native utilities/renderers exist; M11-W9 must connect supporting production services |
+| 10. Native packaging and build foundation | complete | Parity audit, resources/metadata, and clean Debug/Release evidence are complete; no launcher parity claimed |
+| 11. Production backend adapters and launcher composition | active | Every core workflow uses existing Prism domain logic through bundle-rooted production composition |
+| 12. Native cutover and Qt Widgets retirement | queued | Starts only after M11-W10 production parity passes |
 
 ## S0-W1: Enforce bundle-scoped production storage isolation
 
@@ -2271,35 +2275,83 @@ Storage cleanup: the isolated tree was 627M before deletion. After printing and 
 
 HIG decision: none; this unit only verifies Apple target packaging and test execution, and introduces no UI, control, renderer, or third-party dependency.
 
-Architecture and risk: clean-path evidence covers target compilation, test execution, bundle metadata, resource copying, and architecture, but does not resolve the M10-W1 fixture/unavailable production composition, live adapter, localization resource, updater-runtime, URL/document routing, or retained Qt caller gaps. M10-W4 cannot become ready until those explicit M10-W1 parity prerequisites are resolved.
+Architecture and risk: clean-path evidence covers target compilation, test execution, bundle metadata, resource copying, and architecture, but does not resolve the M10-W1 fixture/unavailable production composition, live adapter, localization resource, updater-runtime, URL/document routing, or retained Qt caller gaps. Those gaps now belong to M11; no Qt removal may begin before M11-W10 passes.
 
 Commit: `bf4ddec93`; this entry is finalized in the immediate ledger-finalization commit.
 
-Prerequisite: M10-W2 complete. Next after completion: none currently eligible; M10-W4 remains queued behind the M10-W1 parity prerequisites and this clean-build evidence.
+Prerequisite: M10-W2 complete. Next after completion: `M11-W1 Production composition foundation`.
 
 ### M10-W4: Remove macOS QWidget/QDialog dependency after parity evidence
 
-Status: queued
+Status: superseded by M12-W1
 
 Scope: remove only macOS-native target dependencies on QWidget/QDialog after the final parity audit and packaging/build evidence pass. Shared backend Qt code may remain when required by other platforms or retained backend reuse; no source deletion is allowed without call-path and build evidence.
 
-Prerequisite: M10-W1 parity gaps resolved, M10-W2 and M10-W3 complete. Next after completion: M10-W5 safe obsolete-UI retirement audit.
+Reason: the old sequence omitted the production-adapter implementation needed to resolve M10-W1. Qt dependency removal is now forbidden until all M11 production integration and parity evidence completes.
 
 ### M10-W5: Retire safely excluded macOS-only Qt UI sources
 
-Status: queued
+Status: superseded by M12-W2
 
 Scope: delete or exclude only sources proven macOS-only and unused by retained backend reuse; otherwise leave them intact and record why. No destructive deletion is allowed without exact target/call-path checks and user-state safety evidence.
 
-Prerequisite: M10-W4 complete. Next after completion: M10-W6 final acceptance index and limitations report.
+Reason: legacy UI retirement follows M12-W1 and cannot be inferred from surface/fixture completion.
 
 ### M10-W6: Final acceptance index and limitations report
 
-Status: queued
+Status: superseded by M12-W3
 
 Scope: reconcile every PLAN §14 row, final commit index, remaining non-blocking limitations, generated-output inventory, and clean-worktree evidence. Do not mark the migration complete while any required row or retained workflow remains unresolved.
 
-Prerequisite: M10-W5 complete. Next after completion: none; only then can the migration goal be audited for completion.
+Reason: final launcher acceptance follows production composition and Qt cutover, not packaging alone.
+
+## Milestone 11: Production backend adapters and complete launcher composition
+
+Historical M4-M9 work established native surfaces and contracts. It did not complete launcher behavior. M11 owns the missing production adapters, default runtime wiring, persistence reconstruction, controlled external-effect verification, and removal of fixture/no-op/unavailable production defaults. Follow PLAN §8 Milestone 11 in strict order; only one unit may be ready or active.
+
+### M11-W1: Production composition foundation
+
+Status: ready
+
+Outcome: implement the first complete production vertical slice without `launcher/ui`: a bundle-rooted production runtime owns one QWidget-free facade and Objective-C++ bridge; the native shell receives real instance snapshots and changes; a metadata-only disposable instance record can be created through existing Prism domain behavior under a synthetic isolated root; destroying and reconstructing the runtime reloads that record. Remove `fixture.instance`, empty production shell defaults, and missing bridge injection from `PrismNativeApp` while keeping all test fixtures test-only.
+
+Required investigation: trace current instance persistence and observation ownership through `Application`, `InstanceList`, `InstanceTask`, settings/path services, `launcher/CMakeLists.txt`, `launcher/frontend`, `PRPrismBridge`, `PrismNativeRuntime`, `PrismShellModel`, and command routing. Identify the minimum domain library/source split needed by a non-QWidget composition. Characterize any `QApplication`, global `APPLICATION`, Qt model, thread, watcher, or UI dependency before changing it. Do not duplicate instance JSON/config formats in Swift.
+
+Required architecture:
+
+1. Add a production runtime/dependency owner below Objective-C++ that initializes existing domain services only from the explicit `PRApplicationIdentity.applicationSupportDirectory` root and shuts them down deterministically.
+2. The facade remains QWidget-free and exposes only existing immutable instance DTO/change contracts. Objective-C++ alone owns C++/QtCore objects and converts to Foundation values; Swift owns presentation state only.
+3. `PrismNativeApp` injects the production bridge into `PrismShellModel` and related command state. Production source must contain no hard-coded fixture identifier, sample instance, fixture callback, or test-only dataset.
+4. The vertical slice must exercise existing Prism instance persistence/domain code. A separate JSON implementation created only for Native Prism does not satisfy this unit.
+5. Filesystem watchers, dispatch queues, cancellation tokens, and callbacks must stop on bridge/runtime shutdown and must not deliver stale events after reconstruction.
+6. All roots and mutations must pass the existing `com.lloydME.Prism` canonical containment contract. Never inspect or import real upstream data.
+
+Required evidence:
+
+- Production-composition source test proves `PrismNativeApp` passes its bridge/runtime to the shell and contains no `fixture.instance`, sample rows, no-op shell loader, or unconditional unavailable instance loader.
+- C++ production-adapter test creates a disposable isolated root, creates one metadata-only instance through existing domain behavior, lists it, observes its change, destroys all owners, reconstructs them, and lists the same persisted instance again.
+- Bridge integration test receives those production-adapter snapshots/events as Foundation values on the main actor and proves cancellation/shutdown suppression.
+- Swift model/command tests consume bridge-delivered rows, selection, changes, empty/error/retry states, and reconstruction without constructing fixture rows in production composition.
+- Existing Qt launcher remains buildable; the native facade/public headers remain free of QWidget/QDialog; directly relevant C++ tests, full native tests, Debug/Release builds, Bundle ID/path checks, localization/accessibility/command scans, and `git diff --check` pass.
+- Use shared incremental DerivedData/CMake roots, record starting/final sizes, and remove any justified temporary isolation output.
+- Do not launch either app or Minecraft, take screenshots, access real accounts/Keychain/upstream data, use live network, sign, install, publish, push, or remove Qt UI.
+
+Completion requirement: the default native shell is production-wired for persistent instance listing/observation and the first safe creation seam; reconstruction evidence passes; no fixture/empty/no-op default remains for this slice; `PROGRESS.md` records exact domain owners, source split, commands, results, risks, cleanup, commit, and makes only M11-W2 ready.
+
+Commit: not created.
+
+Queued sequence after M11-W1:
+
+- `M11-W2`: production global and instance settings persistence.
+- `M11-W3`: production Java discovery, validation, selection, and managed metadata.
+- `M11-W4`: production account persistence, authentication, refresh, and offline identity with fake external ports.
+- `M11-W5`: production launch/stop/task/log composition with a fake process executor.
+- `M11-W6`: production instance detail/resource/filesystem operations.
+- `M11-W7`: production creation/import/copy/export staging and archive paths.
+- `M11-W8`: production provider browse/install/recovery adapters with controlled protocol fixtures.
+- `M11-W9`: production utilities, skins, updates, URL/document routing, and supporting services.
+- `M11-W10`: production parity and retained-Qt-owner audit.
+- `M12-W1` through `M12-W3`: Qt dependency cutover, safe legacy UI retirement, and final complete-launcher acceptance.
 
 ## Completed commit index
 

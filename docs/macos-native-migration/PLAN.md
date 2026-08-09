@@ -14,7 +14,7 @@ Mutable execution ledger: `docs/macos-native-migration/PROGRESS.md`
 
 ## 1. Purpose
 
-This document is the durable command surface for migrating Prism Launcher from Qt Widgets to a macOS-only SwiftUI and AppKit frontend. It is intentionally more explicit than a normal engineering plan because it must remain usable by an agent with limited context and weaker architectural judgment.
+This document is the durable command surface for building a complete macOS-native Minecraft launcher from Prism Launcher, not merely recreating its screens. The SwiftUI and AppKit frontend is only one layer of the product. Completion requires production composition that invokes the existing Prism domain logic for persistent instances, settings, Java, accounts, authentication, launch processes, tasks, logs, resources, creation, import, export, providers, updates, and recovery through the QWidget-free facade. It is intentionally more explicit than a normal engineering plan because it must remain usable by an agent with limited context and weaker architectural judgment.
 
 The plan owns stable decisions, boundaries, phase order, verification, commit rules, and stop conditions. `PROGRESS.md` owns current state. An agent may update progress and implementation details, but must not silently weaken the constraints in this plan.
 
@@ -42,12 +42,12 @@ If the worktree contains unrelated changes, preserve them and commit only files 
 ## 3. Executable Goal
 
 ```text
-/goal Complete the PrismNative Xcode target on the macos-native branch as a feature-complete, Apple-native, macOS-only Prism Launcher frontend. Preserve the existing launcher behavior and data formats, reuse the existing C++ core through a testable QWidget-free backend facade, and expose that facade to Swift only through an Objective-C++ bridge using Foundation value types, commands, state, and events.
+/goal Complete PrismNative on the macos-native branch as a fully functional, Apple-native, macOS-only Minecraft launcher, not a UI prototype. Preserve existing Prism launcher behavior and data formats, reuse the existing C++ domain logic through production QWidget-free adapters and a testable frontend facade, and expose that facade to Swift only through an Objective-C++ bridge using Foundation value types, commands, state, and events. Every core native workflow must be connected through production composition to real launcher behavior against the isolated com.lloydME.Prism data root; fixture-only contracts and unavailable callbacks are intermediate evidence, never feature completion.
 验证：At the start of every turn read PLAN.md, PROGRESS.md, git status, and recent commit bodies. Maintain the migration inventory and evidence ledger in PROGRESS.md. Build Debug and Release configurations with xcodebuild, run PrismNativeTests, run the smallest relevant CMake build and C++ tests for backend changes, run git diff --check, and inspect the built Info.plist with plutil to prove that CFBundleIdentifier remains com.lloydME.Prism. Reuse the repository-local `.deriveddata-prism-native` directory for incremental Debug, Release, and test actions unless a documented clean-build or cache-isolation reason requires a temporary directory; remove every such temporary directory when it is no longer needed. Verify UI structure with native API inspection, ViewModel and command tests, accessibility metadata checks, menu and shortcut tests, localization checks, and Apple HIG conformance records. Never launch the application, capture screenshots, record the screen, or use visual snapshot tests as completion evidence.
 约束：Keep the bundle identifier fixed at com.lloydME.Prism. The production Application Support root must be exactly the bundle-scoped `~/Library/Application Support/com.lloydME.Prism` namespace, and every other persistent macOS namespace must use `com.lloydME.Prism`; never use the generic `Prism` or upstream `PrismLauncher` identity. Native Prism must not discover, inherit, import, fall back to, read, or write any upstream account, Java, instance, settings, cache, log, preference, saved-state, or Keychain data. Do not create a new DerivedData directory for each milestone, work unit, configuration, retry, or test selection. Prefer incremental compilation in the shared repository-local DerivedData and keep no abandoned generated build directory. Prefer Apple-provided SwiftUI and AppKit controls and behavior. Do not custom-draw a system control. Swift must not import Qt or expose C++ ownership. Objective-C++ exclusively owns C++ and Qt lifetime, threading, cancellation, and type conversion. Do not rewrite stable launcher business logic without a regression test. Do not add a third-party UI framework. Do not weaken accessibility, keyboard operation, localization, cancellation, error recovery, or data compatibility.
 边界：Write only under macos, docs/macos-native-migration, directly required launcher backend and build configuration files, and directly related tests. Do not read or modify the installed upstream application, the upstream Application Support directory, real accounts, Keychain items, production API data, signing settings, notarization state, or unrelated platform code. Keep caches, generated output, and fixture data in ignored or temporary directories. Do not push, publish, install, sign, notarize, or open a pull request without separate user authorization.
 迭代策略：Implement one work unit at a time. Each unit must have a narrow outcome, tests, documentation update, and independent commit. Reuse incremental Xcode and CMake build directories across units. A fresh isolated build is allowed only for cache corruption, architecture/toolchain incompatibility, a clean-build regression check, or a shared directory actively owned by another process; record the reason before creating it and delete the isolated output after its evidence is captured. Before every commit update PROGRESS.md with status, files, commands, results, HIG decisions, build-cache paths and cleanup, risks, and next step. Use a Conventional Commit subject and a detailed body that records behavior, architecture, exact verification, known limits, and follow-up. Never commit failing checks or stale progress. After the same failure twice, stop retrying and obtain new evidence from logs, callers, tests, official Apple documentation, or the legacy implementation. After interruption or context compaction, resume only from PLAN.md, PROGRESS.md, git status, and committed evidence.
-完成条件：Every in-scope Qt UI workflow in the migration inventory has a native implementation, a documented facade and bridge contract, automated non-launch verification, and a completed progress entry. PrismNative completes all core launcher workflows without QWidget or QDialog. Debug and Release builds pass, all native and directly relevant C++ tests pass, Bundle ID and bundle-scoped storage isolation contracts pass, and production composition has no generic `Prism`, upstream `PrismLauncher`, legacy fallback, automatic import, shared preferences, or shared Keychain path. No forbidden runtime visual verification was used, every custom-rendering exception is justified, the progress ledger contains a final commit index and remaining non-blocking limitations, and the worktree is clean.
+完成条件：Every in-scope workflow has a native implementation, documented facade and bridge contracts, a production adapter backed by existing Prism domain logic, production-composition wiring, automated non-launch verification, and a completed progress entry. Reconstructing the production runtime against a synthetic isolated root must demonstrate persistent instance/settings/account/Java state round trips without fixture defaults. Process, network, authentication, provider, archive, and filesystem adapters must be production implementations verified through injected fake executors/services and disposable roots; default production composition must not return fixture data or unavailable solely because an adapter is absent. PrismNative completes all core Minecraft launcher workflows without QWidget or QDialog. Debug and Release builds pass, all native and directly relevant C++ tests pass, Bundle ID and bundle-scoped storage isolation contracts pass, and production composition has no generic `Prism`, upstream `PrismLauncher`, legacy fallback, automatic import, shared preferences, or shared Keychain path. No forbidden runtime visual verification was used, every custom-rendering exception is justified, the progress ledger contains a final commit index and remaining non-blocking limitations, and the worktree is clean.
 暂停条件：Pause before accessing upstream user data, real accounts, Keychain, credentials, signing, notarization, publishing, pushing, or destructive operations. Pause if a workflow appears to require a third-party UI framework, substantial custom drawing, an irreversible data-format change, an authentication behavior change, or a product decision not settled by this plan. If the same blocker survives three rounds using distinct new evidence, record the blocker and exact recovery requirement in PROGRESS.md, then stop.
 ```
 
@@ -355,6 +355,18 @@ Do not reproduce a one-dialog-per-action structure without first checking whethe
 
 Every milestone is independently mergeable. If work stops after any milestone, the existing Qt application still builds and the native target remains buildable.
 
+### 8.0 Completion terminology
+
+Agents must distinguish these states for every user workflow:
+
+1. `surface complete`: the native view and state model exist and use approved Apple controls.
+2. `contract complete`: facade/bridge DTOs, commands, errors, cancellation, and fixture tests exist.
+3. `adapter complete`: a production adapter calls the existing Prism domain implementation against an explicit isolated root. External effects are injectable for tests.
+4. `composition complete`: the default `PrismNativeApp` runtime constructs that production adapter, injects it through the Objective-C++ bridge, and the native model consumes it instead of a fixture, no-op, empty default, or unavailable callback.
+5. `launcher complete`: persistence and lifecycle behavior survive runtime reconstruction; success, failure, cancellation, recovery, concurrency, and shutdown are verified; the corresponding Qt UI caller is no longer required by the macOS product.
+
+Only `launcher complete` counts toward product parity. Historical M4-M9 entries marked `complete` mean surface/contract evidence unless a later production-integration work unit explicitly proves adapter and composition completion. A view, DTO, fixture runner, mock provider, unavailable default, static scan, or successful build alone must never be reported as a completed launcher feature.
+
 ### Milestone 1: Contracts, tests, and durable inventory
 
 Outcome: the scaffold has enforceable safety contracts and a complete feature ledger.
@@ -533,25 +545,74 @@ Exit evidence:
 - Custom-rendering exception list is complete.
 - Accessibility representation exists for rendered content.
 
-### Milestone 10: Native cutover and Qt UI retirement
+### Milestone 10: Native packaging and build foundation
 
-Outcome: the shipped macOS product uses PrismNative for all in-scope workflows and no longer requires Qt Widgets UI.
+Outcome: the native target has audited parity gaps, complete bundle resources/metadata, and repeatable Debug/Release builds. This milestone prepares production integration; it does not claim launcher parity or authorize Qt removal.
 
 Work units:
 
-1. Run the final parity audit against the inventory.
-2. Move packaging, resources, versioning, icons, entitlements, and update metadata to the native product target without changing Bundle ID.
-3. Build Debug and Release from a clean derived-data path.
-4. Remove macOS dependency on QWidget and QDialog only after parity evidence exists.
-5. Delete obsolete Qt UI code only when it is macOS-only or safely excluded without harming backend reuse; otherwise leave shared upstream code intact but unused by the macOS product.
-6. Produce the final commit index and limitations report.
+1. Run the first parity audit and identify every fixture-only, unavailable, and retained-Qt production gap.
+2. Move packaging, resources, versioning, icons, entitlements, localization scaffolding, and update metadata to the native target without changing Bundle ID.
+3. Verify clean Debug and Release native builds under the bounded DerivedData policy.
 
 Exit evidence:
 
-- Final acceptance matrix is complete.
-- Native and directly related C++ tests pass.
-- Debug and Release builds pass.
+- M10-W1 parity-gap inventory is explicit and no fixture contract is mislabeled as production behavior.
+- Native resources and metadata are structurally complete for continued development.
+- Debug and Release builds and current tests pass.
 - Bundle ID and data-root contracts pass.
+- Milestone 11 has exactly one ready production-integration work unit.
+
+### Milestone 11: Production backend adapters and complete launcher composition
+
+Outcome: every core native workflow is driven by existing Prism domain behavior through production QWidget-free adapters rooted exclusively at `com.lloydME.Prism`. Default application composition contains no fixture instance, fixture dataset, no-op handler, or missing-adapter unavailable result for an in-scope core workflow.
+
+Work units must execute in this order:
+
+1. `M11-W1 Production composition foundation`: create the production runtime dependency owner; link only the required domain libraries; construct one facade from `PRApplicationIdentity`; inject the bridge into feature models; add adapter lifecycle, shutdown, error, thread, and synthetic-root reconstruction tests. Remove `fixture.instance` and empty/unavailable shell defaults from production composition. The first vertical slice must load, observe, select, create a metadata-only disposable instance record, reconstruct the runtime, and load it again from a synthetic root without `launcher/ui`.
+2. `M11-W2 Settings persistence`: connect typed global and instance settings to existing settings/domain logic. Prove defaults, validation, aliases, save/reload, restart semantics, concurrent update handling, and isolated-root reconstruction. Do not serialize settings independently in Swift.
+3. `M11-W3 Java runtime management`: connect system Java discovery, validation, selection, managed runtime metadata, and saved choice. Use injected filesystem/process executors in tests; distinguish host discovery from another launcher's saved state; never execute an uncontrolled user Java binary in automated verification.
+4. `M11-W4 Accounts and authentication`: connect account persistence, active-account selection, offline identity, Microsoft device-flow state, refresh/error recovery, and profile selection through existing auth logic. Production code may contain the real provider implementation, but automated verification uses fake HTTP/browser/Keychain ports and synthetic secrets. No credential or token enters Swift DTO descriptions, logs, fixtures, or progress docs.
+5. `M11-W5 Launch, stop, tasks, and logs`: connect launch preparation, Java/Minecraft command construction, `LaunchController`, task observation, cancellation, stop, shutdown, and bounded/redacted logs. Tests use a fake process executor and disposable instance; they must verify exact arguments/environment redaction, failure recovery, cancellation, and runtime reconstruction without starting Minecraft.
+6. `M11-W6 Instance library and detail operations`: connect instance discovery/change observation, metadata, notes, versions/components, mods/resource packs/shaders, worlds, servers, screenshots, logs, copy, delete, export, and filesystem mutations. Use disposable fixture trees that match real formats and prove persistence after reconstruction, permission errors, conflicts, archive validation, rollback, and symlink containment.
+7. `M11-W7 Creation and import`: connect vanilla creation, local/URL import, staging, archive inspection, download/copy, cancellation, rollback, and final atomic commit through existing backend tasks. Tests use fake network responses and disposable roots but execute the real staging/archive/domain adapter paths.
+8. `M11-W8 Provider discovery and installation`: connect Modrinth, CurseForge/Flame, FTB variants, ATLauncher, Technic, and custom-pack adapters, including pagination, optional/blocked files, downloads, installation, recovery, cancellation, rollback, and cache behavior. Test production adapters with recorded/synthetic protocol fixtures; do not require live network or credentials.
+9. `M11-W9 Utilities, skins, updates, and supporting services`: connect news/update metadata, shortcuts, skin persistence and authenticated actions, clipboard/file-panel results, and remaining utility commands. Privileged PATH changes, signing, publishing, and live credential use remain separate authorization boundaries, but the production adapter and fake-port verification must exist.
+10. `M11-W10 Production parity audit`: reconstruct the application runtime against a synthetic isolated root and prove every facade port is production-owned, every native model is bridge-wired, persistent values survive reconstruction, and no core path returns fixture/no-op/unavailable because composition is missing. Reconcile every retained Qt caller with a native production owner.
+
+Rules for all M11 units:
+
+- Build a thin adapter around existing Prism logic. Do not reimplement Minecraft, authentication, provider, archive, settings, or launch semantics in Swift.
+- Tests may inject fake network, browser, Keychain, clock, filesystem error, and process-execution ports, but they must instantiate the production adapter under test. A separate fixture runner that bypasses production code is insufficient.
+- Persistent workflows must be tested across destruction and reconstruction of the facade/runtime, not only through in-memory state transitions.
+- Each work unit must remove the corresponding fixture or unavailable default from `PrismNativeApp` production composition. Test-only fixtures remain in test targets.
+- If existing domain code cannot be separated from QWidget, characterize the call graph and isolate the minimum QtCore dependency. Do not move the behavior into Swift or declare the unit complete.
+- No M11 unit may access the user's real Prism Launcher data, real account, Keychain, production provider state, or launch a real Minecraft process.
+
+Exit evidence:
+
+- `PrismNativeApp` constructs a production runtime and injects every core model through the bridge.
+- A production-composition audit reports no fixture IDs, sample datasets, missing adapter callbacks, or unconditional unavailable results for core workflows.
+- All persistent workflows pass synthetic-root reconstruction tests.
+- Process/network/authentication workflows pass through production adapters with controlled fake external ports.
+- The retained Qt caller matrix assigns every core macOS workflow to a proven native production owner.
+
+### Milestone 12: Native cutover and Qt Widgets retirement
+
+Outcome: the macOS product uses the production PrismNative composition for all in-scope Minecraft launcher workflows and no longer requires Qt Widgets UI.
+
+Work units:
+
+1. `M12-W1 Cutover dependency audit`: prove M11 production parity, remove macOS native-target dependencies on QWidget/QDialog, and verify that shared QtCore/backend code retained for reuse does not instantiate UI.
+2. `M12-W2 Safe legacy UI retirement`: delete or exclude only macOS-only Qt UI sources proven unreachable by call-path and build-graph evidence; retain shared upstream sources when deletion could harm other platforms.
+3. `M12-W3 Final launcher acceptance`: reconcile the final acceptance matrix, run Debug/Release and relevant C++ tests, verify packaging/data isolation/generated-output bounds, record remaining non-blocking limitations and final commit index, and leave a clean worktree.
+
+Exit evidence:
+
+- Every final acceptance row proves launcher behavior through production composition rather than fixture-only contracts.
+- No core native workflow requires QWidget, QDialog, a fixture default, or an unavailable production callback.
+- Native and directly related C++ tests pass; Debug and Release builds pass.
+- Bundle ID, isolated persistence, packaging, localization, and generated-output contracts pass.
 - Worktree is clean.
 
 ## 9. Verification matrix
@@ -768,18 +829,21 @@ The migration is complete only when all rows are evidenced in `PROGRESS.md`:
 | Product identity | Bundle ID is `com.lloydME.Prism`; production Application Support resolves exactly to the bundle-scoped namespace; all generic/upstream aliases, fallbacks, imports, shared preferences, and shared Keychain identifiers are rejected by tests |
 | Build | Debug and Release native builds pass |
 | Native tests | All PrismNativeTests pass |
-| Backend tests | All directly relevant C++ tests pass |
-| Application shell | Native navigation, commands, search, selection, and states are covered |
-| Instances | Create, import, copy, edit, launch, stop, delete, and export contracts are covered |
-| Accounts | Account state, fake authentication, offline identity, errors, and secret handling are covered |
-| Settings | Settings panes, defaults, validation, persistence, and restart semantics are covered |
-| Resources | Mods, packs, worlds, servers, screenshots, versions, and providers are covered |
-| Tasks | Progress, cancellation, errors, retry, shutdown, and log bounds are covered |
+| Backend tests | All directly relevant C++ tests pass; production adapters are exercised with controlled external ports rather than bypassed by fixture-only runners |
+| Production composition | Every core native model is bridge-wired to one bundle-rooted production runtime; source/runtime audits find no fixture IDs, sample datasets, no-op handlers, or missing-adapter unavailable defaults |
+| Application shell | Native navigation, commands, search, selection, and states consume production instance snapshots and change events after runtime reconstruction |
+| Instances | Create, import, copy, edit, launch, stop, delete, and export execute existing Prism domain behavior against disposable isolated roots and persist across reconstruction |
+| Accounts | Account persistence, selection, fake-port-tested production authentication, refresh recovery, offline identity, errors, and secret handling pass without real credentials |
+| Settings | Global and instance settings defaults, validation, persistence, aliases, and restart semantics round-trip through production adapters across reconstruction |
+| Java | System discovery, validation, saved selection, managed metadata, errors, and reconstruction pass through production adapters with controlled process/filesystem ports |
+| Resources | Mods, packs, worlds, servers, screenshots, versions, logs, and filesystem mutations execute production adapters with disposable real-format fixtures |
+| Providers | Browse, pagination, version choice, optional/blocked files, install, cancellation, rollback, cache, and recovery execute production adapters with controlled protocol fixtures |
+| Tasks | Launch preparation, fake-executor process ownership, progress, cancellation, stop, errors, retry, shutdown, redaction, and log bounds are covered |
 | Accessibility | Labels, values, roles, keyboard commands, focus semantics, and help are covered |
 | Localization | No missing keys, fragment concatenation, or untested long strings remain |
 | HIG | Each major surface has an official API and HIG decision record |
 | Custom rendering | Only documented domain-content exceptions remain |
-| Legacy UI | No core native workflow requires QWidget or QDialog |
+| Legacy UI | No core native workflow requires QWidget or QDialog, and every retained Qt caller has a proven native production owner or an explicitly out-of-scope authorization blocker |
 | Documentation | Progress summary, limitations, evidence, and commit index are complete |
 | Repository state | Worktree is clean and no generated or user-specific files are tracked |
 
@@ -799,4 +863,4 @@ This plan assumes the existing Prism business logic can be separated from `QAppl
 
 ## 17. Next ready work unit
 
-Historical milestone ordering is temporarily overridden by the 2026-08-09 storage-isolation incident. The next agent must execute `S0-W1` from `PROGRESS.md` before resuming M9-W4, M10, or production-adapter work. It must correct production composition to use the exact bundle-scoped persistence namespace, add the required positive and negative isolation tests without reading real user data, update `PROGRESS.md`, and commit the work with detailed verification evidence before selecting another unit.
+M10-W1 through M10-W3 are complete. The next agent must execute `M11-W1 Production composition foundation` from `PROGRESS.md`. It must replace the fixture/empty default shell composition with the first bundle-rooted production vertical slice: one runtime owner, one facade, bridge injection into native state, real existing-domain instance persistence through a synthetic isolated root, change observation, lifecycle/shutdown behavior, and reconstruction proof. It must not start settings, Java, accounts, launch, providers, or Qt removal in the same work unit. Update `PROGRESS.md` and commit detailed evidence before selecting M11-W2.
