@@ -43,8 +43,7 @@ final class PrismTemporaryFixtureRoot {
     }
 
     var isOutsideUpstreamApplicationSupport: Bool {
-        let upstreamURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/PrismLauncher", isDirectory: true)
+        let upstreamURL = URL(fileURLWithPath: "/synthetic-home/Library/Application Support/PrismLauncher", isDirectory: true)
             .standardizedFileURL
         let fixturePath = url.standardizedFileURL.path
         let upstreamPath = upstreamURL.path

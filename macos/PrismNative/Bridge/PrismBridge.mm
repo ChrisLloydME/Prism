@@ -6,15 +6,152 @@
 #include <cmath>
 #include <dispatch/dispatch.h>
 #include <exception>
+#include <limits.h>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
+#include <sys/stat.h>
 #include <utility>
 #include <vector>
 
 namespace {
 NSString *const kPrismBundleIdentifier = @"com.lloydME.Prism";
 NSString *const kPrismApplicationName = @"Prism";
+
+BOOL hasParentPathComponent(NSURL *url)
+{
+    for (NSString *component in url.path.pathComponents) {
+        if ([component isEqualToString:@".."] || [component isEqualToString:@"."]) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+BOOL hasAliasPathComponent(NSURL *url)
+{
+    NSURL *currentURL = [NSURL fileURLWithPath:@"/" isDirectory:YES];
+    for (NSString *component in url.path.pathComponents) {
+        if ([component isEqualToString:@"/"]) {
+            continue;
+        }
+
+        currentURL = [currentURL URLByAppendingPathComponent:component isDirectory:YES];
+        NSNumber *isAlias = nil;
+        NSNumber *isSymbolicLink = nil;
+        BOOL hasAliasValue = [currentURL getResourceValue:&isAlias forKey:NSURLIsAliasFileKey error:nil];
+        BOOL hasSymbolicLinkValue = [currentURL getResourceValue:&isSymbolicLink
+                                                           forKey:NSURLIsSymbolicLinkKey
+                                                            error:nil];
+        if (hasAliasValue && isAlias.boolValue && (!hasSymbolicLinkValue || !isSymbolicLink.boolValue)) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+BOOL hasSymbolicLinkPathComponent(NSURL *url)
+{
+    NSURL *currentURL = [NSURL fileURLWithPath:@"/" isDirectory:YES];
+    for (NSString *component in url.path.pathComponents) {
+        if ([component isEqualToString:@"/"]) {
+            continue;
+        }
+
+        currentURL = [currentURL URLByAppendingPathComponent:component isDirectory:YES];
+        struct stat fileInfo = {};
+        if (lstat(currentURL.fileSystemRepresentation, &fileInfo) == 0 && S_ISLNK(fileInfo.st_mode)) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+NSURL *canonicalURLResolvingExistingPathComponents(NSURL *candidateURL);
+
+NSURL *canonicalDirectoryURL(NSURL *candidateURL)
+{
+    return canonicalURLResolvingExistingPathComponents(candidateURL);
+}
+
+NSURL *bundleScopedDirectoryURL(NSURL *baseURL)
+{
+    NSURL *candidateURL = [baseURL URLByAppendingPathComponent:kPrismBundleIdentifier isDirectory:YES];
+    return canonicalDirectoryURL(candidateURL);
+}
+
+NSURL *canonicalURLResolvingExistingPathComponents(NSURL *candidateURL)
+{
+    if (!candidateURL.isFileURL || candidateURL.path.length == 0 || !candidateURL.path.isAbsolutePath
+        || hasParentPathComponent(candidateURL) || hasAliasPathComponent(candidateURL)) {
+        return nil;
+    }
+
+    NSURL *standardizedURL = candidateURL.standardizedURL;
+    NSString *existingPath = standardizedURL.path;
+    NSMutableArray<NSString *> *missingComponents = [NSMutableArray array];
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    while (![fileManager fileExistsAtPath:existingPath]) {
+        if ([existingPath isEqualToString:@"/"]) {
+            return nil;
+        }
+
+        NSString *lastComponent = existingPath.lastPathComponent;
+        if (lastComponent.length == 0) {
+            return nil;
+        }
+        [missingComponents insertObject:lastComponent atIndex:0];
+        existingPath = existingPath.stringByDeletingLastPathComponent;
+    }
+
+    char resolvedPath[PATH_MAX] = {};
+    if (realpath(existingPath.fileSystemRepresentation, resolvedPath) == nullptr) {
+        return nil;
+    }
+
+    NSString *probePath = existingPath;
+    for (NSString *component in missingComponents) {
+        probePath = [probePath stringByAppendingPathComponent:component];
+        struct stat fileInfo = {};
+        if (lstat(probePath.fileSystemRepresentation, &fileInfo) == 0 && S_ISLNK(fileInfo.st_mode)) {
+            return nil;
+        }
+    }
+
+    NSURL *resolvedExistingURL = [NSURL fileURLWithFileSystemRepresentation:resolvedPath
+                                                                  isDirectory:YES
+                                                                relativeToURL:nil];
+    for (NSString *component in missingComponents) {
+        resolvedExistingURL = [resolvedExistingURL URLByAppendingPathComponent:component isDirectory:YES];
+    }
+    return resolvedExistingURL.standardizedURL;
+}
+
+BOOL canonicalURLIsContained(NSURL *rootURL, NSURL *candidateURL)
+{
+    if (hasSymbolicLinkPathComponent(rootURL) || hasSymbolicLinkPathComponent(candidateURL)) {
+        return NO;
+    }
+
+    NSURL *canonicalRootURL = canonicalURLResolvingExistingPathComponents(rootURL);
+    NSURL *canonicalCandidateURL = canonicalURLResolvingExistingPathComponents(candidateURL);
+    if (!canonicalRootURL.isFileURL || !canonicalCandidateURL.isFileURL) {
+        return NO;
+    }
+
+    NSArray<NSString *> *rootComponents = canonicalRootURL.path.pathComponents;
+    NSArray<NSString *> *candidateComponents = canonicalCandidateURL.path.pathComponents;
+    if (candidateComponents.count < rootComponents.count) {
+        return NO;
+    }
+
+    for (NSUInteger index = 0; index < rootComponents.count; index += 1) {
+        if (![candidateComponents[index] isEqualToString:rootComponents[index]]) {
+            return NO;
+        }
+    }
+    return YES;
+}
 
 class NativeFacadeLifecycle final {
 public:
@@ -3986,6 +4123,11 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @property(nonatomic, copy, readwrite) NSString *bundleIdentifier;
 @property(nonatomic, copy, readwrite) NSURL *applicationSupportDirectory;
+@property(nonatomic, copy, readwrite) NSURL *cacheDirectory;
+@property(nonatomic, copy, readwrite) NSURL *logsDirectory;
+@property(nonatomic, copy, readwrite) NSURL *savedApplicationStateDirectory;
+@property(nonatomic, copy, readwrite) NSString *preferencesSuiteName;
+@property(nonatomic, copy, readwrite) NSString *keychainServicePrefix;
 
 @end
 
@@ -4845,11 +4987,39 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 - (instancetype)initWithBundleIdentifier:(NSString *)bundleIdentifier
            applicationSupportBaseDirectory:(NSURL *)applicationSupportBaseDirectory
 {
+    if (![bundleIdentifier isEqualToString:kPrismBundleIdentifier]) {
+        return nil;
+    }
+
+    NSURL *normalizedBaseURL = canonicalDirectoryURL(applicationSupportBaseDirectory);
+    if (!normalizedBaseURL || ![normalizedBaseURL.lastPathComponent isEqualToString:@"Application Support"]) {
+        return nil;
+    }
+
+    NSURL *libraryURL = normalizedBaseURL.URLByDeletingLastPathComponent;
+    if (![libraryURL.lastPathComponent isEqualToString:@"Library"]) {
+        return nil;
+    }
+
+    NSURL *applicationSupportURL = bundleScopedDirectoryURL(normalizedBaseURL);
+    NSURL *cacheURL = bundleScopedDirectoryURL([libraryURL URLByAppendingPathComponent:@"Caches" isDirectory:YES]);
+    NSURL *logsURL = bundleScopedDirectoryURL([libraryURL URLByAppendingPathComponent:@"Logs" isDirectory:YES]);
+    NSURL *savedStateURL = bundleScopedDirectoryURL(
+        [libraryURL URLByAppendingPathComponent:@"Saved Application State" isDirectory:YES]
+    );
+    if (!applicationSupportURL || !cacheURL || !logsURL || !savedStateURL) {
+        return nil;
+    }
+
     self = [super init];
     if (self) {
-        self.bundleIdentifier = bundleIdentifier;
-        self.applicationSupportDirectory = [applicationSupportBaseDirectory URLByAppendingPathComponent:kPrismApplicationName
-                                                                                               isDirectory:YES];
+        self.bundleIdentifier = kPrismBundleIdentifier;
+        self.applicationSupportDirectory = applicationSupportURL;
+        self.cacheDirectory = cacheURL;
+        self.logsDirectory = logsURL;
+        self.savedApplicationStateDirectory = savedStateURL;
+        self.preferencesSuiteName = kPrismBundleIdentifier;
+        self.keychainServicePrefix = kPrismBundleIdentifier;
     }
     return self;
 }
@@ -4857,6 +5027,11 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 - (NSString *)applicationName
 {
     return kPrismApplicationName;
+}
+
+- (BOOL)containsURL:(NSURL *)candidateURL
+{
+    return canonicalURLIsContained(self.applicationSupportDirectory, candidateURL);
 }
 
 @end
@@ -7191,6 +7366,19 @@ resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentif
 @end
 
 @implementation PRPrismBridge
+
+- (instancetype)initWithApplicationIdentity:(PRApplicationIdentity *)identity
+                          cancellationHandler:(PRBridgeLifecycleHandler)cancellationHandler
+                             shutdownHandler:(PRBridgeLifecycleHandler)shutdownHandler
+{
+    if (!identity) {
+        return nil;
+    }
+
+    return [self initWithDataRootURL:identity.applicationSupportDirectory
+                   cancellationHandler:cancellationHandler
+                      shutdownHandler:shutdownHandler];
+}
 
 - (instancetype)initWithDataRootURL:(NSURL *)dataRootURL
                   cancellationHandler:(PRBridgeLifecycleHandler)cancellationHandler

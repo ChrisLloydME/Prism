@@ -1,7 +1,30 @@
 import SwiftUI
 
+@MainActor
+final class PrismNativeRuntime: ObservableObject {
+    let applicationIdentity: PRApplicationIdentity?
+    let bridge: PRPrismBridge?
+
+    init() {
+        guard let identity = PRApplicationIdentity(),
+              let bridge = PRPrismBridge(
+                  applicationIdentity: identity,
+                  cancellationHandler: nil,
+                  shutdownHandler: nil
+              ) else {
+            applicationIdentity = nil
+            bridge = nil
+            return
+        }
+
+        applicationIdentity = identity
+        self.bridge = bridge
+    }
+}
+
 @main
 struct PrismNativeApp: App {
+    @StateObject private var nativeRuntime = PrismNativeRuntime()
     @StateObject private var commandModel = PrismCommandModel()
     @StateObject private var taskModel = PrismTaskPresentationModel()
     @StateObject private var globalSettingsModel = PrismGlobalSettingsModel()

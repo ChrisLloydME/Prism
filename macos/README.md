@@ -3,8 +3,11 @@
 Open `PrismNative.xcodeproj` in Xcode and select the `PrismNative` scheme.
 
 The native app deliberately uses the bundle identifier `com.lloydME.Prism` and
-the application name `Prism`. Its default Application Support directory is
-therefore separate from an upstream Prism Launcher installation.
+the display name `Prism`. Display name is not a persistence key: the production
+Application Support root is exactly
+`~/Library/Application Support/com.lloydME.Prism`, with matching bundle-scoped
+cache, log, saved-state, preferences, and any later-authorized Keychain names.
+It never falls back to a generic `Prism` or upstream `PrismLauncher` path.
 
 ## Architecture boundary
 

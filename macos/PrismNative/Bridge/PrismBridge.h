@@ -13,13 +13,22 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSString *)requiredBundleIdentifier;
 + (NSString *)applicationName;
 
-- (instancetype)init;
-- (instancetype)initWithBundleIdentifier:(NSString *)bundleIdentifier
+- (nullable instancetype)init;
+- (nullable instancetype)initWithBundleIdentifier:(NSString *)bundleIdentifier
            applicationSupportBaseDirectory:(NSURL *)applicationSupportBaseDirectory NS_DESIGNATED_INITIALIZER;
 
 @property(nonatomic, copy, readonly) NSString *bundleIdentifier;
 @property(nonatomic, copy, readonly) NSString *applicationName;
 @property(nonatomic, copy, readonly) NSURL *applicationSupportDirectory;
+@property(nonatomic, copy, readonly) NSURL *cacheDirectory;
+@property(nonatomic, copy, readonly) NSURL *logsDirectory;
+@property(nonatomic, copy, readonly) NSURL *savedApplicationStateDirectory;
+@property(nonatomic, copy, readonly) NSString *preferencesSuiteName;
+@property(nonatomic, copy, readonly) NSString *keychainServicePrefix;
+
+/// Returns YES only for a canonical file URL inside the isolated application-support root.
+/// Parent components, symlink/alias escapes, and path-prefix collisions are rejected.
+- (BOOL)containsURL:(NSURL *)candidateURL;
 
 @end
 
@@ -133,8 +142,12 @@ typedef void (^PROfflineLaunchIdentityUpdateCompletionHandler)(PROfflineLaunchId
 
 - (instancetype)init NS_UNAVAILABLE;
 - (nullable instancetype)initWithDataRootURL:(NSURL *)dataRootURL
-                          cancellationHandler:(nullable PRBridgeLifecycleHandler)cancellationHandler
-                             shutdownHandler:(nullable PRBridgeLifecycleHandler)shutdownHandler;
+                             cancellationHandler:(nullable PRBridgeLifecycleHandler)cancellationHandler
+                                shutdownHandler:(nullable PRBridgeLifecycleHandler)shutdownHandler;
+
+- (nullable instancetype)initWithApplicationIdentity:(PRApplicationIdentity *)identity
+                                  cancellationHandler:(nullable PRBridgeLifecycleHandler)cancellationHandler
+                                     shutdownHandler:(nullable PRBridgeLifecycleHandler)shutdownHandler;
 
 @property(nonatomic, copy, readonly) NSURL *dataRootURL;
 @property(nonatomic, assign, readonly) PRBridgeLifecycleState lifecycleState;

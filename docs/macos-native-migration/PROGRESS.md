@@ -10,7 +10,7 @@ Current milestone: Safety remediation, storage namespace isolation
 
 Active work unit: none
 
-Next ready work unit: `S0-W1`
+Next ready work unit: none (M9-W4 remains blocked)
 
 User-reported safety incident: Native Prism Settings displayed account and Java information belonging to the user's normal Prism Launcher installation. Do not inspect the user's real Application Support data to reproduce this. The report invalidates the previous generic `Prism` data-root assumption and blocks all remaining migration/cutover work until `S0-W1` is complete.
 
@@ -22,9 +22,9 @@ Build-storage constraint added 2026-08-09: all future work must reuse `.derivedd
 | --- | --- | --- |
 | Bundle ID is `com.lloydME.Prism` | complete | Commit `6de92da18`; built Info.plist checked with `plutil` |
 | Native product name is `Prism` | complete | Commit `6de92da18`; built Info.plist checked with `plutil` |
-| Production Application Support root is exactly `~/Library/Application Support/com.lloydME.Prism` | failed, release-blocking | User observed upstream accounts and Java information in Native Prism; the previous generic `Prism` identity and non-equality test are insufficient |
-| No legacy fallback, automatic import, parent scan, shared preferences, or shared Keychain service exists | unverified, release-blocking | Must be proven by `S0-W1` production-composition tests and static scans |
-| Generated build storage is bounded and incrementally reused | policy active, cleanup inventory pending | Future units use the two shared repository-local build roots; `S0-W1` must inventory existing generated directories without deleting anything not proven task-owned and obsolete |
+| Production Application Support root is exactly `~/Library/Application Support/com.lloydME.Prism` | complete | `PRApplicationIdentity` appends only `com.lloydME.Prism`; production `PrismNativeRuntime` injects that identity into `PRPrismBridge`; synthetic exact-path and containment tests pass |
+| No legacy fallback, automatic import, parent scan, shared preferences, or shared Keychain service exists | complete for current native composition | Positive/negative identity tests, production-source assertions, and native forbidden persistence/path scans pass; no real support directory, UserDefaults suite, or Keychain service was accessed |
+| Generated build storage is bounded and incrementally reused | complete | Only `.deriveddata-prism-native` (657M) and `.deriveddata-prism-native-backend` (143M) remain; two final xcresult bundles are retained and all obsolete exact targets are deleted |
 | Native Xcode target exists | complete | Commit `5172b3a75` |
 | Objective-C++ public bridge exposes only Foundation types | complete | Commit `5172b3a75`; M1-W3 automated public-header scan and forbidden-token negative test |
 | Native tests target exists | complete | M1-W1; shared scheme and standalone `PrismNativeTests.xctest` target |
@@ -42,36 +42,61 @@ Build-storage constraint added 2026-08-09: all future work must reuse `.derivedd
 | 6. Instance detail and editing | complete | Instance management surfaces have native contracts |
 | 7. Settings, Java, and accounts | complete | Settings, fake-account workflows, offline identity, and secret-boundary evidence are covered |
 | 8. Creation, discovery, and installation | complete | All supported providers and import flows are covered |
-| Safety remediation. Storage namespace isolation | active | Production storage is bundle-scoped and every upstream/generic persistence path is rejected |
+| Safety remediation. Storage namespace isolation | complete | Production storage is bundle-scoped and every upstream/generic persistence path is rejected by the native composition contract |
 | 9. Utilities and rendering exceptions | blocked | Resume only after `S0-W1` is complete; existing M9-W4 blocker remains recorded |
 | 10. Native cutover | queued | Final acceptance matrix is complete |
 
 ## S0-W1: Enforce bundle-scoped production storage isolation
 
-Status: ready
+Status: complete
 
 Priority: release-blocking; execute before M9-W4, M10, or any production adapter work.
 
 Outcome: replace every production default or composition path derived from `Prism`, `PrismLauncher`, display name, executable name, Qt global state, environment fallback, or parent Application Support directory with the exclusive bundle-scoped root `~/Library/Application Support/com.lloydME.Prism`. Accounts, saved Java choices, instances, settings, metadata, downloads, caches, logs, preferences, saved state, and any later-authorized Keychain service must use their `com.lloydME.Prism` namespace and must not inherit upstream state.
 
+Files changed: `macos/PrismNative/Bridge/PrismBridge.h`, `macos/PrismNative/Bridge/PrismBridge.mm`, `macos/PrismNative/App/PrismNativeApp.swift`, `macos/PrismNativeTests/PrismNativeIdentityTests.swift`, `macos/PrismNativeTests/PrismNativeTestSupport.swift`, `macos/README.md`, and this progress file. No launcher backend source or build configuration changed.
+
 Required investigation: inspect production path construction and dependency composition without reading the user's actual support directories. Search CMake identity settings, `program_info`, native Swift and Objective-C++ bridge code, frontend facade construction, settings/account/Java adapters, `QStandardPaths`, `FileManager` Application Support calls, `UserDefaults` suites, environment/argument overrides, legacy migration/fallback code, symlink/alias handling, cache/log/saved-state paths, and Keychain service identifiers. Treat tests and fixture composition separately from production composition.
 
 Build-storage requirement: reuse `.deriveddata-prism-native` and `.deriveddata-prism-native-backend` incrementally. At the beginning of the unit, inventory repository-local `.deriveddata-*` and task-owned `/private/tmp/prism-*` directories with sizes. Do not delete an existing directory until its generated nature, exact path, ownership, and obsolescence are established. Before completion, remove obsolete isolated build directories safely and record what was retained, what was deleted, and final sizes. Do not create an `S0-W1`-specific DerivedData directory unless PLAN §9.1.1 permits and documents the reason.
 
-Required implementation contracts:
+Initial generated-directory inventory (2026-08-09): retained shared roots were `.deriveddata-prism-native` (413M) and `.deriveddata-prism-native-backend` (143M). Historical repository-local generated roots were `.deriveddata-m9-w1-focused` (353M), `.deriveddata-m9-w1-focused-rerun` (353M), `.deriveddata-m9-w2-focused` (631M), `.deriveddata-prism-native-m9-w1` (355M), `.deriveddata-prism-native-m9-w1-release` (355M), `.deriveddata-prism-native-m9-w2` (374M), `.deriveddata-prism-native-m9-w2-release` (374M), `.deriveddata-prism-native-m9-w3` (374M), `.deriveddata-prism-native-m9-w3-release` (374M), `.deriveddata-prism-native-m9-w4` (504M), `.deriveddata-prism-native-m9-w4-debug-serial` (251M), `.deriveddata-prism-native-m9-w4-release` (185M), `.deriveddata-prism-native-m9-w4-tasklog` (314M), `.deriveddata-prism-native-m9-w4-tasklog-2` (182M), and `.deriveddata-prism-native-release` (359M). No task-owned `/private/tmp/prism-*` directory was found at start. These paths were confirmed as obsolete generated output from prior work-unit history and were deleted only by exact path after S0-W1 evidence was captured.
 
-1. One production path resolver derives the Application Support root by appending the exact main-bundle identifier `com.lloydME.Prism` to the macOS Application Support directory.
-2. The resolved root is injected into the production facade and all persistent services; no downstream service may silently replace it or consult global legacy state.
-3. Generic `Prism`, upstream `PrismLauncher`, legacy organization/bundle aliases, parent-directory scans, automatic imports, and fallback roots are rejected.
-4. Account and saved-Java settings load only from the isolated root. System Java discovery, if enabled, must be distinguishable from saved launcher configuration and must not consult upstream metadata.
-5. Cache, preference, log, saved-state, and any Keychain identifiers use `com.lloydME.Prism`; no shared suite or service identifier is permitted.
-6. Canonical containment checks reject symlinks, aliases, `..`, prefix-collision paths, and descendants that escape the isolated or injected fixture root.
+Final generated-directory inventory (2026-08-09): retained `.deriveddata-prism-native` (657M) and `.deriveddata-prism-native-backend` (143M). Retained result bundles are `.deriveddata-prism-native/Logs/Test/Test-PrismNative-2026.08.09_14-27-14-+0800.xcresult` (final Debug full suite) and `.deriveddata-prism-native/Logs/Test/Test-PrismNative-2026.08.09_14-27-49-+0800.xcresult` (final Release full suite). Deleted exact obsolete repository targets: `.deriveddata-m9-w1-focused`, `.deriveddata-m9-w1-focused-rerun`, `.deriveddata-m9-w2-focused`, `.deriveddata-prism-native-m9-w1`, `.deriveddata-prism-native-m9-w1-release`, `.deriveddata-prism-native-m9-w2`, `.deriveddata-prism-native-m9-w2-release`, `.deriveddata-prism-native-m9-w3`, `.deriveddata-prism-native-m9-w3-release`, `.deriveddata-prism-native-m9-w4`, `.deriveddata-prism-native-m9-w4-debug-serial`, `.deriveddata-prism-native-m9-w4-release`, `.deriveddata-prism-native-m9-w4-tasklog`, `.deriveddata-prism-native-m9-w4-tasklog-2`, and `.deriveddata-prism-native-release`; deleted task-owned temporary paths `/private/tmp/prism-s0-symlink-test` and `/private/tmp/prism-swift-module-cache`; deleted five superseded exact xcresult bundles under `.deriveddata-prism-native/Logs/Test` while retaining the two final bundles above. No `/private/tmp/prism-*` directory remains.
 
-Required non-launch evidence: incremental Debug and Release builds from the shared DerivedData; full native tests; directly relevant C++ tests from the compatible shared backend build; built Info.plist Bundle ID check; unit tests using a synthetic home that assert the exact bundle-scoped paths; negative tests for `Prism`, `PrismLauncher`, upstream aliases, parent Application Support, legacy fallback, environment/argument override, shared `UserDefaults`, shared Keychain service, symlink escape, `..`, and path-prefix collision; static scans proving production account and Java composition receives only the isolated root; generated-directory inventory and final sizes; `git diff --check`. Do not launch either application and do not access the real home support directories, real accounts, Keychain, or installed Prism Launcher.
+Implemented contracts and exact corrected paths:
 
-Completion requirement: all required evidence passes, this incident entry records the exact code paths corrected and verification results, the safety baseline becomes complete, and the work is committed with the detailed PLAN commit body. Only then may M9-W4 return to blocked/active status and later migration work resume.
+1. `PRApplicationIdentity` in `macos/PrismNative/Bridge/PrismBridge.mm` validates the exact bundle ID, canonicalizes the macOS `Library/Application Support` base with an existing-prefix `realpath`, and derives only `Library/Application Support/com.lloydME.Prism`.
+2. `PrismNativeRuntime` in `macos/PrismNative/App/PrismNativeApp.swift` constructs the identity and calls `PRPrismBridge(applicationIdentity:...)`; no feature model receives a display-name, environment, argument, or global Qt root. Current feature models remain fixture-backed and therefore perform no persistent reads.
+3. Generic `Prism`, upstream `PrismLauncher`, wrong bundle aliases, parent Application Support paths, path-prefix collisions, environment/argument overrides, and automatic persistence fallbacks are rejected by synthetic tests and production-source scans.
+4. The identity exposes only its isolated application-support root to the bridge plus bundle-scoped cache, logs, and saved-state URLs. No live account or saved-Java adapter was introduced; future adapters must consume this identity rather than discover a root.
+5. `cacheDirectory`, `logsDirectory`, `savedApplicationStateDirectory`, `preferencesSuiteName`, and `keychainServicePrefix` all use `com.lloydME.Prism`; production source contains no shared UserDefaults or Keychain service path.
+6. Containment rejects non-file/relative URLs, raw `.`/`..`, alias components, symbolic-link components, symlink escapes through non-existent descendants, and path-prefix collisions using component-wise canonical comparison.
 
-Commit: not created.
+Required non-launch evidence completed:
+
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build` — passed.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build` — passed.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test` — passed; full native suite 168/168, 0 failures, 0 skipped.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test` — passed; full native suite 168/168, 0 failures, 0 skipped.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test -only-testing:PrismNativeTests/PrismNativeIdentityTests -only-testing:PrismNativeTests/PrismNativeInfrastructureTests` — passed; 16/16.
+- `plutil -extract CFBundleIdentifier raw -o - .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` and the corresponding Release path — both returned `com.lloydME.Prism`.
+- `clang -fsyntax-only -x objective-c -fobjc-arc -target arm64-apple-macos14.0 -I macos/PrismNative/Bridge macos/PrismNative/Bridge/PrismBridge.h` — passed; `clang++ -fsyntax-only -x objective-c++ -std=c++20 -fobjc-arc -fblocks -target arm64-apple-macos14.0 -I launcher/frontend -I macos/PrismNative/Bridge macos/PrismNative/Bridge/PrismBridge.mm` — passed.
+- `cmake --build .deriveddata-prism-native-backend --target Launcher_frontend_contract_test Launcher_frontend_public_header_test -j2` — passed; `ctest --test-dir .deriveddata-prism-native-backend --output-on-failure -R 'FrontendFacadeContract|FrontendFacadePublicHeaders'` — passed; 2/2.
+- Static production scan for `PrismLauncher`, generic `Application Support/Prism`, `UserDefaults`, environment/argument overrides, `QStandardPaths`, and the legacy path constructor — clean. Swift Qt/C++ ownership scan — clean. Native tests also passed accessibility, command/shortcut, localization, cancellation, recovery, and no-custom-control contracts.
+- `git diff --check` — passed. No application launch, screenshot, recording, visual snapshot, upstream support-directory access, account, Keychain, credential, signing, installation, publishing, or production-data access occurred.
+
+Result summary: the incident-causing display-name-derived root was replaced with an exact bundle-scoped identity and bridge constructor. The first focused run exposed a Swift importer rename; xcresult inspection corrected the test call. Subsequent evidence exposed Foundation's inability to resolve a symlink before a non-existent leaf; the bridge now canonicalizes the deepest existing prefix and rejects symbolic-link components for containment. A system `/var` false positive was then resolved by using `realpath` for identity construction while keeping strict containment rejection. Final focused, Debug, Release, C++ facade, syntax, static, Bundle ID, and diff checks pass.
+
+HIG decision: no new UI control or rendering was added. Foundation `NSFileManager`/URL identity and the existing SwiftUI composition root are used; no custom control, third-party UI framework, visual verification, or HIG exception is required.
+
+Risks and remaining non-blocking limits: native feature models are still fixture-backed and no live account/Java/persistence adapter is claimed by this safety unit. The legacy Qt `Application.cpp` retains its upstream `QStandardPaths`/argument/environment behavior for the installed upstream target, but native production composition does not call it; future adapters must remain behind `PRApplicationIdentity` and the QWidget-free facade. M9-W4 remains blocked and no work unit is ready.
+
+Completion requirement: all required S0-W1 evidence passes, the safety baseline is complete, exact generated-output cleanup is recorded, and this unit is committed with the detailed PLAN commit body. Only then may M9-W4 return to blocked/active status; it remains blocked and was not activated in this unit.
+
+Commit: pending; final hash will be added by the immediate progress-ledger finalization commit.
+
+Next after completion: M9-W4 remains blocked; no ready work unit exists. Do not activate another unit in the same turn.
 
 ## Legacy feature inventory (M1-W2)
 
@@ -2196,6 +2221,7 @@ Next after recovery: rerun PLAN §9 Debug and Release builds, full native tests,
 | `7515679e4` | Added native skin management and SceneKit domain-content preview with typed Foundation request/result values, standard system controls, cancellation/recovery contracts, bounded image caching, Minecraft UV geometry, and non-launch fixture evidence | Focused skin XCTest 7/7; full Debug/Release XCTest 163/163; Debug/Release builds; Bundle ID `com.lloydME.Prism`; universal `x86_64 arm64` native products; Objective-C/Objective-C++ syntax; accessibility/localization/keyboard/boundary/no-drawing/UV/cache scans; `git diff --check` |
 | `7b2b16f56` | Completed M9-W3 source-backed retained-surface audit, explicit blocker/owner matrix, and M9-W4 rendering-candidate inventory without changing production composition | Legacy caller/class/rendering inventory; native-target forbidden legacy scan; Debug/Release builds and `PrismNativeTests` 163/163; Bundle ID `com.lloydME.Prism`; universal `x86_64 arm64` artifacts; Objective-C/Objective-C++ syntax; accessibility/keyboard/localization/boundary/no-drawing scans; `git diff --check` |
 | `818b18a1b` | Added the bounded native authentication QR content path, E2 exception record, R1-R4 disposition, and safe-state blocker evidence; M9-W4 is not complete | Debug build; direct M9-W4 XCTest 2/2; Debug Bundle ID `com.lloydME.Prism`; universal Debug app; Objective-C/Objective-C++ syntax; native boundary/content scans; full Debug 164/165 with the existing task-log failure; Release/Xcode worker recovery required; `git diff --check` |
+| pending | S0-W1 bundle-scoped production storage isolation, exact bridge identity composition, containment guards, and bounded generated-build cleanup | Focused native tests 16/16; full Debug/Release XCTest 168/168; Debug/Release builds; C++ facade/public-header CTest 2/2; Bundle ID `com.lloydME.Prism`; Objective-C/Objective-C++ syntax; persistence/path and Swift boundary scans; final storage inventory; `git diff --check` |
 
 ## Current architecture findings
 
