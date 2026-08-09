@@ -2273,7 +2273,7 @@ HIG decision: none; this unit only verifies Apple target packaging and test exec
 
 Architecture and risk: clean-path evidence covers target compilation, test execution, bundle metadata, resource copying, and architecture, but does not resolve the M10-W1 fixture/unavailable production composition, live adapter, localization resource, updater-runtime, URL/document routing, or retained Qt caller gaps. M10-W4 cannot become ready until those explicit M10-W1 parity prerequisites are resolved.
 
-Commit: verification-only commit to be recorded in the immediate ledger-finalization commit.
+Commit: `bf4ddec93`; this entry is finalized in the immediate ledger-finalization commit.
 
 Prerequisite: M10-W2 complete. Next after completion: none currently eligible; M10-W4 remains queued behind the M10-W1 parity prerequisites and this clean-build evidence.
 
@@ -2365,6 +2365,7 @@ Prerequisite: M10-W5 complete. Next after completion: none; only then can the mi
 | `e876565c5` | Finalized M9-W4 R1-R4 rendering disposition and E2 QR exception acceptance after the former Xcode/task-log blocker resolved | Shared-path M9-W4 focused XCTest 2/2; full Debug/Release XCTest 168/168; Debug/Release builds; Bundle ID `com.lloydME.Prism`; no-screenshot/non-launch rendering and accessibility evidence; `git diff --check` |
 | `a6c1d5614` | Recorded the M10-W1 final parity audit, mixed acceptance status, explicit cutover prerequisites, and the sole next ready M10-W2 unit | Shared facade CMake/CTest 5/5; shared Debug/Release builds; full native XCTest 168/168 in both configurations; Bundle ID `com.lloydME.Prism`; ObjC/ObjC++ syntax; composition/retained-caller/localization/persistence scans; storage inventory; `git diff --check` |
 | `b359becb1` | Migrated the native macOS bundle metadata, version, icon, entitlements, document/URL declarations, and static update metadata into PrismNative | Shared-path Debug/Release builds; focused packaging XCTest 1/1; full Debug/Release XCTest 169/169; Bundle ID/version/icon/entitlement/plist checks; no-signing/no-launch evidence; storage inventory; `git diff --check` |
+| `bf4ddec93` | Proved clean isolated Debug/Release builds and full native tests for the finalized target, then removed the temporary DerivedData tree | `/private/tmp/prism-m10-w3-clean` Debug/Release builds; clean Debug/Release XCTest 169/169; Bundle ID/version/icon/universal-architecture checks; exact temporary cleanup; `git diff --check` |
 
 ## Current architecture findings
 
