@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: 11. Production backend adapters and complete launcher composition
 
-Active work unit: M11-W7 Creation and import
+Active work unit: none (M11-W7 complete; activate M11-W8 next)
 
-Next ready work unit: none (M11-W7 active; M11-W8 remains queued)
+Next ready work unit: M11-W8 Provider discovery and installation
 
 Goal correction added 2026-08-09: this project must deliver a complete Minecraft launcher, not only native surfaces and fixture contracts. Historical M4-M9 `complete` labels mean surface/contract completion unless a later M11 unit proves production adapter and default-composition wiring. M10-W1 identified this gap; M10-W2 packaging and M10-W3 clean builds are complete infrastructure, not launcher parity. Qt retirement is moved to M12 and is forbidden until M11-W10 proves production parity.
 
@@ -2337,7 +2337,7 @@ Risks and limits: this unit proves only the instance-library persistence/observa
 
 Commit: `b2cb8b3b8` (implementation); this entry is finalized in the immediate progress-ledger commit.
 
-M11-W2 followed this work unit and is now complete; the M11 sequence continues with M11-W7 after M11-W6.
+M11-W2 followed this work unit and is now complete.
 
 ### M11-W2: Production global and instance settings persistence
 
@@ -2494,17 +2494,39 @@ Risks and limits: the copy adapter intentionally rejects advanced link/clone pol
 
 Commit: `ab6352cb0` (implementation); this entry is finalized in the following progress-ledger commit.
 
-M11-W7 is now active; M11-W8 remains queued until this unit is complete.
+M11-W7 followed this work unit and is now complete; M11-W8 is now ready.
 
 ### M11-W7: Creation and import
 
-Status: active
+Status: complete
 
 Prerequisite: M11-W6 is complete. Connect vanilla creation, local/URL import, staging, archive inspection, download/copy, cancellation, rollback, and final atomic commit through existing backend tasks. Tests must use fake network responses and disposable roots while exercising the real staging, archive, and domain adapter paths.
 
-Outcome: in progress. The production creation/import adapter and default native composition are being connected against isolated synthetic roots; no live network, upstream data, account, Keychain, credential, or Minecraft process is in scope.
+Outcome: completed the production creation/import vertical slice against disposable, bundle-scoped synthetic roots. The default native composition now presents creation and import through production-backed models and routes New Instance and Import commands to the bridge. Vanilla creation writes a valid Prism `instance.cfg`, `mmc-pack.json`, Minecraft patch, and game-directory staging tree before an atomic commit. Local and HTTP(S) imports use the production archive reader, exact-root detection, archive limits, safe extraction, metadata normalization, collision-safe destinations, cancellation, rollback, and confirmed readback. No live network, upstream data, account, Keychain, credential, or Minecraft process was used.
 
-Next ready work unit: none while M11-W7 is active.
+Files changed: `launcher/frontend/ProductionInstanceAcquisitionRuntime.h`, `ProductionInstanceAcquisitionRuntime.cpp`, and `FrontendFacadeProductionInstanceAcquisitionTest.cpp`; `launcher/frontend/CMakeLists.txt`, `FrontendFacade.h`, and `ProductionInstanceRuntime.cpp`; `macos/PrismNative/App/ContentView.swift`, `PrismShellModel.swift`, `PrismVanillaCreation.swift`, and `Bridge/PrismBridge.h`; and the related `PrismCommandTests.swift`, `PrismInstanceImportTests.swift`, `PrismShellTests.swift`, and `PrismVanillaCreationTests.swift`.
+
+Architecture and safety: `ProductionInstanceAcquisitionRuntime` is a QWidget-free owner of the explicit absolute Native Prism data root. It reuses Prism's existing QtCore `INIFile`, `ArchiveReader`, `ArchiveWriter`, `OneSixVersionFormat`, and `VersionFile` semantics, keeps all writes in `<root>/instances/.prism-native-staging`, uses `QSaveFile` for staged files, and performs the final same-filesystem directory rename. The remote effect is a byte-only download handler; tests inject a fake response for a synthetic `.invalid` URL. Archive paths reject absolute, traversal, backslash, duplicate, link-like, oversized, and multi-root input. Local sources must be absolute regular non-symlink files, and no source path is copied into the destination outside the staging/commit boundary. `ProductionInstanceRuntime` owns the adapter lifetime in the default facade composition; Objective-C++ owns the facade, Foundation conversion, callback lifetime, and bridge cancellation token, while Swift owns only typed DTO presentation and main-actor generation state.
+
+Legacy ownership characterization: `VanillaInstanceCreationTask` calls `MinecraftInstance`, `PackProfile`, `InstanceTask`, `Application`, `QApplication`, and network update tasks; `InstanceImportTask` calls `InstanceTask`, `Application`, `QWidget`, `NetJob`, provider processors, and extraction tasks. Those call graphs cannot be pulled into the native target without importing QWidget/application ownership. This unit therefore isolates the minimum reusable QtCore archive, INI, and version-format behavior behind the facade and keeps task orchestration, staging, and external effects in the production adapter; no behavior was moved into Swift and no legacy QWidget caller was copied into the app target.
+
+HIG/API decision: use SwiftUI `Form`, `Picker`, `TextField`, `ProgressView`, `ContentUnavailableView`, `.sheet`, standard `Button` roles, system `NSOpenPanel` selection already owned by the import model, accessibility identifiers/values, and the existing command keyboard shortcuts. Empty production version/loader option arrays show typed metadata fields instead of fixture values. No system control or window chrome is custom-drawn and no third-party UI framework or rendering exception was added. The decisions follow Apple's [Form](https://developer.apple.com/documentation/swiftui/form), [ProgressView](https://developer.apple.com/documentation/swiftui/progressview), [sheet](https://developer.apple.com/documentation/swiftui/view/sheet(item:ondismiss:content:)), [accessibility](https://developer.apple.com/documentation/swiftui/accessibility), and [macOS menus](https://developer.apple.com/design/human-interface-guidelines/menus) guidance.
+
+Verification:
+
+- `cmake -S launcher/frontend -B .deriveddata-prism-native-backend -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0` — passed; `cmake --build .deriveddata-prism-native-backend --parallel 2` — passed; `ctest --test-dir .deriveddata-prism-native-backend --output-on-failure` — passed, 12/12. The shared CMake configuration emitted the non-fatal `LibArchive_INCLUDE_DIR` discovery diagnostic, but the existing ArchiveReader/ArchiveWriter sources and all 12 executables compiled and ran successfully.
+- The same shared backend directory was reconfigured with `-DCMAKE_BUILD_TYPE=Release`, built with `cmake --build .deriveddata-prism-native-backend --parallel 2`, and tested with the same full CTest command — passed, 12/12. The focused selection `ctest --test-dir .deriveddata-prism-native-backend -R 'FrontendFacadeProductionInstance(Acquisition)?' --output-on-failure` — passed, 3/3, including the production instance, acquisition, and detail adapters. The acquisition test uses a fake URL byte response, a local rootless archive, an invalid archive, cancellation, disposable roots, real archive/INI/version-format paths, atomic commit, and facade destruction/reconstruction.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build` — passed; the corresponding full `test` command — passed, 183/183, 0 failed, 0 skipped, result bundle `Test-PrismNative-2026.08.09_23-07-55-+0800.xcresult`. The Release build and full `test` commands with the same shared DerivedData path — passed, 183/183, 0 failed, 0 skipped, result bundle `Test-PrismNative-2026.08.09_23-08-11-+0800.xcresult`. The full suite includes the creation/import ViewModel, bridge, command, menu/shortcut, accessibility, localization-key, cancellation, retry, recovery, and no-drawing checks.
+- Two earlier sandbox-only Debug build attempts terminated with exit 143 before compilation while CoreSimulator diagnostics were inaccessible. The failure was investigated against the existing W6 logs and call path; the same shared-path command was then run with approved Xcode diagnostic access and passed for both configurations and test actions. This did not create a new DerivedData directory or change source behavior.
+- `plutil -lint macos/PrismNative/Resources/Info.plist macos/PrismNative/Resources/PrismNative.entitlements` — both OK. `plutil -extract CFBundleIdentifier raw .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` and the Release product — both returned `com.lloydME.Prism`. Static scans found no new QWidget/QDialog or Qt/C++ ownership exposure in Swift, no native creation/import custom drawing, and no fixture versions/loaders in `ContentView` production composition. `git diff --check` and the staged pre-commit diff check passed. No application, Minecraft process, screenshot, recording, visual snapshot, signing, installation, publishing, push, provider service, upstream data, account, Keychain, or credential access occurred.
+
+Build storage and cleanup: the W7 start snapshot was `.deriveddata-prism-native` 659M, `.deriveddata-prism-native-backend` 132M, and the pre-existing `build-native` cache 2.3G. Final retained sizes are `.deriveddata-prism-native` 653M, `.deriveddata-prism-native-backend` 136M, and `build-native` 2.3G. The only retained Xcode result bundles are the two named above; no task-owned `/private/tmp/prism-*` directory remains, and all acquisition test roots self-cleaned. No per-unit DerivedData or CMake tree was created, and no shared cache was deleted.
+
+Risks and limits: the legacy vanilla task's optional game-file update chain remains coupled to `MinecraftInstance`/`Application`/`NetJob`; this adapter commits valid Prism metadata and tree structure but does not yet download Minecraft version artifacts through that QWidget-bound chain. Live HTTP is intentionally untested, and provider-specific pack installation remains M11-W8. This is an explicit residual adapter limit for the later M11 parity audit, not a Swift reimplementation or a license to remove the retained Qt caller. The next ready work unit is M11-W8 Provider discovery and installation.
+
+Commit: `d100e6e48` (implementation); this entry is finalized in the following progress-ledger commit.
+
+Next ready work unit: M11-W8 Provider discovery and installation.
 
 ## Completed commit index
 
@@ -2577,6 +2599,7 @@ Next ready work unit: none while M11-W7 is active.
 | `be147cdb9` | Connected bundle-rooted account persistence, active selection, offline identity, provider-authentication ports, refresh recovery, profile persistence, bridge wiring, and native account Settings state | Shared arm64 CMake/CTest 9/9 in Debug and Release; shared unsigned Debug/Release builds and full XCTest 174/174 in both configurations; Bundle ID `com.lloydME.Prism`; synthetic account reconstruction, fake HTTP/browser/credential-store recovery, accessibility/localization/command/boundary scans; `git diff --check` |
 | `5146ca0fa` | Connected production launch preparation, Java/Minecraft command construction, fake-process task ownership, cancellation/stop/shutdown, bounded redacted logs, and runtime reconstruction; activated M11-W6 as the sole ready unit | Shared arm64 CMake/CTest 10/10; shared unsigned Debug/Release builds; native Debug/Release XCTest 175/175; exact launch-argument/environment/input and fake-process recovery tests; Bundle ID `com.lloydME.Prism`; Qt/launch.cfg/boundary/accessibility/localization scans; temporary-cache cleanup; `git diff --check` |
 | `ab6352cb0` | Connected the production instance detail runtime, real-format library mutations, copy/export, isolated recovery-backed deletion, facade ports, Objective-C++ conversion, and native SwiftUI composition; completed M11-W6 | Shared arm64 CMake/CTest 11/11 in Debug and Release; focused real-format instance-detail C++ test; shared unsigned Debug/Release builds; native Debug/Release XCTest 178/178; Bundle ID `com.lloydME.Prism`; path/symlink/archive/rollback, accessibility/localization/command/boundary/no-drawing scans; `git diff --check` |
+| `d100e6e48` | Connected production vanilla creation and local/URL import, isolated staging/archive inspection, fake-download/cancellation/rollback/atomic commit paths, production composition, and native form/command wiring; completed M11-W7 | Shared arm64 CMake Debug/Release CTest 12/12; focused acquisition selection 3/3; shared unsigned Debug/Release builds; native Debug/Release XCTest 183/183; Bundle ID `com.lloydME.Prism`; archive/path/rollback/reconstruction, accessibility/localization/keyboard/boundary/no-drawing scans; shared cache inventory; `git diff --check` |
 
 ## Current architecture findings
 
@@ -2686,4 +2709,4 @@ No blocker authorizes upstream data, credentials, Keychain, live service, signin
 
 ## Resume instructions
 
-Read PLAN.md and PROGRESS.md, run `git status --short --branch -uall`, inspect the last five commits, then activate only a work unit whose predecessor is satisfied. M10-W2 and M10-W3 are complete: the native-owned bundle contract and the isolated clean Debug/Release 169/169 evidence are recorded above. No later work unit is currently ready because M10-W4 explicitly requires the unresolved M10-W1 production-composition, adapter, localization, and retained-caller parity prerequisites; do not activate it early or invent a completion claim. Resume when those prerequisites have a separately recorded, fixture-safe work unit and then re-audit the queue. Preserve all existing fixture-root, Bundle ID, no-launch, no-secrets, Objective-C++ boundary, and no-signing constraints. Do not reopen completed M6, M7, M8-W1/M8-W2/M8-W3/M8-W4/M8-W5/M8-W6/M8-W7/M9-W1/M9-W2/M9-W3, S0-W1, or M10-W1/M10-W2/M10-W3 evidence.
+Read PLAN.md and PROGRESS.md, run `git status --short --branch -uall`, inspect the last five commits, then activate only M11-W8 because M11-W7 is complete and its predecessor is satisfied. Preserve the bundle-scoped `com.lloydME.Prism` root, no-launch/no-screenshot/no-secrets rules, Objective-C++ boundary, shared DerivedData paths, and no-signing constraints. M11-W8 must connect provider discovery and installation through production adapters with synthetic protocol fixtures, controlled download ports, cancellation, rollback, optional/blocked-file decisions, and cache evidence; do not use live provider services or credentials. The residual vanilla artifact-download limit is recorded in M11-W7 and must be reconciled by M11-W10 or a separately approved follow-up before final acceptance. Do not reopen completed M6, M7, M8-W1/M8-W2/M8-W3/M8-W4/M8-W5/M8-W6/M8-W7, M9-W1/M9-W2/M9-W3, S0-W1, M10-W1/M10-W2/M10-W3, or M11-W1 through M11-W7 evidence.
