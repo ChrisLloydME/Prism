@@ -3,15 +3,17 @@ cmake_minimum_required(VERSION 3.25)
 project(Launcher_frontend LANGUAGES CXX)
 include(CTest)
 
-find_package(Qt6 REQUIRED COMPONENTS Core)
+find_package(Qt6 REQUIRED COMPONENTS Core Network)
 
-# The native frontend boundary uses only QtCore persistence primitives. Qt
-# Widgets, QDialog, QApplication, and launcher/ui remain outside this target.
+# The native frontend boundary uses only QtCore/QtNetwork persistence and
+# transport primitives. Qt Widgets, QDialog, QApplication, and launcher/ui
+# remain outside this target.
 set(LAUNCHER_FRONTEND_PUBLIC_HEADERS
     FrontendFacade.h
     ProductionInstanceRuntime.h
     ProductionSettingsRuntime.h
     ProductionJavaRuntime.h
+    ProductionAccountRuntime.h
 )
 
 add_library(Launcher_frontend STATIC
@@ -19,6 +21,8 @@ add_library(Launcher_frontend STATIC
     ProductionInstanceRuntime.cpp
     ProductionSettingsRuntime.cpp
     ProductionJavaRuntime.cpp
+    ProductionAccountRuntime.cpp
+    ../minecraft/auth/AccountData.cpp
     ../HardwareInfo.cpp
     ../SysInfo.cpp
     ../StringUtils.cpp
@@ -35,7 +39,7 @@ target_include_directories(Launcher_frontend
 
 target_compile_features(Launcher_frontend PRIVATE cxx_std_20)
 target_include_directories(Launcher_frontend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
-target_link_libraries(Launcher_frontend PUBLIC Qt6::Core)
+target_link_libraries(Launcher_frontend PUBLIC Qt6::Core Qt6::Network)
 
 if(BUILD_TESTING)
     add_executable(Launcher_frontend_contract_test
@@ -95,4 +99,12 @@ if(BUILD_TESTING)
     target_include_directories(Launcher_frontend_production_java_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
     target_link_libraries(Launcher_frontend_production_java_test PRIVATE Launcher_frontend)
     add_test(NAME FrontendFacadeProductionJava COMMAND Launcher_frontend_production_java_test)
+
+    add_executable(Launcher_frontend_production_account_test
+        FrontendFacadeProductionAccountTest.cpp
+    )
+    target_compile_features(Launcher_frontend_production_account_test PRIVATE cxx_std_20)
+    target_include_directories(Launcher_frontend_production_account_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+    target_link_libraries(Launcher_frontend_production_account_test PRIVATE Launcher_frontend)
+    add_test(NAME FrontendFacadeProductionAccount COMMAND Launcher_frontend_production_account_test)
 endif()

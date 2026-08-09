@@ -24,6 +24,15 @@ enum PrismAccountAuthenticationAction: Int, Equatable, Sendable {
             return "Refresh Sign-In"
         }
     }
+
+    var bridgeValue: PRAccountAuthenticationAction {
+        switch self {
+        case .login:
+            return .login
+        case .refresh:
+            return .refresh
+        }
+    }
 }
 
 enum PrismAccountAuthenticationPhase: Int, Equatable, Sendable {
@@ -132,15 +141,19 @@ final class PrismAccountAuthenticationModel: ObservableObject {
 
     private let onAuthenticate: ((String, PrismAccountAuthenticationAction, Int) -> Void)?
     private let onCancel: (() -> Void)?
+    private let bridge: PRPrismBridge?
+    private var authenticationToken: PRBridgeObservationToken?
     private var generation = 0
     private var lastRequest: (accountIdentifier: String, action: PrismAccountAuthenticationAction)?
 
     init(
+        bridge: PRPrismBridge? = nil,
         onAuthenticate: ((String, PrismAccountAuthenticationAction, Int) -> Void)? = nil,
         onCancel: (() -> Void)? = nil
     ) {
         self.onAuthenticate = onAuthenticate
         self.onCancel = onCancel
+        self.bridge = bridge
     }
 
     var isRunning: Bool {
@@ -196,6 +209,36 @@ final class PrismAccountAuthenticationModel: ObservableObject {
         let activeGeneration = generation
         lastRequest = (normalizedIdentifier, action)
         state = .starting(generation: activeGeneration, accountIdentifier: normalizedIdentifier, action: action)
+        if let bridge {
+            authenticationToken?.cancel()
+            authenticationToken = bridge.authenticateAccount(
+                withIdentifier: normalizedIdentifier,
+                action: action.bridgeValue,
+                progress: { [weak self] progress in
+                    _ = self?.apply(progress: progress, generation: activeGeneration)
+                },
+                completion: { [weak self] result, error in
+                    self?.authenticationToken = nil
+                    if let result {
+                        _ = self?.apply(result: result, generation: activeGeneration)
+                    } else if let error {
+                        _ = self?.apply(error: error, generation: activeGeneration)
+                    }
+                }
+            )
+            if authenticationToken == nil {
+                state = .failed(
+                    Self.failure(
+                        key: "accounts.authentication.unavailable",
+                        diagnostic: nil,
+                        retryable: true
+                    )
+                )
+                return false
+            }
+            return true
+        }
+
         guard let onAuthenticate else {
             state = .failed(
                 Self.failure(
@@ -297,6 +340,8 @@ final class PrismAccountAuthenticationModel: ObservableObject {
             return false
         }
         generation += 1
+        authenticationToken?.cancel()
+        authenticationToken = nil
         onCancel?()
         state = .cancelled
         return true
@@ -312,6 +357,8 @@ final class PrismAccountAuthenticationModel: ObservableObject {
 
     func reset() {
         generation += 1
+        authenticationToken?.cancel()
+        authenticationToken = nil
         state = .idle
     }
 

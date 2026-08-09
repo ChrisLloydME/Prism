@@ -209,13 +209,34 @@ final class PrismNativeInfrastructureTests: XCTestCase {
             .deletingLastPathComponent()
         let appSource = try readSource(at: macosRoot.appendingPathComponent("PrismNative/App/PrismNativeApp.swift"))
         let contentSource = try readSource(at: macosRoot.appendingPathComponent("PrismNative/App/ContentView.swift"))
+        let repositoryRoot = macosRoot.deletingLastPathComponent()
+        let accountRuntimeSource = try readSource(
+            at: repositoryRoot.appendingPathComponent("launcher/frontend/ProductionAccountRuntime.cpp")
+        )
+        let accountRuntimeHeader = try readSource(
+            at: repositoryRoot.appendingPathComponent("launcher/frontend/ProductionAccountRuntime.h")
+        )
 
         XCTAssertTrue(appSource.contains("PrismGlobalSettingsModel(initialSettings: nil, bridge: runtime.bridge)"))
         XCTAssertFalse(appSource.contains("@StateObject private var globalSettingsModel = PrismGlobalSettingsModel()"))
         XCTAssertTrue(appSource.contains("PrismJavaDiscoveryModel(initialInstallations: [], bridge: runtime.bridge)"))
         XCTAssertFalse(appSource.contains("@StateObject private var javaDiscoveryModel = PrismJavaDiscoveryModel()"))
+        XCTAssertTrue(appSource.contains("PrismAccountModel(initialAccounts: [], activeAccountID: nil, bridge: runtime.bridge)"))
+        XCTAssertFalse(appSource.contains("@StateObject private var accountModel = PrismAccountModel()"))
+        XCTAssertTrue(appSource.contains("PrismAccountAuthenticationModel(bridge: runtime.bridge)"))
+        XCTAssertFalse(appSource.contains("@StateObject private var authenticationModel = PrismAccountAuthenticationModel()"))
+        XCTAssertTrue(appSource.contains("PrismOfflineLaunchIdentityModel(bridge: runtime.bridge)"))
+        XCTAssertFalse(appSource.contains("@StateObject private var offlineIdentityModel = PrismOfflineLaunchIdentityModel()"))
         XCTAssertTrue(contentSource.contains("PrismInstanceSettingsModel(bridge: bridge)"))
         XCTAssertTrue(contentSource.contains("loadIfNeeded(identifier: details.id)"))
+        XCTAssertTrue(accountRuntimeSource.contains("AccountData"))
+        XCTAssertTrue(accountRuntimeSource.contains("accounts.json"))
+        XCTAssertTrue(accountRuntimeSource.contains("LastOfflinePlayerName"))
+        XCTAssertTrue(accountRuntimeHeader.contains("KeychainPort"))
+        XCTAssertTrue(accountRuntimeHeader.contains("BrowserExecutor"))
+        XCTAssertFalse(accountRuntimeSource.contains("#include <QWidget>"))
+        XCTAssertFalse(accountRuntimeSource.contains("#include <QDialog>"))
+        XCTAssertFalse(accountRuntimeSource.contains("Application.h"))
     }
 
     func testProductionBridgeLoadsBundleScopedGlobalAndInstanceSettings() throws {

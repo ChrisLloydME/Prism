@@ -2374,7 +2374,11 @@ final class PrismShellTests: XCTestCase {
             "ProgressView(",
             "ContentUnavailableView",
             "accessibilityIdentifier(\"prism.settings.accounts",
-            "PrismAccount.fixture()"
+            "PrismAccount.fixture()",
+            "bridge.loadAccountSnapshots",
+            "bridge.selectActiveAccount",
+            "discoveryToken",
+            "selectionToken"
         ] {
             XCTAssertTrue(accountSource.contains(requiredToken), "Missing Account Settings contract: \(requiredToken)")
         }
@@ -2395,7 +2399,9 @@ final class PrismShellTests: XCTestCase {
             "retry()",
             "generation",
             "PRAccountAuthenticationProgress",
-            "PRAccountAuthenticationResult"
+            "PRAccountAuthenticationResult",
+            "bridge.authenticateAccount",
+            "authenticationToken"
         ] {
             XCTAssertTrue(authenticationSource.contains(requiredToken), "Missing Authentication contract: \(requiredToken)")
         }
@@ -2958,7 +2964,11 @@ final class PrismShellTests: XCTestCase {
             "apply(updateResult:",
             "func cancel()",
             "func retry()",
-            "allowInvalidNames"
+            "allowInvalidNames",
+            "bridge.loadOfflineLaunchIdentity",
+            "bridge.updateOfflineLaunchIdentity",
+            "loadToken",
+            "saveToken"
         ] {
             XCTAssertTrue(identitySource.contains(requiredToken), "Missing offline identity state contract: \(requiredToken)")
         }

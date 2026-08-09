@@ -24,6 +24,7 @@ enum PrismAccountType: Int, Equatable, Sendable {
             return "Offline"
         }
     }
+
 }
 
 enum PrismAccountState: Int, Equatable, Sendable {
@@ -226,11 +227,15 @@ final class PrismAccountModel: ObservableObject {
     private let onDiscover: ((Int) -> Void)?
     private let onSelect: ((String?, Int) -> Void)?
     private let onCancel: (() -> Void)?
+    private let bridge: PRPrismBridge?
+    private var discoveryToken: PRBridgeObservationToken?
+    private var selectionToken: PRBridgeObservationToken?
     private var generation = 0
 
     init(
         initialAccounts: [PrismAccount] = PrismAccount.fixture(),
         activeAccountID: String? = "account.fixture.microsoft",
+        bridge: PRPrismBridge? = nil,
         onDiscover: ((Int) -> Void)? = nil,
         onSelect: ((String?, Int) -> Void)? = nil,
         onCancel: (() -> Void)? = nil
@@ -240,6 +245,7 @@ final class PrismAccountModel: ObservableObject {
         self.state = initialAccounts.isEmpty ? .empty : .content(initialAccounts)
         self.confirmedActiveAccountID = confirmedID
         self.draftActiveAccountID = confirmedID
+        self.bridge = bridge
         self.onDiscover = onDiscover
         self.onSelect = onSelect
         self.onCancel = onCancel
@@ -283,7 +289,23 @@ final class PrismAccountModel: ObservableObject {
         let activeGeneration = generation
         state = .loading(generation: activeGeneration)
         selectionState = .idle
-        onDiscover?(activeGeneration)
+        discoveryToken?.cancel()
+        if let bridge {
+            discoveryToken = bridge.loadAccountSnapshots { [weak self] result, error in
+                self?.discoveryToken = nil
+                if let result {
+                    _ = self?.apply(snapshotResult: result, generation: activeGeneration)
+                } else if let error {
+                    _ = self?.apply(error: error, generation: activeGeneration)
+                }
+            }
+            if discoveryToken == nil {
+                state = .failed(Self.failure(key: "accounts.discovery.unavailable", diagnostic: nil, recovery: .retry))
+                return false
+            }
+        } else {
+            onDiscover?(activeGeneration)
+        }
         return true
     }
 
@@ -293,6 +315,8 @@ final class PrismAccountModel: ObservableObject {
             return false
         }
         generation += 1
+        discoveryToken?.cancel()
+        discoveryToken = nil
         onCancel?()
         state = .cancelled
         return true
@@ -371,7 +395,21 @@ final class PrismAccountModel: ObservableObject {
         generation += 1
         let activeGeneration = generation
         selectionState = .saving(generation: activeGeneration)
-        if let onSelect {
+        selectionToken?.cancel()
+        if let bridge {
+            selectionToken = bridge.selectActiveAccount(withIdentifier: id) { [weak self] result, error in
+                self?.selectionToken = nil
+                if let result {
+                    _ = self?.apply(selectionResult: result, generation: activeGeneration)
+                } else if let error {
+                    _ = self?.apply(error: error, toSelectionGeneration: activeGeneration)
+                }
+            }
+            if selectionToken == nil {
+                selectionState = .failed(Self.failure(key: "accounts.selection.unavailable", diagnostic: nil, recovery: .retry))
+                return false
+            }
+        } else if let onSelect {
             onSelect(id, activeGeneration)
         } else {
             confirmedActiveAccountID = id
@@ -456,7 +494,21 @@ final class PrismAccountModel: ObservableObject {
         generation += 1
         let activeGeneration = generation
         selectionState = .saving(generation: activeGeneration)
-        if let onSelect {
+        selectionToken?.cancel()
+        if let bridge {
+            selectionToken = bridge.selectActiveAccount(withIdentifier: draftActiveAccountID) { [weak self] result, error in
+                self?.selectionToken = nil
+                if let result {
+                    _ = self?.apply(selectionResult: result, generation: activeGeneration)
+                } else if let error {
+                    _ = self?.apply(error: error, toSelectionGeneration: activeGeneration)
+                }
+            }
+            if selectionToken == nil {
+                selectionState = .failed(Self.failure(key: "accounts.selection.unavailable", diagnostic: nil, recovery: .retry))
+                return false
+            }
+        } else if let onSelect {
             onSelect(draftActiveAccountID, activeGeneration)
         } else {
             confirmedActiveAccountID = draftActiveAccountID
@@ -467,6 +519,10 @@ final class PrismAccountModel: ObservableObject {
 
     func clear() {
         generation += 1
+        discoveryToken?.cancel()
+        discoveryToken = nil
+        selectionToken?.cancel()
+        selectionToken = nil
         state = .empty
         confirmedActiveAccountID = nil
         draftActiveAccountID = nil
@@ -532,6 +588,11 @@ struct PrismAccountSettingsView: View {
         .padding()
         .frame(minWidth: 500, minHeight: 300)
         .accessibilityIdentifier("prism.settings.accounts")
+        .onAppear {
+            if case .empty = model.state {
+                _ = model.refresh()
+            }
+        }
     }
 
     private var loadingView: some View {
@@ -768,7 +829,7 @@ struct PrismAccountSettingsView: View {
 
                     switch offlineIdentityModel.state {
                     case .idle:
-                        Text("Choose the player name used by fixture-only offline or demo launches.")
+                        Text("Choose the player name used by offline or demo launches.")
                             .foregroundStyle(.secondary)
                         Button("Load Saved Name") {
                             _ = offlineIdentityModel.load(

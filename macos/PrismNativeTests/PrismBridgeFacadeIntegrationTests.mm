@@ -1400,6 +1400,85 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     [self waitForExpectations:@[ completion ] timeout:0.2];
 }
 
+- (void)testProductionAccountAdapterLoadsSyntheticNativeRootThroughDefaultBridge
+{
+    NSString *accountsJSON = @"{\n"
+                              "  \"formatVersion\": 3,\n"
+                              "  \"accounts\": [\n"
+                              "    {\n"
+                              "      \"type\": \"Offline\",\n"
+                              "      \"profile\": {\"id\": \"offline.profile\", \"name\": \"Offline_Player\", \"skin\": {\"id\": \"\", \"url\": \"\", \"variant\": \"\"}, \"capes\": []},\n"
+                              "      \"active\": true\n"
+                              "    },\n"
+                              "    {\n"
+                              "      \"type\": \"MSA\",\n"
+                              "      \"msa-client-id\": \"synthetic-client\",\n"
+                              "      \"profile\": {\"id\": \"microsoft.profile\", \"name\": \"Microsoft_Player\", \"skin\": {\"id\": \"\", \"url\": \"\", \"variant\": \"\"}, \"capes\": []},\n"
+                              "      \"entitlement\": {\"ownsMinecraft\": true, \"canPlayMinecraft\": true},\n"
+                              "      \"active\": false\n"
+                              "    }\n"
+                              "  ]\n"
+                              "}";
+    NSError *writeError = nil;
+    XCTAssertTrue([accountsJSON writeToURL:[self.fixtureRootURL URLByAppendingPathComponent:@"accounts.json"]
+                                  atomically:YES
+                                    encoding:NSUTF8StringEncoding
+                                       error:&writeError],
+                  @"Synthetic account file write failed: %@", writeError);
+
+    PRPrismBridge *bridge = [[PRPrismBridge alloc] initWithDataRootURL:self.fixtureRootURL
+                                                     cancellationHandler:nil
+                                                        shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    XCTestExpectation *snapshotExpectation = [self expectationWithDescription:@"Production account snapshots"];
+    __block PRAccountSnapshotResult *snapshots = nil;
+    __block PRBridgeError *snapshotError = nil;
+    PRBridgeObservationToken *snapshotToken = [bridge loadAccountSnapshotsWithCompletion:^(PRAccountSnapshotResult *result,
+                                                                                              PRBridgeError *error) {
+        snapshots = result;
+        snapshotError = error;
+        [snapshotExpectation fulfill];
+    }];
+    XCTAssertNotNil(snapshotToken);
+    [self waitForExpectations:@[ snapshotExpectation ] timeout:2.0];
+    XCTAssertNil(snapshotError);
+    XCTAssertEqual(snapshots.outcome, PRAccountSnapshotOutcomeSucceeded);
+    XCTAssertEqual(snapshots.accounts.count, (NSUInteger)2);
+    XCTAssertEqualObjects(snapshots.activeAccountIdentifier, @"offline.profile");
+    XCTAssertEqual(snapshots.accounts[0].type, PRAccountTypeOffline);
+
+    XCTestExpectation *selectionExpectation = [self expectationWithDescription:@"Production account selection"];
+    __block PRAccountSelectionResult *selection = nil;
+    PRBridgeObservationToken *selectionToken = [bridge selectActiveAccountWithIdentifier:@"microsoft.profile"
+                                                                                    completion:^(PRAccountSelectionResult *result,
+                                                                                                 __unused PRBridgeError *error) {
+        selection = result;
+        [selectionExpectation fulfill];
+    }];
+    XCTAssertNotNil(selectionToken);
+    [self waitForExpectations:@[ selectionExpectation ] timeout:2.0];
+    XCTAssertEqual(selection.outcome, PRAccountSelectionOutcomeSucceeded);
+    XCTAssertEqualObjects(selection.account.identifier, @"microsoft.profile");
+
+    XCTestExpectation *offlineExpectation = [self expectationWithDescription:@"Production offline identity"];
+    __block PROfflineLaunchIdentityLoadResult *offlineIdentity = nil;
+    PRBridgeObservationToken *offlineToken = [bridge loadOfflineLaunchIdentityWithMode:PROfflineLaunchIdentityModeOffline
+                                                                         accountIdentifier:@"offline.profile"
+                                                                              fallbackName:@"Player"
+                                                                               completion:^(PROfflineLaunchIdentityLoadResult *result,
+                                                                                            __unused PRBridgeError *error) {
+        offlineIdentity = result;
+        [offlineExpectation fulfill];
+    }];
+    XCTAssertNotNil(offlineToken);
+    [self waitForExpectations:@[ offlineExpectation ] timeout:2.0];
+    XCTAssertEqual(offlineIdentity.outcome, PROfflineLaunchIdentityLoadOutcomeSucceeded);
+    XCTAssertEqualObjects(offlineIdentity.identity.name, @"Player");
+
+    XCTAssertTrue([bridge shutdown]);
+}
+
 - (void)testFacadeAuthenticationProgressAndResultConvertSyntheticProviderOnMainActor
 {
     auto authenticationRootMatches = std::make_shared<std::atomic<bool>>(true);

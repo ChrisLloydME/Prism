@@ -29,9 +29,9 @@ struct PrismNativeApp: App {
     @StateObject private var taskModel = PrismTaskPresentationModel()
     @StateObject private var globalSettingsModel: PrismGlobalSettingsModel
     @StateObject private var javaDiscoveryModel: PrismJavaDiscoveryModel
-    @StateObject private var accountModel = PrismAccountModel()
-    @StateObject private var authenticationModel = PrismAccountAuthenticationModel()
-    @StateObject private var offlineIdentityModel = PrismOfflineLaunchIdentityModel()
+    @StateObject private var accountModel: PrismAccountModel
+    @StateObject private var authenticationModel: PrismAccountAuthenticationModel
+    @StateObject private var offlineIdentityModel: PrismOfflineLaunchIdentityModel
     @StateObject private var skinModel = PrismSkinManagementModel()
     @StateObject private var shortcutModel = PrismShortcutCreationModel(
         instanceIdentifier: "",
@@ -49,6 +49,15 @@ struct PrismNativeApp: App {
         )
         _javaDiscoveryModel = StateObject(
             wrappedValue: PrismJavaDiscoveryModel(initialInstallations: [], bridge: runtime.bridge)
+        )
+        _accountModel = StateObject(
+            wrappedValue: PrismAccountModel(initialAccounts: [], activeAccountID: nil, bridge: runtime.bridge)
+        )
+        _authenticationModel = StateObject(
+            wrappedValue: PrismAccountAuthenticationModel(bridge: runtime.bridge)
+        )
+        _offlineIdentityModel = StateObject(
+            wrappedValue: PrismOfflineLaunchIdentityModel(bridge: runtime.bridge)
         )
     }
 

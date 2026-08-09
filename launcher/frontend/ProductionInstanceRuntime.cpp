@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "ProductionInstanceRuntime.h"
+#include "ProductionAccountRuntime.h"
 #include "ProductionJavaRuntime.h"
 #include "ProductionSettingsRuntime.h"
 
@@ -305,6 +306,7 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
     auto runtime = makeProductionInstanceRuntime(normalizedDataRoot);
     auto settingsRuntime = makeProductionSettingsRuntime(normalizedDataRoot);
     auto javaRuntime = makeProductionJavaRuntime(normalizedDataRoot);
+    auto accountRuntime = makeProductionAccountRuntime(normalizedDataRoot);
     FrontendRuntimeDependencies dependencies;
     dependencies.dispatch = [](FrontendRuntimeDependencies::Work work) {
         if (work) {
@@ -313,10 +315,11 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
     };
     dependencies.now = [] { return std::chrono::system_clock::now(); };
     dependencies.cancelPendingWork = [runtime] { runtime->stopInstanceObservation(); };
-    dependencies.shutdown = [runtime, settingsRuntime, javaRuntime] {
+    dependencies.shutdown = [runtime, settingsRuntime, javaRuntime, accountRuntime] {
         runtime->shutdown();
         settingsRuntime->shutdown();
         javaRuntime->shutdown();
+        accountRuntime->shutdown();
     };
     dependencies.loadInstanceSnapshots = [runtime](const std::filesystem::path&) { return runtime->instanceSnapshots(); };
     dependencies.loadInstanceChanges = [runtime](const std::filesystem::path&) { return runtime->takeInstanceChanges(); };
@@ -348,5 +351,6 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
                                             const FrontendGlobalSettingsSnapshot& settings) {
         return settingsRuntime->updateGlobalSettings(settings);
     };
-    return productionJavaRuntimeDependencies(std::move(javaRuntime), std::move(dependencies));
+    dependencies = productionJavaRuntimeDependencies(std::move(javaRuntime), std::move(dependencies));
+    return productionAccountRuntimeDependencies(std::move(accountRuntime), std::move(dependencies));
 }

@@ -24,6 +24,15 @@ enum PrismOfflineLaunchIdentityMode: Int, Equatable, Sendable {
             return "Demo"
         }
     }
+
+    var bridgeValue: PROfflineLaunchIdentityMode {
+        switch self {
+        case .offline:
+            return .offline
+        case .demo:
+            return .demo
+        }
+    }
 }
 
 struct PrismOfflineLaunchIdentity: Equatable, Sendable {
@@ -128,12 +137,16 @@ final class PrismOfflineLaunchIdentityModel: ObservableObject {
     private let onLoad: ((PrismOfflineLaunchIdentityMode, String?, String, Int) -> Void)?
     private let onSave: ((PrismOfflineLaunchIdentityMode, String?, String, Bool, Int) -> Void)?
     private let onCancel: (() -> Void)?
+    private let bridge: PRPrismBridge?
+    private var loadToken: PRBridgeObservationToken?
+    private var saveToken: PRBridgeObservationToken?
     private var generation = 0
     private var lastLoadRequest: (mode: PrismOfflineLaunchIdentityMode, accountIdentifier: String?, fallbackName: String)?
     private var lastSaveRequest: (mode: PrismOfflineLaunchIdentityMode, accountIdentifier: String?, name: String, allowInvalidNames: Bool)?
 
     init(
         initialIdentity: PrismOfflineLaunchIdentity? = nil,
+        bridge: PRPrismBridge? = nil,
         onLoad: ((PrismOfflineLaunchIdentityMode, String?, String, Int) -> Void)? = nil,
         onSave: ((PrismOfflineLaunchIdentityMode, String?, String, Bool, Int) -> Void)? = nil,
         onCancel: (() -> Void)? = nil
@@ -141,6 +154,7 @@ final class PrismOfflineLaunchIdentityModel: ObservableObject {
         self.onLoad = onLoad
         self.onSave = onSave
         self.onCancel = onCancel
+        self.bridge = bridge
         if let initialIdentity {
             state = .editing(confirmed: initialIdentity, draftName: initialIdentity.name, allowInvalidNames: false)
         }
@@ -242,6 +256,37 @@ final class PrismOfflineLaunchIdentityModel: ObservableObject {
         let activeGeneration = generation
         lastLoadRequest = (mode, normalizedIdentifier, fallbackName)
         state = .loading(generation: activeGeneration, fallbackName: fallbackName)
+        if let bridge {
+            loadToken?.cancel()
+            loadToken = bridge.loadOfflineLaunchIdentity(
+                with: mode.bridgeValue,
+                accountIdentifier: normalizedIdentifier,
+                fallbackName: fallbackName
+            ) { [weak self] result, error in
+                self?.loadToken = nil
+                if let result {
+                    _ = self?.apply(loadResult: result, generation: activeGeneration)
+                } else if let error {
+                    _ = self?.apply(error: error, generation: activeGeneration)
+                }
+            }
+            if loadToken == nil {
+                state = .failed(
+                    failure: Self.failure(
+                        operation: .load,
+                        key: "accounts.offlineIdentity.unavailable",
+                        diagnostic: nil,
+                        retryable: true
+                    ),
+                    confirmed: nil,
+                    draftName: fallbackName,
+                    allowInvalidNames: false
+                )
+                return false
+            }
+            return true
+        }
+
         guard let onLoad else {
             state = .failed(
                 failure: Self.failure(
@@ -320,6 +365,38 @@ final class PrismOfflineLaunchIdentityModel: ObservableObject {
             draftName: draftName,
             allowInvalidNames: allowInvalidNames
         )
+        if let bridge {
+            saveToken?.cancel()
+            saveToken = bridge.updateOfflineLaunchIdentity(
+                with: mode.bridgeValue,
+                accountIdentifier: accountIdentifier,
+                name: draftName,
+                allowInvalidName: allowInvalidNames
+            ) { [weak self] result, error in
+                self?.saveToken = nil
+                if let result {
+                    _ = self?.apply(updateResult: result, generation: activeGeneration)
+                } else if let error {
+                    _ = self?.apply(error: error, generation: activeGeneration)
+                }
+            }
+            if saveToken == nil {
+                state = .failed(
+                    failure: Self.failure(
+                        operation: .save,
+                        key: "accounts.offlineIdentity.unavailable",
+                        diagnostic: nil,
+                        retryable: true
+                    ),
+                    confirmed: confirmed,
+                    draftName: draftName,
+                    allowInvalidNames: allowInvalidNames
+                )
+                return false
+            }
+            return true
+        }
+
         guard let onSave else {
             state = .failed(
                 failure: Self.failure(
@@ -505,11 +582,15 @@ final class PrismOfflineLaunchIdentityModel: ObservableObject {
         switch state {
         case .loading(_, let fallbackName):
             generation += 1
+            loadToken?.cancel()
+            loadToken = nil
             onCancel?()
             state = .cancelled(confirmed: nil, draftName: fallbackName, allowInvalidNames: false)
             return true
         case .saving(_, let confirmed, let draftName, let allowInvalidNames):
             generation += 1
+            saveToken?.cancel()
+            saveToken = nil
             onCancel?()
             state = .cancelled(confirmed: confirmed, draftName: draftName, allowInvalidNames: allowInvalidNames)
             return true
@@ -549,6 +630,10 @@ final class PrismOfflineLaunchIdentityModel: ObservableObject {
 
     func reset() {
         generation += 1
+        loadToken?.cancel()
+        loadToken = nil
+        saveToken?.cancel()
+        saveToken = nil
         lastLoadRequest = nil
         lastSaveRequest = nil
         state = .idle

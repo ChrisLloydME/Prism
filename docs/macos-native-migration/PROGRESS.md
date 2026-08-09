@@ -10,7 +10,7 @@ Current milestone: 11. Production backend adapters and complete launcher composi
 
 Active work unit: none
 
-Next ready work unit: M11-W4 Accounts and authentication
+Next ready work unit: M11-W5 Launch, stop, tasks, and logs
 
 Goal correction added 2026-08-09: this project must deliver a complete Minecraft launcher, not only native surfaces and fixture contracts. Historical M4-M9 `complete` labels mean surface/contract completion unless a later M11 unit proves production adapter and default-composition wiring. M10-W1 identified this gap; M10-W2 packaging and M10-W3 clean builds are complete infrastructure, not launcher parity. Qt retirement is moved to M12 and is forbidden until M11-W10 proves production parity.
 
@@ -2407,9 +2407,39 @@ Next ready work unit: M11-W4 Accounts and authentication. It must use production
 
 ### M11-W4: Accounts and authentication
 
-Status: ready
+Status: complete
 
 Prerequisite: M11-W3 is complete. Connect account persistence, active-account selection, offline identity, Microsoft device-flow state, refresh/error recovery, and profile selection through existing authentication logic. Automated verification must use fake HTTP/browser/Keychain ports and synthetic secrets; no credential or token may enter Swift DTO descriptions, logs, fixtures, or progress documentation.
+
+Outcome: completed the bundle-rooted account/authentication vertical slice. The QWidget-free `ProductionAccountRuntime` reconstructs Prism's existing version-3 `accounts.json` records, preserves unknown record fields while atomically updating active-account selection and authenticated profile metadata, maps offline/online/expired states, and persists the existing `LastOfflinePlayerName` compatibility key through the Native Prism `prismlauncher.cfg`. The default production composition now owns account discovery, selection, authentication, and offline identity ports; `PrismNativeApp` injects the real bridge into the account, authentication, and offline identity models instead of using fixture defaults.
+
+Domain ownership and files changed: `ProductionAccountRuntime.h/.cpp` reuses the existing QtCore `AccountData` decoder and `INIFile` persistence format. Provider effects are explicit `HttpExecutor`, `BrowserExecutor`, `WaitExecutor`, and `KeychainPort` dependencies; Swift contains only Foundation DTOs, generation-safe state, and bridge observation tokens. The adapter deliberately does not pull the legacy `AuthFlow`/`Application`/`QApplication` ownership graph across the native boundary. Changed files are `launcher/frontend/CMakeLists.txt`, `ProductionAccountRuntime.h`, `ProductionAccountRuntime.cpp`, `FrontendFacadeProductionAccountTest.cpp`, `ProductionInstanceRuntime.cpp`, `PrismAccountSettings.swift`, `PrismAccountAuthentication.swift`, `PrismOfflineLaunchIdentity.swift`, `PrismNativeApp.swift`, `PrismBridge.h`, `PrismBridgeFacadeIntegrationTests.mm`, `PrismNativeInfrastructureTests.swift`, and `PrismShellTests.swift`.
+
+Architecture and safety: the adapter accepts only the already isolated absolute Native root and never discovers a path from the installed upstream application, environment, arguments, or generic Application Support. It rejects symlinked roots/files, reads and writes only Native `accounts.json` and `prismlauncher.cfg`, uses atomic account writes, and confirms selection/authentication through reconstruction. Provider URLs are constrained to safe HTTPS values before browser delivery; opaque provider values remain inside the C++ adapter and injected credential port, while Foundation callbacks, diagnostics, fixtures, and this ledger carry only non-secret account/profile metadata. Synthetic account files and ports were used exclusively; no real account, provider service, credential store, or upstream data was accessed.
+
+HIG decision: no new custom control or renderer was introduced. The existing SwiftUI `List`, `Form`, `Section`, `TextField`, `Button`, `ProgressView`, `ContentUnavailableView`, accessibility identifiers/values, localized labels, and standard retry/cancel actions remain the presentation surface. This follows Apple's [Settings HIG](https://developer.apple.com/design/human-interface-guidelines/settings), [SwiftUI List](https://developer.apple.com/documentation/swiftui/list), [ProgressView](https://developer.apple.com/documentation/swiftui/progressview), and [accessibility](https://developer.apple.com/documentation/swiftui/accessibility) guidance. No third-party UI framework, self-drawn system control, screenshot, recording, or visual snapshot was used; no rendering exception was approved.
+
+Verification:
+
+- `cmake -S launcher/frontend -B .deriveddata-prism-native-backend -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DCMAKE_OSX_ARCHITECTURES=arm64`, `cmake --build .deriveddata-prism-native-backend -j2`, and `ctest --test-dir .deriveddata-prism-native-backend --output-on-failure` — passed, 9/9 CTest, including `FrontendFacadeProductionAccount`.
+- The same shared backend path was configured and built as Release, with full CTest — passed, 9/9. A final incremental Release rebuild after the explicit standard-library/boundary cleanup also passed 9/9.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -derivedDataPath .deriveddata-prism-native -destination 'platform=macOS,arch=arm64' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build` and `test` — passed; final Debug result bundle `Test-PrismNative-2026.08.09_19-38-03-+0800.xcresult`, 174/174 passed, 0 failed, 0 skipped.
+- The corresponding shared-path Release `build` and `test` commands — passed; final Release result bundle `Test-PrismNative-2026.08.09_19-42-20-+0800.xcresult`, 174/174 passed, 0 failed, 0 skipped. The full native suite covers bridge conversion, ViewModel transitions, cancellation, refresh/error recovery, accessibility, menu/shortcut, localization, and no-custom-control contracts.
+- `plutil -lint macos/PrismNative/Resources/Info.plist macos/PrismNative/Resources/PrismNative.entitlements` and built Debug/Release Info.plists — passed. `plutil -extract CFBundleIdentifier raw -o -` returned `com.lloydME.Prism` for both built products. `git diff --check` — passed. Production Swift/C++ boundary scans and the QWidget-free production adapter source checks — passed.
+
+Build storage and cleanup: retained `.deriveddata-prism-native` (647M), `.deriveddata-prism-native-backend` (108M), and the pre-existing `build-native` cache (2.3G) without modifying the latter. Retained only `Test-PrismNative-2026.08.09_19-38-03-+0800.xcresult` and `Test-PrismNative-2026.08.09_19-42-20-+0800.xcresult`; removed the exact superseded `Test-PrismNative-2026.08.09_19-35-17-+0800.xcresult` bundle. No task-owned `/private/tmp/prism-*` directory remains.
+
+Risks and limits: live provider interaction and the real Keychain remain intentionally unexercised; the default external ports fail closed, and the production adapter is verified with synthetic ports as required by PLAN §8/§12.3. Authentication is synchronous inside the bounded backend operation and bridge cancellation suppresses delivery while that operation completes; interruptible provider cancellation remains a later facade-port concern. The legacy QObject authentication owner remains retained until the M11-W10 parity audit; this unit does not claim Qt retirement or live-provider evidence.
+
+Commit: pending implementation commit; this entry is finalized in the following progress-ledger commit.
+
+Next ready work unit: M11-W5 Launch, stop, tasks, and logs. It must connect launch preparation, Java/Minecraft command construction, `LaunchController`, task observation, cancellation, stop, shutdown, and bounded/redacted logs through fake process ports without starting Minecraft.
+
+### M11-W5: Launch, stop, tasks, and logs
+
+Status: ready
+
+Prerequisite: M11-W4 is complete. Connect launch preparation, Java/Minecraft command construction, `LaunchController`, task observation, cancellation, stop, shutdown, and bounded/redacted logs. Tests must use a fake process executor and disposable instance, verify exact arguments/environment redaction, failure recovery, cancellation, and runtime reconstruction, and must not start Minecraft.
 
 ## Completed commit index
 

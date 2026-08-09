@@ -342,9 +342,9 @@ typedef void (^PROfflineLaunchIdentityUpdateCompletionHandler)(PROfflineLaunchId
 - (nullable PRBridgeObservationToken *)selectJavaInstallationWithIdentifier:(NSString *)identifier
                                                                     completion:(PRJavaSelectionCompletionHandler)completion;
 
-/// Loads fixture-controlled, non-secret account rows asynchronously. Auth
-/// flows, provider requests, credentials, and account persistence are not
-/// part of this bridge operation.
+/// Loads bundle-rooted, non-secret account rows asynchronously. Provider
+/// credentials, authentication state, and Keychain ownership remain inside
+/// the production adapter and never cross this bridge.
 - (nullable PRBridgeObservationToken *)loadAccountSnapshotsWithCompletion:(PRAccountSnapshotCompletionHandler)completion;
 
 /// Confirms one active account identifier, or clears the legacy default when
@@ -352,16 +352,16 @@ typedef void (^PROfflineLaunchIdentityUpdateCompletionHandler)(PROfflineLaunchId
 - (nullable PRBridgeObservationToken *)selectActiveAccountWithIdentifier:(nullable NSString *)identifier
                                                                   completion:(PRAccountSelectionCompletionHandler)completion;
 
-/// Runs a fixture-controlled login or refresh state machine. Progress may
-/// report a safe device-flow verification URL, but never user codes, tokens,
-/// credentials, profiles, or provider-owned authentication state.
+/// Runs the production login or refresh state machine. Progress may report a
+/// safe device-flow verification URL, but never user codes, credentials,
+/// bearer values, or provider-owned authentication state.
 - (nullable PRBridgeObservationToken *)authenticateAccountWithIdentifier:(NSString *)identifier
                                                                     action:(PRAccountAuthenticationAction)action
                                                                   progress:(nullable PRAccountAuthenticationProgressHandler)progress
                                                                 completion:(PRAccountAuthenticationCompletionHandler)completion;
 
-/// Loads the fixture-controlled offline/demo player name without launching a
-/// game or reading the installed upstream data root. The adapter owns any
+/// Loads the bundle-rooted offline/demo player name without launching a game
+/// or reading the installed upstream data root. The adapter owns the
 /// LastOfflinePlayerName compatibility mapping.
 - (nullable PRBridgeObservationToken *)loadOfflineLaunchIdentityWithMode:(PROfflineLaunchIdentityMode)mode
                                                         accountIdentifier:(nullable NSString *)accountIdentifier
