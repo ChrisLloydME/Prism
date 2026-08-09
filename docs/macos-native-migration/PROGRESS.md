@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: 11. Production backend adapters and complete launcher composition
 
-Active work unit: none (M11-W7 complete; activate M11-W8 next)
+Active work unit: M11-W8 Provider discovery and installation
 
-Next ready work unit: M11-W8 Provider discovery and installation
+Next ready work unit: none (M11-W8 active; M11-W9 remains queued)
 
 Goal correction added 2026-08-09: this project must deliver a complete Minecraft launcher, not only native surfaces and fixture contracts. Historical M4-M9 `complete` labels mean surface/contract completion unless a later M11 unit proves production adapter and default-composition wiring. M10-W1 identified this gap; M10-W2 packaging and M10-W3 clean builds are complete infrastructure, not launcher parity. Qt retirement is moved to M12 and is forbidden until M11-W10 proves production parity.
 
@@ -2526,7 +2526,17 @@ Risks and limits: the legacy vanilla task's optional game-file update chain rema
 
 Commit: `d100e6e48` (implementation); this entry is finalized in the following progress-ledger commit.
 
-Next ready work unit: M11-W8 Provider discovery and installation.
+M11-W8 is now active; M11-W9 remains queued until this unit is complete.
+
+### M11-W8: Provider discovery and installation
+
+Status: active
+
+Prerequisite: M11-W7 is complete. Connect Modrinth, CurseForge/Flame, FTB variants, ATLauncher, Technic, and custom-pack adapters through production-owned discovery and installation paths. Cover pagination, optional and blocked files, controlled downloads, installation, recovery, cancellation, rollback, and cache behavior with recorded/synthetic protocol fixtures; do not use live provider services, credentials, or upstream data.
+
+Outcome: in progress. Production provider ownership, default native composition, and the synthetic protocol/download test boundary are being audited and connected against bundle-scoped disposable roots. No live provider service, account, credential, Keychain, upstream data, application launch, or Minecraft process is in scope.
+
+Next ready work unit: none while M11-W8 is active.
 
 ## Completed commit index
 
