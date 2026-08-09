@@ -271,18 +271,29 @@ final class PrismGlobalSettingsModel: ObservableObject {
     @Published private(set) var saveState: PrismGlobalSettingsSaveState = .idle
     @Published private(set) var directorySelectionError: String?
 
+    private let bridge: PRPrismBridge?
     private let onLoad: (() -> Void)?
     private let onSave: ((PrismGlobalSettings, Int) -> Void)?
     private var saveGeneration = 0
+    private var loadToken: PRBridgeObservationToken?
+    private var saveToken: PRBridgeObservationToken?
 
     init(
-        initialSettings: PrismGlobalSettings = .fixture(),
+        initialSettings: PrismGlobalSettings? = PrismGlobalSettings.fixture(),
+        bridge: PRPrismBridge? = nil,
         onLoad: (() -> Void)? = nil,
         onSave: ((PrismGlobalSettings, Int) -> Void)? = nil
     ) {
-        self.state = .content(initialSettings)
-        self.confirmed = initialSettings
-        self.draft = initialSettings
+        self.bridge = bridge
+        if let initialSettings {
+            self.state = .content(initialSettings)
+            self.confirmed = initialSettings
+            self.draft = initialSettings
+        } else {
+            self.state = .empty
+            self.confirmed = nil
+            self.draft = nil
+        }
         self.onLoad = onLoad
         self.onSave = onSave
     }
@@ -331,7 +342,19 @@ final class PrismGlobalSettingsModel: ObservableObject {
         draft = nil
         saveState = .idle
         directorySelectionError = nil
-        onLoad?()
+        loadToken?.cancel()
+        if let bridge {
+            loadToken = bridge.loadGlobalSettings { [weak self] settings, error in
+                self?.loadToken = nil
+                if let settings {
+                    _ = self?.apply(settings: settings)
+                } else if let error {
+                    _ = self?.apply(loadError: error)
+                }
+            }
+        } else {
+            onLoad?()
+        }
         return true
     }
 
@@ -395,6 +418,24 @@ final class PrismGlobalSettingsModel: ObservableObject {
     }
 
     @discardableResult
+    func apply(loadError error: PRBridgeError) -> Bool {
+        guard isLoading, !error.localizationKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+
+        state = .failed(
+            Self.failure(
+                key: error.localizationKey,
+                diagnostic: error.diagnosticText,
+                recovery: error.recoveryKind == .retry ? .retry : .none
+            )
+        )
+        confirmed = nil
+        draft = nil
+        return true
+    }
+
+    @discardableResult
     func applyDirectorySelection(filePanelResult: Result<URL, Error>) -> Bool {
         guard case .success(let url) = filePanelResult else {
             directorySelectionError = nil
@@ -434,7 +475,17 @@ final class PrismGlobalSettingsModel: ObservableObject {
         saveGeneration += 1
         let generation = saveGeneration
         saveState = .saving(generation: generation)
-        if let onSave {
+        if let bridge, let bridgeSettings = draft.makeBridgeSettings() {
+            saveToken?.cancel()
+            saveToken = bridge.update(bridgeSettings) { [weak self] result, error in
+                self?.saveToken = nil
+                if let result {
+                    _ = self?.apply(updateResult: result, generation: generation)
+                } else if let error {
+                    _ = self?.apply(error: error, generation: generation)
+                }
+            }
+        } else if let onSave {
             onSave(draft, generation)
         } else {
             confirmed = draft
@@ -453,7 +504,19 @@ final class PrismGlobalSettingsModel: ObservableObject {
         saveGeneration += 1
         let generation = saveGeneration
         saveState = .saving(generation: generation)
-        onSave?(draft, generation)
+        if let bridge, let bridgeSettings = draft.makeBridgeSettings() {
+            saveToken?.cancel()
+            saveToken = bridge.update(bridgeSettings) { [weak self] result, error in
+                self?.saveToken = nil
+                if let result {
+                    _ = self?.apply(updateResult: result, generation: generation)
+                } else if let error {
+                    _ = self?.apply(error: error, generation: generation)
+                }
+            }
+        } else {
+            onSave?(draft, generation)
+        }
         return true
     }
 
@@ -470,6 +533,8 @@ final class PrismGlobalSettingsModel: ObservableObject {
 
     func clear() {
         saveGeneration += 1
+        loadToken?.cancel()
+        saveToken?.cancel()
         state = .empty
         confirmed = nil
         draft = nil
@@ -535,6 +600,11 @@ struct PrismSettingsView: View {
             }
         }
         .frame(minWidth: 560, minHeight: 460)
+        .onAppear {
+            if case .empty = model.state {
+                _ = model.beginLoading()
+            }
+        }
     }
 
     private var settingsTabs: some View {

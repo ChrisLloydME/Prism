@@ -27,7 +27,7 @@ struct PrismNativeApp: App {
     @StateObject private var nativeRuntime: PrismNativeRuntime
     @StateObject private var commandModel: PrismCommandModel
     @StateObject private var taskModel = PrismTaskPresentationModel()
-    @StateObject private var globalSettingsModel = PrismGlobalSettingsModel()
+    @StateObject private var globalSettingsModel: PrismGlobalSettingsModel
     @StateObject private var javaDiscoveryModel = PrismJavaDiscoveryModel()
     @StateObject private var accountModel = PrismAccountModel()
     @StateObject private var authenticationModel = PrismAccountAuthenticationModel()
@@ -44,6 +44,9 @@ struct PrismNativeApp: App {
         let runtime = PrismNativeRuntime()
         _nativeRuntime = StateObject(wrappedValue: runtime)
         _commandModel = StateObject(wrappedValue: PrismCommandModel(bridge: runtime.bridge))
+        _globalSettingsModel = StateObject(
+            wrappedValue: PrismGlobalSettingsModel(initialSettings: nil, bridge: runtime.bridge)
+        )
     }
 
     var body: some Scene {

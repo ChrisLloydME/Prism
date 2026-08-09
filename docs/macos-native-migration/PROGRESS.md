@@ -10,7 +10,7 @@ Current milestone: 11. Production backend adapters and complete launcher composi
 
 Active work unit: none
 
-Next ready work unit: M11-W2 Production global and instance settings persistence
+Next ready work unit: M11-W3 Production Java discovery, validation, selection, and managed metadata
 
 Goal correction added 2026-08-09: this project must deliver a complete Minecraft launcher, not only native surfaces and fixture contracts. Historical M4-M9 `complete` labels mean surface/contract completion unless a later M11 unit proves production adapter and default-composition wiring. M10-W1 identified this gap; M10-W2 packaging and M10-W3 clean builds are complete infrastructure, not launcher parity. Qt retirement is moved to M12 and is forbidden until M11-W10 proves production parity.
 
@@ -2341,22 +2341,42 @@ Next ready work unit: M11-W2 Production global and instance settings persistence
 
 ### M11-W2: Production global and instance settings persistence
 
+Status: complete
+
+Prerequisite: M11-W1 is complete. This unit connected the native Settings scene and instance settings form to bundle-rooted production persistence without inspecting, importing, or falling back to upstream settings.
+
+Outcome: `PrismNativeApp` now injects one production `PRPrismBridge` into both the global Settings model and the instance Settings model. The QWidget-free `ProductionSettingsRuntime` reads and writes Prism's existing sectionless `prismlauncher.cfg` and per-instance `instance.cfg` format through the existing `INIFile` implementation, preserves global defaults and aliases from `Application`, effective override semantics from `BaseInstance`/`MinecraftInstance`, and confirms every write by reloading the persisted representation. Swift keeps only typed Foundation DTOs, confirmed values, editable drafts, generation-safe save/retry state, and cancellation tokens; it does not serialize settings.
+
+Required investigation and domain ownership: `Application.cpp` was re-read for the global settings registration, including `LaunchMaximized`/`MCWindowMaximize`, window-size aliases, memory aliases, command aliases, `CatFit`, console defaults, and the dynamic `SysInfo::defaultMaxJvmMem()` memory default. `BaseInstance.cpp` and `MinecraftInstance.cpp` were re-read for game-time, console, Java, memory, command, native-workaround, data-pack, join, and mod-loader override gates. `INISettingsObject` was characterized, but its QObject registration graph remains coupled to the legacy application; the safe native slice therefore reuses the existing `INIFile` format/persistence code and captures the observed domain keys in the QWidget-free adapter. No `launcher/ui` source, `QWidget`, `QDialog`, upstream support root, account, Java selection, Keychain item, or production service was accessed.
+
+Files changed: `launcher/frontend/ProductionSettingsRuntime.h`, `ProductionSettingsRuntime.cpp`, `FrontendFacadeProductionSettingsTest.cpp`, `CMakeLists.txt`, and `ProductionInstanceRuntime.cpp`; `launcher/frontend` now links the existing QtCore-only `INIFile`, `SysInfo.cpp`, and `HardwareInfo.cpp` implementation needed for the legacy memory default. Swift production composition and typed state changed in `macos/PrismNative/App/PrismNativeApp.swift`, `ContentView.swift`, `PrismSettings.swift`, and `PrismShellModel.swift`. Native production-composition and bundle-root tests changed in `macos/PrismNativeTests/PrismNativeInfrastructureTests.swift`. `PLAN.md` §17 and this ledger were updated for the M11-W2 completion and M11-W3 hand-off.
+
+Architecture and safety: the adapter accepts one absolute bundle root, owns only `<root>/instances` and `<root>/prismlauncher.cfg`, rejects symlinked roots/instance/config paths and unsafe identifiers, rejects an `InstanceDir` that would leave the bundle root, preserves unknown INI keys, canonicalizes legacy aliases on save, removes disabled per-instance overrides, parses mod-loader JSON with uniqueness checks, and serializes same-runtime updates with a mutex before confirmed reload. Objective-C++ remains the only C++/Foundation ownership and type-conversion boundary; bridge callbacks deliver on the main actor and retained observation tokens are cancelled on completion, retry, clear, or shutdown. The default composition now supplies both global and instance settings ports instead of fixture callbacks or unavailable results.
+
+HIG decision: no new custom control or renderer was introduced. The existing SwiftUI `Settings`, `TabView`, `Form`, `Section`, `Toggle`, `Stepper`, `Picker`, `TextField`, `TextEditor`, `ProgressView`, `ContentUnavailableView`, system folder panel, `.keyboardShortcut(.defaultAction)`, accessibility/help metadata, and localized labels remain the presentation surface. This follows Apple's [Settings HIG](https://developer.apple.com/design/human-interface-guidelines/settings), [SwiftUI Settings](https://developer.apple.com/documentation/swiftui/settings), [Form](https://developer.apple.com/documentation/swiftui/form), and [accessibility](https://developer.apple.com/documentation/swiftui/accessibility) guidance. No third-party UI framework, custom system-control drawing, title-bar replacement, screenshot, recording, or visual snapshot was used; no new rendering exception was approved.
+
+Verification:
+
+- `cmake -S launcher/frontend -B .deriveddata-prism-native-backend -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DCMAKE_OSX_ARCHITECTURES=arm64`, `cmake --build .deriveddata-prism-native-backend -j2`, and `ctest --test-dir .deriveddata-prism-native-backend --output-on-failure` — passed, 7/7 CTest. The same shared backend path was reconfigured as Release and the build plus CTest — passed, 7/7.
+- The production C++ test proves legacy defaults, dynamic system-info memory default, aliases and `CatFit` normalization, metadata-instance inheritance, canonical alias writes, override removal and global fallback, facade validation rejection, concurrent serialized updates, confirmed reload, and destruction/reconstruction persistence. It uses only a disposable temporary root and removes it on exit.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build` — passed; the subsequent full `test` — passed, 173/173, 0 failed, 0 skipped; retained result bundle `Test-PrismNative-2026.08.09_18-35-22-+0800.xcresult`.
+- The corresponding Release build and full `test` with the same shared path — passed, 173/173, 0 failed, 0 skipped; retained result bundle `Test-PrismNative-2026.08.09_18-36-04-+0800.xcresult`. The full suite includes settings bridge conversion, main-actor delivery, cancellation suppression, draft preservation, rejection/retry recovery, accessibility, keyboard/default-action, localization, and no-custom-control contracts. An earlier focused run exposed an unretained asynchronous bridge token in the new test; retaining the token fixed the test according to the existing bridge contract, and the final full suites pass.
+- `plutil -lint` passed for source `Info.plist`, entitlements, and built Debug/Release `Prism.app/Contents/Info.plist`. `plutil -extract CFBundleIdentifier raw -o -` returned `com.lloydME.Prism` for both built configurations. `git diff --check` passed.
+- Public bridge/Swift scans found no Qt or C++ ownership types in Swift/public headers and no fixture settings model initializer in production composition. Settings and instance settings source checks retain system controls, accessibility identifiers/values/help, default keyboard action, localized keys, and no `Canvas`/`draw` control path. The existing bridge cancellation and Swift recovery tests remain green. No application launch occurred.
+
+Build storage and cleanup: the only retained repository build roots are `.deriveddata-prism-native` (634M) and `.deriveddata-prism-native-backend` (101M). The pre-existing full-root Qt cache `build-native` is 2.3G and was retained; this work unit did not create or delete it. Only the two result bundles named above remain under the shared Xcode test log. No `/private/tmp/prism-*` or synthetic `prism-native-settings-*` directory remains.
+
+Risks and limits: this adapter deliberately rejects external/custom `InstanceDir` and security-scoped bookmark values until a later isolated-root filesystem policy is designed; it never probes or imports such a path. The shared-runtime mutex prevents same-process concurrent corruption and tests confirm both callers receive a valid confirmed snapshot, but there is no cross-process file lock yet. The DTO intentionally excludes hidden Java/account/proxy/bookmark settings and secret values; M11-W3 owns Java persistence and later units own accounts/authentication, launch, resources, and other workflows. Metadata-only instances remain non-launch-capable until the ordered M11 adapters complete. The legacy Qt `Application`/`BaseInstance`/`MinecraftInstance` owners remain retained until M11-W10 parity and M12 retirement gates.
+
+Commit: pending implementation commit; this entry will be finalized in the following progress-ledger commit with the implementation hash.
+
+Next ready work unit: M11-W3 Production Java discovery, validation, selection, and managed metadata.
+
+### M11-W3: Production Java discovery, validation, selection, and managed metadata
+
 Status: ready
 
-Prerequisite: M11-W1 is complete. This unit must connect the native Settings scene and instance settings form to bundle-rooted production persistence, with round-trip, validation, cancellation, and recovery evidence; it must not inspect or import upstream settings.
-
-Queued sequence after M11-W1:
-
-- `M11-W2`: production global and instance settings persistence.
-- `M11-W3`: production Java discovery, validation, selection, and managed metadata.
-- `M11-W4`: production account persistence, authentication, refresh, and offline identity with fake external ports.
-- `M11-W5`: production launch/stop/task/log composition with a fake process executor.
-- `M11-W6`: production instance detail/resource/filesystem operations.
-- `M11-W7`: production creation/import/copy/export staging and archive paths.
-- `M11-W8`: production provider browse/install/recovery adapters with controlled protocol fixtures.
-- `M11-W9`: production utilities, skins, updates, URL/document routing, and supporting services.
-- `M11-W10`: production parity and retained-Qt-owner audit.
-- `M12-W1` through `M12-W3`: Qt dependency cutover, safe legacy UI retirement, and final complete-launcher acceptance.
+Prerequisite: M11-W2 is complete. Connect Java discovery, validation, selection, managed runtime metadata, and saved choice through production adapters and controlled filesystem/process ports. Distinguish system discovery from another launcher's saved state; do not execute an uncontrolled user Java binary or inspect upstream Java data.
 
 ## Completed commit index
 

@@ -10,11 +10,15 @@ find_package(Qt6 REQUIRED COMPONENTS Core)
 set(LAUNCHER_FRONTEND_PUBLIC_HEADERS
     FrontendFacade.h
     ProductionInstanceRuntime.h
+    ProductionSettingsRuntime.h
 )
 
 add_library(Launcher_frontend STATIC
     FrontendFacade.cpp
     ProductionInstanceRuntime.cpp
+    ProductionSettingsRuntime.cpp
+    ../HardwareInfo.cpp
+    ../SysInfo.cpp
     ../settings/INIFile.cpp
     ${LAUNCHER_FRONTEND_PUBLIC_HEADERS}
     ../settings/INIFile.h
@@ -71,4 +75,12 @@ if(BUILD_TESTING)
     target_compile_features(Launcher_frontend_production_instance_test PRIVATE cxx_std_20)
     target_link_libraries(Launcher_frontend_production_instance_test PRIVATE Launcher_frontend)
     add_test(NAME FrontendFacadeProductionInstance COMMAND Launcher_frontend_production_instance_test)
+
+    add_executable(Launcher_frontend_production_settings_test
+        FrontendFacadeProductionSettingsTest.cpp
+    )
+    target_compile_features(Launcher_frontend_production_settings_test PRIVATE cxx_std_20)
+    target_include_directories(Launcher_frontend_production_settings_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+    target_link_libraries(Launcher_frontend_production_settings_test PRIVATE Launcher_frontend)
+    add_test(NAME FrontendFacadeProductionSettings COMMAND Launcher_frontend_production_settings_test)
 endif()

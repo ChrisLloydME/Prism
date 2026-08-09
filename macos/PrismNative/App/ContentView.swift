@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @StateObject private var shellModel: PrismShellModel
     @StateObject private var instanceDetailsModel = PrismInstanceDetailsModel()
-    @StateObject private var instanceSettingsModel = PrismInstanceSettingsModel()
+    @StateObject private var instanceSettingsModel: PrismInstanceSettingsModel
     @StateObject private var instanceComponentsModel = PrismInstanceComponentsModel()
     @StateObject private var instanceResourcesModel = PrismInstanceResourcesModel()
     @StateObject private var worldsModel = PrismInstanceWorldsModel()
@@ -22,6 +22,7 @@ struct ContentView: View {
         bridge: PRPrismBridge? = nil
     ) {
         _shellModel = StateObject(wrappedValue: PrismShellModel(bridge: bridge))
+        _instanceSettingsModel = StateObject(wrappedValue: PrismInstanceSettingsModel(bridge: bridge))
         _commandModel = ObservedObject(wrappedValue: commandModel)
         _taskModel = ObservedObject(wrappedValue: taskModel)
     }
@@ -451,7 +452,10 @@ private struct PrismInstanceDetailsView: View {
                             .accessibilityIdentifier("prism.instance-details.identifier")
                     }
                     NavigationLink {
-                        PrismInstanceSettingsView(model: settingsModel)
+                        PrismInstanceSettingsView(model: settingsModel, instanceIdentifier: details.id)
+                            .onAppear {
+                                _ = settingsModel.loadIfNeeded(identifier: details.id)
+                            }
                     } label: {
                         Label("Instance Settings", systemImage: "gearshape")
                     }
@@ -861,6 +865,7 @@ struct PrismInstanceResourcesView: View {
 @MainActor
 struct PrismInstanceSettingsView: View {
     @ObservedObject var model: PrismInstanceSettingsModel
+    let instanceIdentifier: String
 
     private static let modLoaderOptions = [
         "NeoForge",

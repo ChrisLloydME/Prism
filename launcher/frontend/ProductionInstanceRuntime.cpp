@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "ProductionInstanceRuntime.h"
+#include "ProductionSettingsRuntime.h"
 
 #include "settings/INIFile.h"
 
@@ -299,7 +300,9 @@ std::shared_ptr<ProductionInstanceRuntime> makeProductionInstanceRuntime(std::fi
 
 FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesystem::path dataRoot)
 {
-    auto runtime = makeProductionInstanceRuntime(std::move(dataRoot));
+    const auto normalizedDataRoot = dataRoot.lexically_normal();
+    auto runtime = makeProductionInstanceRuntime(normalizedDataRoot);
+    auto settingsRuntime = makeProductionSettingsRuntime(normalizedDataRoot);
     FrontendRuntimeDependencies dependencies;
     dependencies.dispatch = [](FrontendRuntimeDependencies::Work work) {
         if (work) {
@@ -308,7 +311,10 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
     };
     dependencies.now = [] { return std::chrono::system_clock::now(); };
     dependencies.cancelPendingWork = [runtime] { runtime->stopInstanceObservation(); };
-    dependencies.shutdown = [runtime] { runtime->shutdown(); };
+    dependencies.shutdown = [runtime, settingsRuntime] {
+        runtime->shutdown();
+        settingsRuntime->shutdown();
+    };
     dependencies.loadInstanceSnapshots = [runtime](const std::filesystem::path&) { return runtime->instanceSnapshots(); };
     dependencies.loadInstanceChanges = [runtime](const std::filesystem::path&) { return runtime->takeInstanceChanges(); };
     dependencies.createMetadataInstance =
@@ -320,5 +326,24 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
             return runtime->startInstanceObservation(std::move(handler));
         };
     dependencies.stopInstanceObservation = [runtime] { runtime->stopInstanceObservation(); };
+    dependencies.loadInstanceSettings = [settingsRuntime](
+                                            const std::filesystem::path&,
+                                            const std::string& identifier) {
+        return settingsRuntime->instanceSettings(identifier);
+    };
+    dependencies.updateInstanceSettings = [settingsRuntime](
+                                              const std::filesystem::path&,
+                                              const std::string& identifier,
+                                              const FrontendInstanceSettingsSnapshot& settings) {
+        return settingsRuntime->updateInstanceSettings(identifier, settings);
+    };
+    dependencies.loadGlobalSettings = [settingsRuntime](const std::filesystem::path&) {
+        return settingsRuntime->globalSettings();
+    };
+    dependencies.updateGlobalSettings = [settingsRuntime](
+                                            const std::filesystem::path&,
+                                            const FrontendGlobalSettingsSnapshot& settings) {
+        return settingsRuntime->updateGlobalSettings(settings);
+    };
     return dependencies;
 }

@@ -1385,6 +1385,66 @@ struct PrismInstanceSettings: Identifiable, Equatable, Sendable {
         self.customOpenALPath = customOpenALPath
     }
 
+    func makeBridgeSettings() -> PRInstanceSettings? {
+        PRInstanceSettings(
+            identifier: id,
+            windowOverrideEnabled: windowOverrideEnabled,
+            launchMaximized: launchMaximized,
+            windowWidth: windowWidth,
+            windowHeight: windowHeight,
+            closeAfterLaunch: closeAfterLaunch,
+            quitAfterGameStop: quitAfterGameStop,
+            consoleOverrideEnabled: consoleOverrideEnabled,
+            showConsole: showConsole,
+            showConsoleOnError: showConsoleOnError,
+            autoCloseConsole: autoCloseConsole,
+            globalDataPacksEnabled: globalDataPacksEnabled,
+            globalDataPacksPath: globalDataPacksPath,
+            gameTimeOverrideEnabled: gameTimeOverrideEnabled,
+            showGameTime: showGameTime,
+            recordGameTime: recordGameTime,
+            countGameTime: countGameTime,
+            joinServerOnLaunch: joinServerOnLaunch,
+            joinTarget: bridgeJoinTarget,
+            joinServerAddress: joinServerAddress,
+            joinWorld: joinWorld,
+            overrideModDownloadLoaders: overrideModDownloadLoaders,
+            modDownloadLoaders: modDownloadLoaders,
+            javaLocationOverrideEnabled: javaLocationOverrideEnabled,
+            javaPath: javaPath,
+            ignoreJavaCompatibility: ignoreJavaCompatibility,
+            memoryOverrideEnabled: memoryOverrideEnabled,
+            minMemoryMiB: minMemoryMiB,
+            maxMemoryMiB: maxMemoryMiB,
+            permGenMiB: permGenMiB,
+            lowMemoryWarning: lowMemoryWarning,
+            javaArgumentsOverrideEnabled: javaArgumentsOverrideEnabled,
+            jvmArguments: jvmArguments,
+            commandOverrideEnabled: commandOverrideEnabled,
+            preLaunchCommand: preLaunchCommand,
+            wrapperCommand: wrapperCommand,
+            postExitCommand: postExitCommand,
+            legacySettingsOverrideEnabled: legacySettingsOverrideEnabled,
+            onlineFixes: onlineFixes,
+            nativeWorkaroundsOverrideEnabled: nativeWorkaroundsOverrideEnabled,
+            useNativeGLFW: useNativeGLFW,
+            customGLFWPath: customGLFWPath,
+            useNativeOpenAL: useNativeOpenAL,
+            customOpenALPath: customOpenALPath
+        )
+    }
+
+    private var bridgeJoinTarget: PRInstanceJoinTarget {
+        switch joinTarget {
+        case .none:
+            return .none
+        case .server:
+            return .server
+        case .world:
+            return .world
+        }
+    }
+
     private static func joinTarget(from value: PRInstanceJoinTarget) -> PrismInstanceJoinTarget? {
         switch value {
         case .none:
@@ -1420,12 +1480,17 @@ final class PrismInstanceSettingsModel: ObservableObject {
 
     private let onLoad: ((String) -> Void)?
     private let onSave: ((String, PrismInstanceSettings) -> Void)?
+    private let bridge: PRPrismBridge?
     private var activeIdentifier: String?
+    private var loadToken: PRBridgeObservationToken?
+    private var saveToken: PRBridgeObservationToken?
 
     init(
+        bridge: PRPrismBridge? = nil,
         onLoad: ((String) -> Void)? = nil,
         onSave: ((String, PrismInstanceSettings) -> Void)? = nil
     ) {
+        self.bridge = bridge
         self.onLoad = onLoad
         self.onSave = onSave
     }
@@ -1469,8 +1534,37 @@ final class PrismInstanceSettingsModel: ObservableObject {
         state = .loading(identifier: normalizedIdentifier)
         draft = nil
         saveState = .idle
-        onLoad?(normalizedIdentifier)
+        loadToken?.cancel()
+        if let bridge {
+            loadToken = bridge.loadInstanceSettings(withIdentifier: normalizedIdentifier) { [weak self] settings, error in
+                self?.loadToken = nil
+                if let settings {
+                    _ = self?.apply(settings: settings)
+                } else if let error {
+                    _ = self?.apply(error: error, instanceIdentifier: normalizedIdentifier)
+                }
+            }
+        } else {
+            onLoad?(normalizedIdentifier)
+        }
         return true
+    }
+
+    @discardableResult
+    func loadIfNeeded(identifier: String) -> Bool {
+        let normalizedIdentifier = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedIdentifier.isEmpty else {
+            return false
+        }
+        if activeIdentifier == normalizedIdentifier {
+            switch state {
+            case .loading, .content:
+                return false
+            case .empty, .failed:
+                break
+            }
+        }
+        return beginLoading(identifier: normalizedIdentifier)
     }
 
     @discardableResult
@@ -1565,7 +1659,7 @@ final class PrismInstanceSettingsModel: ObservableObject {
         }
 
         saveState = .saving
-        onSave?(settings.id, draft)
+        submitSave(identifier: settings.id, draft: draft)
         return true
     }
 
@@ -1588,15 +1682,33 @@ final class PrismInstanceSettingsModel: ObservableObject {
         }
 
         saveState = .saving
-        onSave?(settings.id, draft)
+        submitSave(identifier: settings.id, draft: draft)
         return true
     }
 
     func clear() {
         activeIdentifier = nil
+        loadToken?.cancel()
+        saveToken?.cancel()
         state = .empty
         draft = nil
         saveState = .idle
+    }
+
+    private func submitSave(identifier: String, draft: PrismInstanceSettings) {
+        if let bridge, let bridgeSettings = draft.makeBridgeSettings() {
+            saveToken?.cancel()
+            saveToken = bridge.updateInstanceSettings(withIdentifier: identifier, settings: bridgeSettings) { [weak self] result, error in
+                self?.saveToken = nil
+                if let result {
+                    _ = self?.apply(updateResult: result)
+                } else if let error {
+                    _ = self?.apply(error: error, instanceIdentifier: identifier)
+                }
+            }
+        } else {
+            onSave?(identifier, draft)
+        }
     }
 
     private static func saveFailure(for identifier: String, key: String) -> PrismInstanceDetailsFailure {

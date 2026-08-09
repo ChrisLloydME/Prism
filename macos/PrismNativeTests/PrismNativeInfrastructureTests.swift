@@ -203,6 +203,74 @@ final class PrismNativeInfrastructureTests: XCTestCase {
         XCTAssertTrue(reconstructed.shutdown())
     }
 
+    func testProductionCompositionInjectsBridgeIntoSettingsModels() throws {
+        let macosRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let appSource = try readSource(at: macosRoot.appendingPathComponent("PrismNative/App/PrismNativeApp.swift"))
+        let contentSource = try readSource(at: macosRoot.appendingPathComponent("PrismNative/App/ContentView.swift"))
+
+        XCTAssertTrue(appSource.contains("PrismGlobalSettingsModel(initialSettings: nil, bridge: runtime.bridge)"))
+        XCTAssertFalse(appSource.contains("@StateObject private var globalSettingsModel = PrismGlobalSettingsModel()"))
+        XCTAssertTrue(contentSource.contains("PrismInstanceSettingsModel(bridge: bridge)"))
+        XCTAssertTrue(contentSource.contains("loadIfNeeded(identifier: details.id)"))
+    }
+
+    func testProductionBridgeLoadsBundleScopedGlobalAndInstanceSettings() throws {
+        let fixtureRoot = try PrismTemporaryFixtureRoot()
+        let bridge: PRPrismBridge = try XCTUnwrap(
+            PRPrismBridge(dataRootURL: fixtureRoot.url, cancellationHandler: nil, shutdownHandler: nil)
+        )
+
+        let globalExpectation = expectation(description: "production global settings")
+        var globalSettings: PRGlobalSettings?
+        var globalError: PRBridgeError?
+        var globalToken: PRBridgeObservationToken?
+        globalToken = bridge.loadGlobalSettings { settings, error in
+            globalSettings = settings
+            globalError = error
+            globalExpectation.fulfill()
+        }
+        wait(for: [globalExpectation], timeout: 3)
+        XCTAssertNotNil(globalToken)
+        XCTAssertNil(globalError)
+        XCTAssertEqual(globalSettings?.instanceDirectoryURL.standardizedFileURL,
+                       fixtureRoot.url.appendingPathComponent("instances", isDirectory: true).standardizedFileURL)
+        XCTAssertEqual(globalSettings?.catFit, "fit")
+        XCTAssertEqual(globalSettings?.numberOfConcurrentTasks, 10)
+
+        let createExpectation = expectation(description: "production settings instance")
+        var createToken: PRBridgeObservationToken?
+        createToken = bridge.createMetadataOnlyInstance(
+            withIdentifier: "native.settings",
+            name: "Native Settings",
+            iconKey: "default"
+        ) { summary, error in
+            XCTAssertNil(error)
+            XCTAssertEqual(summary?.identifier, "native.settings")
+            createExpectation.fulfill()
+        }
+        wait(for: [createExpectation], timeout: 3)
+        XCTAssertNotNil(createToken)
+
+        let instanceExpectation = expectation(description: "production instance settings")
+        var instanceSettings: PRInstanceSettings?
+        var instanceError: PRBridgeError?
+        var instanceToken: PRBridgeObservationToken?
+        instanceToken = bridge.loadInstanceSettings(withIdentifier: "native.settings") { settings, error in
+            instanceSettings = settings
+            instanceError = error
+            instanceExpectation.fulfill()
+        }
+        wait(for: [instanceExpectation], timeout: 3)
+        XCTAssertNotNil(instanceToken)
+        XCTAssertNil(instanceError)
+        XCTAssertEqual(instanceSettings?.identifier, "native.settings")
+        XCTAssertEqual(instanceSettings?.windowWidth, 854)
+        XCTAssertEqual(instanceSettings?.minMemoryMiB, 512)
+        XCTAssertTrue(bridge.shutdown())
+    }
+
     func testNativeTargetOwnsLegacyBundleMetadataAndIconWithoutSigningChanges() throws {
         let macosRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
