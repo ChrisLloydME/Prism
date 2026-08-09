@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 8, Creation, discovery, and installation
 
-Active work unit: M8-W2
+Active work unit: M8-W3
 
-Next ready work unit: M8-W2
+Next ready work unit: M8-W3
 
 ## Safety baseline
 
@@ -1761,11 +1761,55 @@ Next after completion: M8-W2, import from a local file and URL using system file
 
 ### M8-W2: Fixture-controlled local file and URL import
 
+Status: complete
+
+Outcome: Implemented a fixture-controlled native import seam for caller-selected local archives and HTTP(S) archive URLs. The facade validates explicit source kind, source value, instance metadata, task progress, terminal outcome, cancellation, retryability, and rollback metadata; the Foundation bridge converts only immutable values; and Swift owns a standard file-importer/URL draft with progress, cancellation, retry, failure, and confirmed-success states.
+
+Legacy evidence: `ImportPage` accepts local ZIP/`.mrpack` files or direct URLs, `MainWindow::processURLs` additionally handles dropped files and `prismlauncher://import`, `InstanceImportTask` downloads and identifies Modrinth/Technic/Flame/MultiMC archives through staging, `ExtractZipTask` and `ArchiveReader` enforce root/link-escape safety, and `InstanceList::wrapInstanceTask` commits staged instances with retry. `NewInstanceDialog` remains a Qt owner of the old import task and final metadata. This unit deliberately extracts only the input/progress/result contract and leaves those backend tasks unchanged.
+
+Working boundary: use system `fileImporter` semantics and fixture-controlled inputs only. Local input is an absolute Foundation file URL/path; remote input is an HTTP(S) URL with an authority. The injected runner remains responsible for staging, extraction, archive detection, downloads, provider adapters, and final commits. No upstream application data, real URL, provider service, account, Keychain, credential, production file, live download, copy/export behavior, or provider installation was accessed or added.
+
+Architecture: `FrontendInstanceImportRequest` and `FrontendInstanceImportResult` are QWidget-free value contracts. `FrontendFacade` normalizes the explicit temporary root and rejects malformed local/remote values, missing runner ports, invalid result invariants, terminal-progress mismatches, and post-shutdown calls. Objective-C++ is the sole Foundation/C++ and ownership boundary: it validates/copies `NSURL` inputs, converts local file representations versus remote absolute strings, maps immutable task/result DTOs, owns observation state, serializes facade work, delivers on the main actor, and suppresses late callbacks after cancellation. Swift owns only the `@MainActor` draft/generation state and native system controls; no Qt, C++ type, ownership wrapper, network client, file reader, process, Keychain, or custom rendering crosses the boundary.
+
+Files changed:
+
+- `launcher/frontend/FrontendFacade.cpp`
+- `launcher/frontend/FrontendFacade.h`
+- `launcher/frontend/FrontendFacadeContractTest.cpp`
+- `macos/PrismNative.xcodeproj/project.pbxproj`
+- `macos/PrismNative/Bridge/PrismBridge.h`
+- `macos/PrismNative/Bridge/PrismBridge.mm`
+- `macos/PrismNative/Bridge/PrismBridgeModels.h`
+- `macos/PrismNative/App/PrismInstanceImport.swift`
+- `macos/PrismNativeTests/PrismBridgeFacadeIntegrationTests.mm`
+- `macos/PrismNativeTests/PrismInstanceImportTests.swift`
+
+Verification:
+
+- Focused native import and bridge XCTest: `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-m8-w2-focused-tests CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test -only-testing:PrismNativeTests/PrismInstanceImportTests -only-testing:PrismNativeTests/PrismBridgeFacadeIntegrationTests/testInstanceImportConvertsFoundationRequestProgressResultAndCancellation`; passed 6/6. The first link attempt exposed a stale universal facade archive without `FrontendFacade::importInstance`; after reconfiguring/rebuilding the macOS 14 universal facade, the focused rerun passed 6/6 and its bridge test covered main-thread progress/result, Foundation path conversion, cancellation, and late-completion suppression.
+- Universal macOS 14 facade: `cmake -S launcher/frontend -B .deriveddata-prism-native-backend -DCMAKE_OSX_ARCHITECTURES='x86_64;arm64' -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON`; `cmake --build .deriveddata-prism-native-backend --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test --parallel 2`; `ctest --test-dir .deriveddata-prism-native-backend --output-on-failure -R '^(FrontendFacadeContract|FrontendFacadePublicHeaders)$'`; passed 2/2.
+- arm64 facade: `cmake --build /private/tmp/prism-m6-w5-arm64-backend --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test --parallel 2`; `ctest --test-dir /private/tmp/prism-m6-w5-arm64-backend --output-on-failure -R '^(FrontendFacadeContract|FrontendFacadePublicHeaders)$'`; passed 2/2. The fixture contract covers local/remote source preservation, normalized root, success/cancelled terminal events, invalid relative/FTP requests, missing runner, and post-shutdown rejection.
+- Existing arm64 Qt composition: `cmake --build /private/tmp/prism-m5-w4-cmake --target Prism --parallel 2`; passed without executing the application. The known macOS 26-versus-14 prebuilt-dependency deployment warnings, missing Vulkan headers, and missing `clang-format` warning remain non-blocking and unchanged.
+- Native builds and tests: `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-m8-w2-debug CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build` and the equivalent Release command with `.deriveddata-m8-w2-release` passed; the corresponding full Debug and Release `... test` commands passed 129/129 each. No application executable was launched.
+- Identity and architecture: `plutil -extract CFBundleIdentifier raw -o - .deriveddata-m8-w2-debug/Build/Products/Debug/Prism.app/Contents/Info.plist` and the Release equivalent both returned `com.lloydME.Prism`; `file`/`lipo -info` confirmed both app binaries are universal `x86_64 arm64`, and the universal facade archive is also `x86_64 arm64`.
+- Boundary and structure: Objective-C public-header `clang -fsyntax-only` and Objective-C++ bridge `clang++ -fsyntax-only -std=c++20 -fobjc-arc -fblocks -target arm64-apple-macos14.0` passed. Standard `Form`/`Picker`/`TextField`/`fileImporter`/`ProgressView`/`ContentUnavailableView`/default-action/accessibility/localization-shape scans passed; the new Swift import source has no Qt/C++/ownership, network, file-reader, process, upstream-data, or custom-drawing tokens. `git diff --check` and staged `git diff --cached --check` passed before the implementation commit.
+- No screenshot, recording, visual snapshot test, upstream application/data, real account, Keychain, credential, production service, signing, installation, publishing, push, or destructive operation was used.
+
+HIG decision: use SwiftUI `Form`, `Section`, `Picker`, `TextField`, `Button`, `ProgressView`, `ContentUnavailableView`, and `Label`, with `.formStyle(.grouped)`, `.keyboardShortcut(.defaultAction)`, system `fileImporter`, standard disabled states, and stable accessibility identifiers/values. File-panel cancellation leaves the current draft selection intact; backend cancellation transitions to a separate cancelled state; failure carries localized recovery metadata and a retry/edit path. No custom control, custom file picker, third-party UI framework, custom drawing, title-bar replacement, or rendering exception was introduced.
+
+Risk and limits: the runner is fixture-controlled and is not wired to `InstanceImportTask`, `ExtractZipTask`, `ArchiveReader`, metacache/network downloads, provider APIs, staging commits, or live instance directories. ZIP/`.mrpack` identification, provider-specific manifests, link-escape enforcement, disk/network errors, optional/blocked files, copy/export, and production rollback remain later Milestone 8 contracts. The stale universal archive link failure was resolved by evidence-led macOS 14 reconfiguration and rebuild; no source or Qt link graph change was required.
+
+Commit: `341a209af` (implementation); this entry is completed in the follow-up progress-ledger commit.
+
+Next after completion: M8-W3, define fixture-controlled copy and export instance flows through system save-panel semantics; do not begin provider browsing until M8-W3 evidence is verified and committed.
+
+### M8-W3: Fixture-controlled copy and export instance
+
 Status: active
 
-Outcome: in progress. Define the next Milestone 8 native import seam for local files and URL inputs, preserving explicit Foundation values, cancellation, error recovery, and the existing backend as the source of truth.
+Outcome: in progress. Define the next Milestone 8 native copy/export seam using confirmed backend results, explicit cancellation/error recovery, and system save-panel semantics.
 
-Working boundary: begin by re-reading the legacy import dialog, archive/URL import task, and their backend collaborators. Use system `fileImporter`/`NSOpenPanel` semantics and fixture-controlled inputs only. Do not access upstream application data, real URLs, provider services, accounts, Keychain, credentials, production files, or live downloads; do not add copy/export/provider installation behavior in this work unit.
+Working boundary: begin by re-reading `CopyInstanceDialog`, `ExportInstanceDialog`, `ExportPackDialog`, `ExportToModListDialog`, and their copy/export backend tasks. Use fixture-controlled temporary roots and `fileExporter`/`NSSavePanel` values only. Do not read or write upstream application data, real accounts, Keychain, production files, provider services, or live network resources; do not add provider browsing or installation behavior in this work unit.
 
 ## Completed commit index
 
@@ -1817,6 +1861,7 @@ Working boundary: begin by re-reading the legacy import dialog, archive/URL impo
 | `4eac74821` | Added the fixture-only offline/demo launch identity facade, Foundation bridge, Swift Settings editor, validation/recovery state machine, and cancellation-safe tests | facade/public-header CMake targets; CTest 2/2; arm64 Qt Prism target; Debug/Release native builds; full Debug/Release XCTest 116/116; focused model/structure tests 2/2; Bundle ID `com.lloydME.Prism`; universal `x86_64 arm64` artifacts; accessibility/localization/boundary/secret/no-drawing scans; `git diff --check` |
 | 40c3ffd7f | Added the executable M7-W7 native secret-boundary audit for account DTO declarations, authentication fixtures, log redaction, and the progress ledger | Focused audit test; facade/public-header CMake targets; CTest 2/2; full Debug/Release XCTest 117/117; Debug/Release builds; Bundle ID com.lloydME.Prism; universal x86_64 arm64 artifacts; boundary/secret/endpoint/no-drawing scans; git diff --check |
 | `ee0fd45e7` | Added the fixture-controlled vanilla creation request/result contract, Foundation bridge, native SwiftUI creation state, progress/cancellation/retry handling, and non-launch tests | Focused creation/bridge XCTest 6/6; universal and arm64 macOS 14 facade CTest 2/2 and 3/3; arm64 Qt Prism target; full Debug/Release XCTest 123/123; Debug/Release builds; Bundle ID `com.lloydME.Prism`; universal `x86_64 arm64` artifacts; Objective-C/Objective-C++ syntax; accessibility/localization/boundary/no-drawing scans; `git diff --check` |
+| `341a209af` | Added the fixture-controlled local-file and HTTP(S) import request/result contract, Foundation bridge, native system file-importer/URL state machine, progress/cancellation/retry recovery, and non-launch tests | Focused import/bridge XCTest 6/6; universal and arm64 macOS 14 facade CTest 2/2; arm64 Qt Prism target; full Debug/Release XCTest 129/129; Debug/Release builds; Bundle ID `com.lloydME.Prism`; universal `x86_64 arm64` artifacts; Objective-C/Objective-C++ syntax; accessibility/localization/boundary/no-drawing scans; `git diff --check` |
 
 ## Current architecture findings
 
@@ -1870,6 +1915,7 @@ Working boundary: begin by re-reading the legacy import dialog, archive/URL impo
 47. M7-W7 makes the account secret boundary executable: public facade and Foundation DTO value declarations are checked for forbidden secret-bearing fields, authentication fixtures are restricted to synthetic .invalid endpoints, log fixtures are required to assert removal of fake secret-shaped sentinels, and the progress ledger is scanned for concrete credential-shaped values. This is a regression guard, not live-provider validation; future adapters must preserve the same non-secret DTO and diagnostic contract.
 
 48. M8-W1 establishes the first creation boundary without importing legacy UI ownership: explicit vanilla request values, validated task/result snapshots, and cancellation flow stay in the QWidget-free facade contract; Objective-C++ alone converts Foundation values and owns callback lifetime; Swift owns only main-actor draft/progress/recovery state. The injected fixture runner receives the normalized temporary root, while real staging, downloads, and instance commit remain backend adapter responsibilities for later work units.
+49. M8-W2 establishes the import boundary without importing legacy task or archive ownership: local file URLs and HTTP(S) strings are explicit Foundation values, the facade validates source/result/task invariants and temporary-root routing, Objective-C++ alone converts `NSURL`/C++ values and owns cancellable delivery, and Swift owns only the main-actor draft and system file/URL presentation. Archive identification, extraction/link-escape safety, downloads, provider manifests, staging, and final commits remain backend-owned follow-up contracts.
 
 ## Custom rendering exceptions
 
@@ -1883,4 +1929,4 @@ No current blocker.
 
 ## Resume instructions
 
-Read PLAN.md and PROGRESS.md, run git status --short --branch -uall, inspect the last five commits, then activate only ready M8-W2. M6-W1 is complete in d3f319c494a61d559643964a6253a3ec8c495df3; M6-W2 is complete in 467bb275e04a087e00a4dd85365273bdcf130185; M6-W3 is complete in 789502d804528d39098fd21fd227d4572ae18040; M6-W4 is complete in 891138f6ea639c3af718d74e8f63f65e74650cf6; M6-W5 is complete in ebcccb3761bbfdbf66d042e75dae85ace9450823; M6-W6 is complete in ed31c77fbedcacfcd5e691d0f67ab08c25dff9e4; M6-W7 is complete in a0c6456c1; M7-W1 is complete in 6149bb3a2; M7-W2 is complete in 12c6ba49a; M7-W3 is complete in 76cfc19dd; M7-W4 is complete in 5a4cef365; M7-W5 is complete in 15d2863af; M7-W6 is complete in 4eac74821; M7-W7 is complete in 40c3ffd7f with its progress-ledger update in the following commit; and M8-W1 is complete in ee0fd45e7 with this progress-ledger update in the following commit. Preserve all existing fixture-root, Bundle ID, no-launch, no-secrets, and Objective-C++ boundary constraints; begin M8-W2 by re-reading the legacy import path before editing and do not reopen completed M6, M7, or M8-W1 evidence.
+Read PLAN.md and PROGRESS.md, run git status --short --branch -uall, inspect the last five commits, then activate only ready M8-W3. M6-W1 is complete in d3f319c494a61d559643964a6253a3ec8c495df3; M6-W2 is complete in 467bb275e04a087e00a4dd85365273bdcf130185; M6-W3 is complete in 789502d804528d39098fd21fd227d4572ae18040; M6-W4 is complete in 891138f6ea639c3af718d74e8f63f65e74650cf6; M6-W5 is complete in ebcccb3761bbfdbf66d042e75dae85ace9450823; M6-W6 is complete in ed31c77fbedcacfcd5e691d0f67ab08c25dff9e4; M6-W7 is complete in a0c6456c1; M7-W1 is complete in 6149bb3a2; M7-W2 is complete in 12c6ba49a; M7-W3 is complete in 76cfc19dd; M7-W4 is complete in 5a4cef365; M7-W5 is complete in 15d2863af; M7-W6 is complete in 4eac74821; M7-W7 is complete in 40c3ffd7f with its progress-ledger update in the following commit; M8-W1 is complete in ee0fd45e7 with its progress-ledger update in the following commit; and M8-W2 is complete in 341a209af with this progress-ledger update in the following commit. Preserve all existing fixture-root, Bundle ID, no-launch, no-secrets, and Objective-C++ boundary constraints; begin M8-W3 by re-reading the legacy copy/export path before editing and do not reopen completed M6, M7, or M8-W1/M8-W2 evidence.
