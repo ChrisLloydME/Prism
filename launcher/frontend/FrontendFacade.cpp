@@ -2811,6 +2811,7 @@ bool FrontendFacade::shutdown() noexcept
 
     m_lifecycleState = FrontendLifecycleState::ShuttingDown;
     stopInstanceObservation();
+    stopTaskObservation();
     try {
         if (m_runtimeDependencies.cancelPendingWork) {
             m_runtimeDependencies.cancelPendingWork();
@@ -2878,6 +2879,26 @@ void FrontendFacade::stopInstanceObservation() const noexcept
     }
     try {
         m_runtimeDependencies.stopInstanceObservation();
+    } catch (...) {
+    }
+}
+
+bool FrontendFacade::startTaskObservation(FrontendRuntimeDependencies::TaskObservationHandler handler) const
+{
+    ensureRunning(m_lifecycleState);
+    if (!m_runtimeDependencies.startTaskObservation) {
+        return false;
+    }
+    return m_runtimeDependencies.startTaskObservation(std::move(handler));
+}
+
+void FrontendFacade::stopTaskObservation() const noexcept
+{
+    if (!m_runtimeDependencies.stopTaskObservation) {
+        return;
+    }
+    try {
+        m_runtimeDependencies.stopTaskObservation();
     } catch (...) {
     }
 }

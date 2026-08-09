@@ -12,19 +12,21 @@ struct ContentView: View {
     @StateObject private var serversModel = PrismInstanceServersModel()
     @StateObject private var screenshotsModel = PrismInstanceScreenshotsModel()
     @StateObject private var instanceLogsModel = PrismInstanceLogsModel()
-    @StateObject private var logModel = PrismTaskLogPresentationModel()
+    @ObservedObject private var logModel: PrismTaskLogPresentationModel
     @ObservedObject private var commandModel: PrismCommandModel
     @ObservedObject private var taskModel: PrismTaskPresentationModel
 
     init(
         commandModel: PrismCommandModel,
         taskModel: PrismTaskPresentationModel,
+        logModel: PrismTaskLogPresentationModel? = nil,
         bridge: PRPrismBridge? = nil
     ) {
         _shellModel = StateObject(wrappedValue: PrismShellModel(bridge: bridge))
         _instanceSettingsModel = StateObject(wrappedValue: PrismInstanceSettingsModel(bridge: bridge))
         _commandModel = ObservedObject(wrappedValue: commandModel)
         _taskModel = ObservedObject(wrappedValue: taskModel)
+        _logModel = ObservedObject(wrappedValue: logModel ?? PrismTaskLogPresentationModel(bridge: bridge))
     }
 
     var body: some View {

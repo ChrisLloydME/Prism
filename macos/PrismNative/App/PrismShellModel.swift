@@ -2112,9 +2112,16 @@ final class PrismTaskPresentationModel: ObservableObject {
     @Published private(set) var task: PrismTaskPresentation?
     @Published private(set) var failure: PrismTaskPresentationFailure?
     private(set) var cancellationPending = false
-    private let onTaskCommand: ((PrismTaskCommandIntent) -> Void)?
+    var onTaskCommand: ((PrismTaskCommandIntent) -> Void)?
+    private var activeIdentifier: String?
+    private var statusRequest: PRBridgeObservationToken?
+    private weak var bridge: PRPrismBridge?
 
-    init(onTaskCommand: ((PrismTaskCommandIntent) -> Void)? = nil) {
+    init(
+        bridge: PRPrismBridge? = nil,
+        onTaskCommand: ((PrismTaskCommandIntent) -> Void)? = nil
+    ) {
+        self.bridge = bridge
         self.onTaskCommand = onTaskCommand
     }
 
@@ -2136,8 +2143,43 @@ final class PrismTaskPresentationModel: ObservableObject {
             cancellationPending = false
         }
         task = presentation
-        failure = nil
+        if presentation.state == .failed, let terminalResult = presentation.terminalResult {
+            failure = PrismTaskPresentationFailure(
+                taskIdentifier: presentation.id,
+                localizationKey: terminalResult.localizationKey,
+                substitutionValues: terminalResult.substitutionValues,
+                diagnosticText: terminalResult.diagnosticText,
+                recoveryAction: .retry,
+                partialChangesRolledBack: terminalResult.partialChangesRolledBack
+            )
+        } else {
+            failure = nil
+        }
         return true
+    }
+
+    @discardableResult
+    func load(identifier: String) -> Bool {
+        let normalizedIdentifier = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedIdentifier.isEmpty, let bridge else {
+            return false
+        }
+
+        activeIdentifier = normalizedIdentifier
+        statusRequest?.cancel()
+        statusRequest = bridge.loadTaskStatus(withIdentifier: normalizedIdentifier) { [weak self] status, error in
+            Task { @MainActor [weak self] in
+                guard let self, self.activeIdentifier == normalizedIdentifier else {
+                    return
+                }
+                if let status {
+                    _ = self.apply(status: status)
+                } else if let error {
+                    _ = self.apply(error: error, taskIdentifier: normalizedIdentifier)
+                }
+            }
+        }
+        return statusRequest != nil
     }
 
     @discardableResult
@@ -2196,6 +2238,9 @@ final class PrismTaskPresentationModel: ObservableObject {
     }
 
     func clear() {
+        activeIdentifier = nil
+        statusRequest?.cancel()
+        statusRequest = nil
         task = nil
         failure = nil
         cancellationPending = false
@@ -2266,9 +2311,15 @@ struct PrismTaskLogFailure: Equatable, Sendable {
 final class PrismTaskLogPresentationModel: ObservableObject {
     @Published private(set) var log: PrismTaskLogPresentation?
     @Published private(set) var failure: PrismTaskLogFailure?
-    private let onRetry: ((String) -> Void)?
+    var onRetry: ((String) -> Void)?
+    private weak var bridge: PRPrismBridge?
+    private var logRequest: PRBridgeObservationToken?
 
-    init(onRetry: ((String) -> Void)? = nil) {
+    init(
+        bridge: PRPrismBridge? = nil,
+        onRetry: ((String) -> Void)? = nil
+    ) {
+        self.bridge = bridge
         self.onRetry = onRetry
     }
 
@@ -2281,6 +2332,29 @@ final class PrismTaskLogPresentationModel: ObservableObject {
         log = presentation
         failure = nil
         return true
+    }
+
+    @discardableResult
+    func load(identifier: String) -> Bool {
+        let normalizedIdentifier = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedIdentifier.isEmpty, let bridge else {
+            return false
+        }
+
+        logRequest?.cancel()
+        logRequest = bridge.loadTaskLog(withIdentifier: normalizedIdentifier) { [weak self] snapshot, error in
+            Task { @MainActor [weak self] in
+                guard let self else {
+                    return
+                }
+                if let snapshot {
+                    _ = self.apply(snapshot: snapshot)
+                } else if let error {
+                    _ = self.apply(error: error, taskIdentifier: normalizedIdentifier)
+                }
+            }
+        }
+        return logRequest != nil
     }
 
     @discardableResult
@@ -2314,8 +2388,140 @@ final class PrismTaskLogPresentationModel: ObservableObject {
     }
 
     func clear() {
+        logRequest?.cancel()
+        logRequest = nil
         log = nil
         failure = nil
+    }
+}
+
+/// Main-actor launch coordinator. It owns only Foundation-facing models and
+/// routes stable intents to the bridge; process construction and task lifetime
+/// remain in the widget-free native production adapter.
+@MainActor
+final class PrismLaunchCoordinator: ObservableObject {
+    let taskModel: PrismTaskPresentationModel
+    let logModel: PrismTaskLogPresentationModel
+
+    private weak var bridge: PRPrismBridge?
+    private var activeTaskIdentifier: String?
+    private var taskObservation: PRBridgeObservationToken?
+    private var commandRequest: PRBridgeObservationToken?
+
+    init(bridge: PRPrismBridge?) {
+        self.bridge = bridge
+        self.taskModel = PrismTaskPresentationModel(bridge: bridge)
+        self.logModel = PrismTaskLogPresentationModel(bridge: bridge)
+        self.taskModel.onTaskCommand = { [weak self] intent in
+            self?.handleTaskCommand(intent)
+        }
+        self.logModel.onRetry = { [weak self] identifier in
+            self?.loadTask(identifier: identifier)
+        }
+
+        if let bridge {
+            self.taskObservation = bridge.observeTaskStatus { [weak self] status in
+                Task { @MainActor [weak self] in
+                    self?.receive(status: status)
+                }
+            }
+        }
+    }
+
+    func handleInstanceCommand(_ intent: PrismInstanceCommandIntent) {
+        guard let bridge else {
+            return
+        }
+
+        let taskIdentifier = ProductionTaskIdentifier.launch(for: intent.identifier)
+        let completion: PRInstanceCommandCompletionHandler = { [weak self] result, error in
+            Task { @MainActor [weak self] in
+                guard let self else {
+                    return
+                }
+                if let error {
+                    _ = self.taskModel.apply(error: error, taskIdentifier: taskIdentifier)
+                    _ = self.logModel.apply(error: error, taskIdentifier: taskIdentifier)
+                    return
+                }
+                guard result?.outcome == .succeeded else {
+                    _ = self.taskModel.apply(
+                        failure: PrismTaskPresentationFailure(
+                            taskIdentifier: taskIdentifier,
+                            localizationKey: "launch.rejected",
+                            substitutionValues: ["instanceIdentifier": intent.identifier],
+                            diagnosticText: "The launch command was rejected.",
+                            recoveryAction: intent.action == .launch ? .retry : .none,
+                            partialChangesRolledBack: false
+                        )
+                    )
+                    return
+                }
+                self.loadTask(identifier: taskIdentifier)
+            }
+        }
+
+        commandRequest?.cancel()
+        commandRequest = intent.action == .launch
+            ? bridge.launchInstance(withIdentifier: intent.identifier, completion: completion)
+            : bridge.stopInstance(withIdentifier: intent.identifier, completion: completion)
+    }
+
+    private func receive(status: PRTaskStatus) {
+        guard let activeTaskIdentifier,
+              status.identifier == activeTaskIdentifier else {
+            return
+        }
+        _ = taskModel.apply(status: status)
+        if status.state == .succeeded || status.state == .failed || status.state == .cancelled {
+            _ = logModel.load(identifier: activeTaskIdentifier)
+        }
+    }
+
+    private func loadTask(identifier: String) {
+        activeTaskIdentifier = identifier
+        _ = taskModel.load(identifier: identifier)
+        _ = logModel.load(identifier: identifier)
+    }
+
+    private func handleTaskCommand(_ intent: PrismTaskCommandIntent) {
+        switch intent.action {
+        case .cancel:
+            guard let bridge else {
+                return
+            }
+            commandRequest?.cancel()
+            commandRequest = bridge.cancelTask(withIdentifier: intent.identifier) { [weak self] _, error in
+                if let error {
+                    Task { @MainActor [weak self] in
+                        guard let self else {
+                            return
+                        }
+                        _ = self.taskModel.apply(error: error, taskIdentifier: intent.identifier)
+                    }
+                }
+            }
+        case .retry:
+            guard let instanceIdentifier = ProductionTaskIdentifier.instance(from: intent.identifier) else {
+                return
+            }
+            handleInstanceCommand(PrismInstanceCommandIntent(action: .launch, identifier: instanceIdentifier))
+        }
+    }
+}
+
+enum ProductionTaskIdentifier {
+    static func launch(for instanceIdentifier: String) -> String {
+        "launch.\(instanceIdentifier)"
+    }
+
+    static func instance(from taskIdentifier: String) -> String? {
+        let prefix = "launch."
+        guard taskIdentifier.hasPrefix(prefix) else {
+            return nil
+        }
+        let identifier = String(taskIdentifier.dropFirst(prefix.count))
+        return identifier.isEmpty ? nil : identifier
     }
 }
 

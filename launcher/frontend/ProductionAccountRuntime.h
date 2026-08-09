@@ -3,6 +3,7 @@
 #pragma once
 
 #include "FrontendFacade.h"
+#include "ProductionLaunchSession.h"
 
 #include <chrono>
 #include <cstdint>
@@ -76,6 +77,7 @@ class ProductionAccountRuntime final {
         const FrontendOfflineLaunchIdentityRequest& request);
     FrontendOfflineLaunchIdentityUpdateResult updateOfflineLaunchIdentity(
         const FrontendOfflineLaunchIdentityUpdateRequest& request);
+    std::optional<ProductionLaunchSession> launchSessionForInstance(const std::string& instanceIdentifier);
     void shutdown() noexcept;
 
     const std::filesystem::path& dataRoot() const noexcept { return m_dataRoot; }
@@ -130,6 +132,7 @@ class ProductionAccountRuntime final {
     std::vector<AccountRecord> m_lastRecords;
     std::unordered_map<std::string, FrontendAccountState> m_stateOverrides;
     std::unordered_map<std::string, std::string> m_diagnostics;
+    std::unordered_map<std::string, std::string> m_launchCredentials;
     bool m_shutdown = false;
 };
 

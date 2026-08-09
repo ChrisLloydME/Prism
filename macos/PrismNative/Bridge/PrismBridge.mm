@@ -7499,6 +7499,19 @@ resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentif
             });
         } catch (...) {
         }
+        try {
+            _facade->startTaskObservation([weakBridge](const FrontendTaskSnapshot& snapshot) {
+                PRPrismBridge *bridge = weakBridge;
+                if (!bridge) {
+                    return;
+                }
+                try {
+                    [bridge publishTaskStatus:taskStatusFromFacadeSnapshot(snapshot)];
+                } catch (...) {
+                }
+            });
+        } catch (...) {
+        }
     }
     return self;
 }

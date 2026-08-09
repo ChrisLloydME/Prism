@@ -25,8 +25,8 @@ final class PrismNativeRuntime: ObservableObject {
 @main
 struct PrismNativeApp: App {
     @StateObject private var nativeRuntime: PrismNativeRuntime
+    @StateObject private var launchCoordinator: PrismLaunchCoordinator
     @StateObject private var commandModel: PrismCommandModel
-    @StateObject private var taskModel = PrismTaskPresentationModel()
     @StateObject private var globalSettingsModel: PrismGlobalSettingsModel
     @StateObject private var javaDiscoveryModel: PrismJavaDiscoveryModel
     @StateObject private var accountModel: PrismAccountModel
@@ -42,8 +42,17 @@ struct PrismNativeApp: App {
 
     init() {
         let runtime = PrismNativeRuntime()
+        let coordinator = PrismLaunchCoordinator(bridge: runtime.bridge)
         _nativeRuntime = StateObject(wrappedValue: runtime)
-        _commandModel = StateObject(wrappedValue: PrismCommandModel(bridge: runtime.bridge))
+        _launchCoordinator = StateObject(wrappedValue: coordinator)
+        _commandModel = StateObject(
+            wrappedValue: PrismCommandModel(
+                onInstanceCommand: { [weak coordinator] intent in
+                    coordinator?.handleInstanceCommand(intent)
+                },
+                bridge: runtime.bridge
+            )
+        )
         _globalSettingsModel = StateObject(
             wrappedValue: PrismGlobalSettingsModel(initialSettings: nil, bridge: runtime.bridge)
         )
@@ -63,7 +72,12 @@ struct PrismNativeApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(commandModel: commandModel, taskModel: taskModel, bridge: nativeRuntime.bridge)
+            ContentView(
+                commandModel: commandModel,
+                taskModel: launchCoordinator.taskModel,
+                logModel: launchCoordinator.logModel,
+                bridge: nativeRuntime.bridge
+            )
         }
         .defaultSize(width: 1040, height: 680)
         .commands {

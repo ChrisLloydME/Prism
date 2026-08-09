@@ -2568,6 +2568,46 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     }]);
 }
 
+- (void)testProductionTaskObservationPortPublishesFoundationTaskStatus
+{
+    auto taskObserver = std::make_shared<FrontendRuntimeDependencies::TaskObservationHandler>();
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.startTaskObservation = [taskObserver](FrontendRuntimeDependencies::TaskObservationHandler handler) {
+        *taskObserver = std::move(handler);
+        return true;
+    };
+    dependencies.stopTaskObservation = [taskObserver] { *taskObserver = {}; };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+    XCTAssertTrue(static_cast<bool>(*taskObserver));
+
+    XCTestExpectation *delivery = [self expectationWithDescription:@"Production task observation delivered"];
+    PRBridgeObservationToken *token = [bridge observeTaskStatusWithHandler:^(PRTaskStatus *status) {
+        XCTAssertEqualObjects(status.identifier, @"launch.fixture");
+        XCTAssertEqualObjects(status.title, @"Launch Fixture");
+        XCTAssertEqual(status.state, PRTaskStateRunning);
+        XCTAssertEqual(status.progressKind, PRTaskProgressKindIndeterminate);
+        XCTAssertTrue(status.cancellationAllowed);
+        [delivery fulfill];
+    }];
+    XCTAssertNotNil(token);
+
+    FrontendTaskSnapshot snapshot;
+    snapshot.id = "launch.fixture";
+    snapshot.title = "Launch Fixture";
+    snapshot.state = FrontendTaskState::Running;
+    snapshot.progressKind = FrontendTaskProgressKind::Indeterminate;
+    snapshot.progressFraction = 0.0;
+    snapshot.cancellationAllowed = true;
+    (*taskObserver)(snapshot);
+
+    [self waitForExpectations:@[ delivery ] timeout:1.0];
+    XCTAssertTrue([bridge shutdown]);
+}
+
 - (void)testInstanceDetailListsLogsAndConfirmedActionsStayFoundationOnly
 {
     const std::string fixtureRoot = self.fixtureRootURL.path.UTF8String;

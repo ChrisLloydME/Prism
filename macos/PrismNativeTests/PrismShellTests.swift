@@ -1891,7 +1891,13 @@ final class PrismShellTests: XCTestCase {
             "isCancellationAvailable",
             "apply(status:",
             "apply(error:",
-            "PrismTaskCommandIntent"
+            "PrismTaskCommandIntent",
+            "PrismLaunchCoordinator",
+            "observeTaskStatus",
+            "loadTaskStatus",
+            "loadTaskLog",
+            "cancelTask",
+            "ProductionTaskIdentifier"
         ] {
             XCTAssertTrue(shellModelSource.contains(requiredToken), "Missing task state contract: \(requiredToken)")
         }
@@ -1933,7 +1939,8 @@ final class PrismShellTests: XCTestCase {
             "droppedEntryCount",
             "totalByteCount",
             "apply(snapshot:",
-            "apply(error:"
+            "apply(error:",
+            "func load(identifier: String) -> Bool"
         ] {
             XCTAssertTrue(shellModelSource.contains(requiredToken), "Missing log state contract: \(requiredToken)")
         }

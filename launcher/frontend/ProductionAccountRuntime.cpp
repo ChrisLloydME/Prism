@@ -8,12 +8,14 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QCryptographicHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QSaveFile>
 #include <QString>
+#include <QUuid>
 
 #include <algorithm>
 #include <cctype>
@@ -123,6 +125,15 @@ bool isSymlink(const std::filesystem::path& path)
 {
     std::error_code error;
     return std::filesystem::is_symlink(std::filesystem::symlink_status(path, error)) && !error;
+}
+
+std::string offlineUUID(const QString& username)
+{
+    QByteArray digest = QCryptographicHash::hash(
+        QStringLiteral("OfflinePlayer:%1").arg(username).toUtf8(), QCryptographicHash::Md5);
+    digest[6] = static_cast<char>((static_cast<unsigned char>(digest[6]) & 0x0f) | 0x30);
+    digest[8] = static_cast<char>((static_cast<unsigned char>(digest[8]) & 0x3f) | 0x80);
+    return QUuid::fromRfc4122(digest).toString(QUuid::Id128).toStdString();
 }
 
 std::optional<QJsonObject> readAccountsObject(const std::filesystem::path& path, std::string& key, std::string& text)
@@ -876,6 +887,12 @@ FrontendAccountAuthenticationResult ProductionAccountRuntime::authenticateAccoun
             true);
     }
 
+    // Keep the short-lived access token in the C++ runtime only. The launch
+    // session provider consumes it without exposing it through the facade or
+    // persisting it in task state; the refresh credential remains in the
+    // injected credential port.
+    m_launchCredentials[request.accountIdentifier] = artifacts->primaryCredential;
+
     m_stateOverrides.erase(request.accountIdentifier);
     m_diagnostics.erase(request.accountIdentifier);
     std::string reloadKey;
@@ -1056,11 +1073,103 @@ FrontendOfflineLaunchIdentityUpdateResult ProductionAccountRuntime::updateOfflin
     };
 }
 
+std::optional<ProductionLaunchSession> ProductionAccountRuntime::launchSessionForInstance(
+    const std::string& instanceIdentifier)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_shutdown || !safeText(instanceIdentifier, kMaximumAccountIdentifierLength)) {
+        return std::nullopt;
+    }
+
+    std::optional<std::string> requestedIdentifier;
+    const auto instancePath = m_dataRoot / "instances" / instanceIdentifier / "instance.cfg";
+    if (!isSymlink(instancePath) && QFile::exists(fromUTF8(instancePath.string()))) {
+        INIFile instanceSettings;
+        if (!instanceSettings.loadFile(fromUTF8(instancePath.string()))) {
+            return std::nullopt;
+        }
+        const auto configured = instanceSettings.get(QStringLiteral("InstanceAccountId"), QString()).toString().trimmed();
+        if (!configured.isEmpty()) {
+            requestedIdentifier = configured.toStdString();
+        }
+    }
+
+    std::string failureKey;
+    std::string failureText;
+    const auto records = loadAccountRecords(failureKey, failureText);
+    if (!failureKey.empty()) {
+        return std::nullopt;
+    }
+
+    const AccountRecord* selected = nullptr;
+    if (requestedIdentifier.has_value()) {
+        const auto found = std::find_if(records.begin(), records.end(), [&](const auto& record) {
+            return record.identifier == *requestedIdentifier;
+        });
+        if (found == records.end()) {
+            return std::nullopt;
+        }
+        selected = &*found;
+    } else {
+        const auto found = std::find_if(records.begin(), records.end(), [](const auto& record) { return record.active; });
+        if (found != records.end()) {
+            selected = &*found;
+        }
+    }
+
+    ProductionLaunchSession session;
+    if (selected && selected->data.type == AccountType::MSA) {
+        const auto profileName = selected->data.profileName();
+        if (profileName.isEmpty()) {
+            return std::nullopt;
+        }
+        std::string accessToken = selected->data.accessToken().toStdString();
+        if (const auto inMemory = m_launchCredentials.find(selected->identifier); inMemory != m_launchCredentials.end()) {
+            accessToken = inMemory->second;
+        }
+        if (accessToken.empty() || accessToken == "0" || !selected->data.minecraftEntitlement.ownsMinecraft) {
+            return std::nullopt;
+        }
+        session.mode = ProductionLaunchMode::Normal;
+        session.accessToken = accessToken;
+        session.playerName = profileName.toStdString();
+        session.uuid = selected->data.profileId().toStdString();
+        if (session.uuid.empty()) {
+            session.uuid = offlineUUID(profileName);
+        }
+        session.userType = "msa";
+        session.session = "token:" + session.accessToken + ":" + selected->data.profileId().toStdString();
+        session.secrets = { session.accessToken, session.session };
+        return session;
+    }
+
+    QString offlineName;
+    if (const auto saved = savedOfflineName(); saved.has_value()) {
+        offlineName = fromUTF8(*saved);
+    } else if (selected) {
+        offlineName = selected->data.profileName();
+    }
+    if (offlineName.isEmpty()) {
+        return std::nullopt;
+    }
+
+    session.mode = selected ? ProductionLaunchMode::Offline : ProductionLaunchMode::Demo;
+    session.playerName = offlineName.toStdString();
+    session.uuid = offlineUUID(offlineName);
+    session.userType = "offline";
+    if (session.mode == ProductionLaunchMode::Demo) {
+        session.session = "-";
+        session.accessToken = "0";
+    }
+    return session;
+}
+
 void ProductionAccountRuntime::shutdown() noexcept
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_shutdown = true;
     m_lastRecords.clear();
+    m_launchCredentials.clear();
 }
 
 std::shared_ptr<ProductionAccountRuntime> makeProductionAccountRuntime(

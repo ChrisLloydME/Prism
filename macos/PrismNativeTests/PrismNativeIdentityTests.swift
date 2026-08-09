@@ -149,14 +149,19 @@ final class PrismNativeIdentityTests: XCTestCase {
 
         XCTAssertTrue(appSource.contains("PRApplicationIdentity()"))
         XCTAssertTrue(appSource.contains("applicationIdentity: identity"))
-        XCTAssertTrue(appSource.contains("PrismCommandModel(bridge: runtime.bridge)"))
+        XCTAssertTrue(appSource.contains("PrismLaunchCoordinator(bridge: runtime.bridge)"))
+        XCTAssertTrue(appSource.contains("onInstanceCommand:"))
+        XCTAssertTrue(appSource.contains("logModel: launchCoordinator.logModel"))
         XCTAssertTrue(appSource.contains("bridge: nativeRuntime.bridge"))
+        XCTAssertFalse(appSource.contains("PrismTaskPresentationModel()"))
         XCTAssertFalse(appSource.contains("fixture.instance"))
         XCTAssertTrue(appContentSource.contains("PrismShellModel(bridge: bridge)"))
         XCTAssertTrue(shellSource.contains("observeInstanceChanges"))
         XCTAssertTrue(shellSource.contains("loadInstanceSummaries"))
         XCTAssertTrue(commandSource.contains("bridge.launchInstance"))
         XCTAssertTrue(commandSource.contains("bridge.stopInstance"))
+        XCTAssertTrue(bridgeSource.contains("startTaskObservation"))
+        XCTAssertTrue(bridgeSource.contains("taskStatusFromFacadeSnapshot(snapshot)"))
         let forbiddenPersistenceTokens = [
             "PrismLauncher",
             "Application Support/Prism",

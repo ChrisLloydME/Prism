@@ -3,6 +3,7 @@
 #include "ProductionInstanceRuntime.h"
 #include "ProductionAccountRuntime.h"
 #include "ProductionJavaRuntime.h"
+#include "ProductionLaunchRuntime.h"
 #include "ProductionSettingsRuntime.h"
 
 #include "settings/INIFile.h"
@@ -307,6 +308,12 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
     auto settingsRuntime = makeProductionSettingsRuntime(normalizedDataRoot);
     auto javaRuntime = makeProductionJavaRuntime(normalizedDataRoot);
     auto accountRuntime = makeProductionAccountRuntime(normalizedDataRoot);
+    auto launchRuntime = makeProductionLaunchRuntime(
+        normalizedDataRoot,
+        {},
+        [accountRuntime](const std::string& instanceIdentifier) {
+            return accountRuntime->launchSessionForInstance(instanceIdentifier);
+        });
     FrontendRuntimeDependencies dependencies;
     dependencies.dispatch = [](FrontendRuntimeDependencies::Work work) {
         if (work) {
@@ -314,12 +321,16 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
         }
     };
     dependencies.now = [] { return std::chrono::system_clock::now(); };
-    dependencies.cancelPendingWork = [runtime] { runtime->stopInstanceObservation(); };
-    dependencies.shutdown = [runtime, settingsRuntime, javaRuntime, accountRuntime] {
+    dependencies.cancelPendingWork = [runtime, launchRuntime] {
+        runtime->stopInstanceObservation();
+        launchRuntime->cancelPendingWork();
+    };
+    dependencies.shutdown = [runtime, settingsRuntime, javaRuntime, accountRuntime, launchRuntime] {
         runtime->shutdown();
         settingsRuntime->shutdown();
         javaRuntime->shutdown();
         accountRuntime->shutdown();
+        launchRuntime->shutdown();
     };
     dependencies.loadInstanceSnapshots = [runtime](const std::filesystem::path&) { return runtime->instanceSnapshots(); };
     dependencies.loadInstanceChanges = [runtime](const std::filesystem::path&) { return runtime->takeInstanceChanges(); };
@@ -352,5 +363,6 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
         return settingsRuntime->updateGlobalSettings(settings);
     };
     dependencies = productionJavaRuntimeDependencies(std::move(javaRuntime), std::move(dependencies));
-    return productionAccountRuntimeDependencies(std::move(accountRuntime), std::move(dependencies));
+    dependencies = productionAccountRuntimeDependencies(std::move(accountRuntime), std::move(dependencies));
+    return productionLaunchRuntimeDependencies(std::move(launchRuntime), std::move(dependencies));
 }

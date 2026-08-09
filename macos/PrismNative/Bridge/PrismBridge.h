@@ -243,10 +243,10 @@ typedef void (^PROfflineLaunchIdentityUpdateCompletionHandler)(PROfflineLaunchId
                                                         completion:(PRTaskCancellationCompletionHandler)completion;
 
 /// Sends a production adapter command for one stable instance identifier. The
-/// completion runs on the main actor with a Foundation result for success,
-/// unknown-instance, or explicit backend rejection; invalid input and
-/// lifecycle failures use PRBridgeError. A later work unit supplies the
-/// process-launch port; this contract never starts a process by itself.
+/// completion runs on the main actor with a Foundation result for acceptance,
+/// unknown-instance, or explicit backend rejection; task progress and bounded
+/// output arrive through observeTaskStatus and the task loaders. Invalid input
+/// and lifecycle failures use PRBridgeError.
 - (nullable PRBridgeObservationToken *)launchInstanceWithIdentifier:(NSString *)identifier
                                                            completion:(PRInstanceCommandCompletionHandler)completion;
 - (nullable PRBridgeObservationToken *)stopInstanceWithIdentifier:(NSString *)identifier

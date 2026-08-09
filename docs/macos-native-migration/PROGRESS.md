@@ -10,7 +10,7 @@ Current milestone: 11. Production backend adapters and complete launcher composi
 
 Active work unit: none
 
-Next ready work unit: M11-W5 Launch, stop, tasks, and logs
+Next ready work unit: M11-W6 Instance library and detail operations
 
 Goal correction added 2026-08-09: this project must deliver a complete Minecraft launcher, not only native surfaces and fixture contracts. Historical M4-M9 `complete` labels mean surface/contract completion unless a later M11 unit proves production adapter and default-composition wiring. M10-W1 identified this gap; M10-W2 packaging and M10-W3 clean builds are complete infrastructure, not launcher parity. Qt retirement is moved to M12 and is forbidden until M11-W10 proves production parity.
 
@@ -2437,9 +2437,39 @@ Next ready work unit: M11-W5 Launch, stop, tasks, and logs. It must connect laun
 
 ### M11-W5: Launch, stop, tasks, and logs
 
-Status: ready
+Status: complete
 
 Prerequisite: M11-W4 is complete. Connect launch preparation, Java/Minecraft command construction, `LaunchController`, task observation, cancellation, stop, shutdown, and bounded/redacted logs. Tests must use a fake process executor and disposable instance, verify exact arguments/environment redaction, failure recovery, cancellation, and runtime reconstruction, and must not start Minecraft.
+
+Outcome: completed the production launch/task vertical slice without starting the application or Minecraft. The native composition now owns launch preparation, exact Java/NewLaunch command construction, two-stage launch-script input, task observation, cancellation, stop, shutdown, bounded task logs, redaction, and reconstruction of unfinished tasks. The adapter consumes a disposable Native instance with real `mmc-pack.json` and local version patch data, reuses Prism's QtCore-only `LaunchProfile`/`VersionFile`/`Library` parsing, and keeps all launch/session/process ownership in C++; Swift receives only Foundation task and log snapshots.
+
+Files changed: `launcher/frontend/CMakeLists.txt`, `FrontendFacade.h`, `FrontendFacade.cpp`, `ProductionInstanceRuntime.cpp`, `ProductionAccountRuntime.h`, `ProductionAccountRuntime.cpp`, new `ProductionLaunchRuntime.h`, `ProductionLaunchRuntime.cpp`, `ProductionLaunchSession.h`, `ProductionMinecraftLaunch.h`, `ProductionMinecraftLaunch.cpp`, `NativeBuildConfig.cpp`, `NativeFileSystemCore.cpp`, `NativeMetadataFormat.cpp`, `launcher/minecraft/LibraryCore.cpp`, and new `FrontendFacadeProductionLaunchTest.cpp`; `macos/PrismNative/App/ContentView.swift`, `PrismNativeApp.swift`, `PrismShellModel.swift`, `macos/PrismNative/Bridge/PrismBridge.h`, `PrismBridge.mm`, `macos/PrismNativeTests/PrismBridgeFacadeIntegrationTests.mm`, `PrismNativeIdentityTests.swift`, and `PrismShellTests.swift`; and this ledger. The default process executor is injectable and is never used by the automated launch test, which supplies a fake executor and an isolated temporary root.
+
+Architecture and safety: `ProductionMinecraftLaunch` is a QWidget-free QtCore adapter around existing Minecraft version and library semantics. It loads only Native-rooted pack/patch/jar files, rejects symlink escapes, builds the exact script parameters and process arguments, filters inherited environment keys using the legacy launch policy, and keeps credentials in the C++ session provider. `ProductionLaunchRuntime` is the sole task/process owner; Objective-C++ converts its immutable status/log records to Foundation objects, and Swift coordinates standard SwiftUI task/log presentation and commands. The test exercises synthetic offline account data and a synthetic token-shaped log line only to prove redaction; no real account, Keychain, upstream path, provider, or process was accessed.
+
+HIG decision: no new custom control or renderer was required. The existing SwiftUI command menu, standard progress/task presentation, bounded plain-text log surface, cancellation/stop actions, accessibility metadata, and localized labels remain the presentation layer. Launch construction and process lifetime stay behind the facade so Swift does not own Qt, C++, Java, or credentials. No third-party UI framework, self-drawn system control, screenshot, recording, or visual snapshot was used; no rendering exception was approved.
+
+Verification:
+
+- `cmake -S launcher/frontend -B .deriveddata-prism-native-backend -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON` — passed; the shared backend tree was reconfigured to arm64 after the prior universal attempt exposed that the installed Homebrew QtCore has no x86_64 slice. The universal attempt compiled the sources but failed only at the x86_64 Qt link step; this was recorded as the permitted architecture/toolchain incompatibility and no source workaround was introduced.
+- `cmake --build .deriveddata-prism-native-backend --parallel 2` — passed; `ctest --test-dir .deriveddata-prism-native-backend --output-on-failure` — passed, 10/10, including `FrontendFacadeProductionLaunch`.
+- `xcodebuild -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO build` — passed; the same shared-path Release build passed after allowing Xcode's diagnostic access outside the workspace because the sandbox-only attempt terminated during CoreSimulator initialization.
+- The corresponding shared-path Debug and Release `test` commands — both passed, 175/175 tests, 0 failures, 0 skipped. Final result bundles retained: `Test-PrismNative-2026.08.09_21-11-57-+0800.xcresult` and `Test-PrismNative-2026.08.09_21-12-17-+0800.xcresult`. These suites cover bridge conversion, ViewModel transitions, task/log presentation, accessibility, menu/shortcut, localization, cancellation, retry, and shutdown contracts.
+- `plutil -lint macos/PrismNative/Resources/Info.plist macos/PrismNative/Resources/PrismNative.entitlements` and `plutil -extract CFBundleIdentifier raw .deriveddata-prism-native/Build/Products/{Debug,Release}/Prism.app/Contents/Info.plist` — passed; both built products returned `com.lloydME.Prism`. `git diff --check` — passed. Static scans found no `launch.cfg` use and no QWidget/QDialog/QApplication/QtWidgets include or API in the native frontend sources; the only matches are explanatory forbidden-token comments in headers/CMake documentation.
+
+Build storage and cleanup: retained shared `.deriveddata-prism-native` (651M) and `.deriveddata-prism-native-backend` (254M); no task-owned `/private/tmp/prism-*` directory remains. The temporary `.deriveddata-prism-native-backend-arm64` (152M) was created only for the Qt arm64 link diagnosis, then the shared backend was reconfigured and verified at arm64 and the exact temporary directory was deleted. Only the two final result bundles listed above remain in the shared test-log directory; no application was launched.
+
+Risks and limits: wrapper-command execution, pre/post-launch task chains, asset/native extraction and downloads, authentication refresh during launch, and target-to-join injection are not silently reimplemented here; they remain explicit follow-up parity work. The legacy `LaunchController`/`MinecraftInstance`/`PackProfile` callers remain retained until the M11 parity audit, while the native adapter isolates the minimum QtCore parsing needed for this unit. Live Java/Minecraft execution is intentionally unexercised; the fake process port proves command, environment, input, cancellation, stop, recovery, redaction, shutdown, and reconstruction semantics without launching an external process.
+
+Commit: implementation and ledger are committed together in the detailed M11-W5 commit recorded below.
+
+Next ready work unit: M11-W6 Instance library and detail operations. It must connect production instance discovery/change observation, metadata, notes, versions/components, mods/resource packs/shaders, worlds, servers, screenshots, logs, copy/delete/export, filesystem mutation, archive validation, rollback, permission errors, conflicts, and symlink containment through disposable real-format trees.
+
+### M11-W6: Instance library and detail operations
+
+Status: ready
+
+Prerequisite: M11-W5 is complete. Connect instance discovery/change observation, metadata, notes, versions/components, mods/resource packs/shaders, worlds, servers, screenshots, logs, copy, delete, export, and filesystem mutations. Use disposable fixture trees matching real formats and prove persistence after reconstruction, permission errors, conflicts, archive validation, rollback, and symlink containment.
 
 ## Completed commit index
 

@@ -14,6 +14,7 @@ set(LAUNCHER_FRONTEND_PUBLIC_HEADERS
     ProductionSettingsRuntime.h
     ProductionJavaRuntime.h
     ProductionAccountRuntime.h
+    ProductionLaunchRuntime.h
 )
 
 add_library(Launcher_frontend STATIC
@@ -22,11 +23,27 @@ add_library(Launcher_frontend STATIC
     ProductionSettingsRuntime.cpp
     ProductionJavaRuntime.cpp
     ProductionAccountRuntime.cpp
+    ProductionLaunchRuntime.cpp
+    ProductionMinecraftLaunch.cpp
+    NativeBuildConfig.cpp
+    NativeFileSystemCore.cpp
+    NativeMetadataFormat.cpp
     ../minecraft/auth/AccountData.cpp
+    ../Commandline.cpp
     ../HardwareInfo.cpp
+    ../Json.cpp
     ../SysInfo.cpp
     ../StringUtils.cpp
+    ../Version.cpp
     ../java/JavaVersion.cpp
+    ../java/JavaMetadata.cpp
+    ../minecraft/LaunchProfile.cpp
+    ../minecraft/LibraryCore.cpp
+    ../minecraft/MojangVersionFormat.cpp
+    ../minecraft/OneSixVersionFormat.cpp
+    ../minecraft/ParseUtils.cpp
+    ../minecraft/Rule.cpp
+    ../minecraft/VersionFile.cpp
     ../settings/INIFile.cpp
     ${LAUNCHER_FRONTEND_PUBLIC_HEADERS}
     ../settings/INIFile.h
@@ -38,7 +55,10 @@ target_include_directories(Launcher_frontend
 )
 
 target_compile_features(Launcher_frontend PRIVATE cxx_std_20)
-target_include_directories(Launcher_frontend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_include_directories(Launcher_frontend PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../buildconfig
+)
 target_link_libraries(Launcher_frontend PUBLIC Qt6::Core Qt6::Network)
 
 if(BUILD_TESTING)
@@ -107,4 +127,12 @@ if(BUILD_TESTING)
     target_include_directories(Launcher_frontend_production_account_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
     target_link_libraries(Launcher_frontend_production_account_test PRIVATE Launcher_frontend)
     add_test(NAME FrontendFacadeProductionAccount COMMAND Launcher_frontend_production_account_test)
+
+    add_executable(Launcher_frontend_production_launch_test
+        FrontendFacadeProductionLaunchTest.cpp
+    )
+    target_compile_features(Launcher_frontend_production_launch_test PRIVATE cxx_std_20)
+    target_include_directories(Launcher_frontend_production_launch_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+    target_link_libraries(Launcher_frontend_production_launch_test PRIVATE Launcher_frontend)
+    add_test(NAME FrontendFacadeProductionLaunch COMMAND Launcher_frontend_production_launch_test)
 endif()

@@ -1031,6 +1031,9 @@ struct FrontendRuntimeDependencies final {
     using InstanceChangeHandler = std::function<void(const FrontendInstanceChange&)>;
     using InstanceObservationStarter = std::function<bool(InstanceChangeHandler)>;
     using InstanceObservationStopper = std::function<void()>;
+    using TaskObservationHandler = std::function<void(const FrontendTaskSnapshot&)>;
+    using TaskObservationStarter = std::function<bool(TaskObservationHandler)>;
+    using TaskObservationStopper = std::function<void()>;
     using InstanceCommand = std::function<FrontendInstanceCommandResult(const std::filesystem::path&, const std::string&)>;
     using InstanceNotesUpdater = std::function<FrontendInstanceNotesUpdateResult(
         const std::filesystem::path&, const std::string&, const std::string&)>;
@@ -1127,6 +1130,8 @@ struct FrontendRuntimeDependencies final {
     MetadataInstanceCreator createMetadataInstance;
     InstanceObservationStarter startInstanceObservation;
     InstanceObservationStopper stopInstanceObservation;
+    TaskObservationStarter startTaskObservation;
+    TaskObservationStopper stopTaskObservation;
     InstanceCommand launchInstance;
     InstanceCommand stopInstance;
     InstanceNotesUpdater updateInstanceNotes;
@@ -1182,6 +1187,8 @@ class FrontendFacade final {
     FrontendMetadataInstanceResult createMetadataInstance(const FrontendMetadataInstanceRequest& request) const;
     bool startInstanceObservation(FrontendRuntimeDependencies::InstanceChangeHandler handler) const;
     void stopInstanceObservation() const noexcept;
+    bool startTaskObservation(FrontendRuntimeDependencies::TaskObservationHandler handler) const;
+    void stopTaskObservation() const noexcept;
     std::optional<FrontendInstanceDetailsSnapshot> instanceDetails(const std::string& instanceIdentifier) const;
     std::optional<std::vector<FrontendInstanceComponentSnapshot>> instanceComponents(
         const std::string& instanceIdentifier) const;
