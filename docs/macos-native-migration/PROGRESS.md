@@ -2368,7 +2368,7 @@ Build storage and cleanup: the only retained repository build roots are `.derive
 
 Risks and limits: this adapter deliberately rejects external/custom `InstanceDir` and security-scoped bookmark values until a later isolated-root filesystem policy is designed; it never probes or imports such a path. The shared-runtime mutex prevents same-process concurrent corruption and tests confirm both callers receive a valid confirmed snapshot, but there is no cross-process file lock yet. The DTO intentionally excludes hidden Java/account/proxy/bookmark settings and secret values; M11-W3 owns Java persistence and later units own accounts/authentication, launch, resources, and other workflows. Metadata-only instances remain non-launch-capable until the ordered M11 adapters complete. The legacy Qt `Application`/`BaseInstance`/`MinecraftInstance` owners remain retained until M11-W10 parity and M12 retirement gates.
 
-Commit: pending implementation commit; this entry will be finalized in the following progress-ledger commit with the implementation hash.
+Commit: `727684db8` (implementation); this entry is finalized in the following progress-ledger commit.
 
 Next ready work unit: M11-W3 Production Java discovery, validation, selection, and managed metadata.
 
@@ -2444,6 +2444,7 @@ Prerequisite: M11-W2 is complete. Connect Java discovery, validation, selection,
 | `b359becb1` | Migrated the native macOS bundle metadata, version, icon, entitlements, document/URL declarations, and static update metadata into PrismNative | Shared-path Debug/Release builds; focused packaging XCTest 1/1; full Debug/Release XCTest 169/169; Bundle ID/version/icon/entitlement/plist checks; no-signing/no-launch evidence; storage inventory; `git diff --check` |
 | `bf4ddec93` | Proved clean isolated Debug/Release builds and full native tests for the finalized target, then removed the temporary DerivedData tree | `/private/tmp/prism-m10-w3-clean` Debug/Release builds; clean Debug/Release XCTest 169/169; Bundle ID/version/icon/universal-architecture checks; exact temporary cleanup; `git diff --check` |
 | `b2cb8b3b8` | Wired the production bundle-rooted instance runtime, facade ports, Objective-C++ bridge, and Swift shell/command composition with persistent metadata reconstruction and observation | Shared arm64 CMake Debug/Release CTest 6/6; existing Qt `Launcher_logic` 414/414 and `Prism` target; shared arm64 native Debug/Release XCTest 171/171; Bundle ID `com.lloydME.Prism`; Objective-C/Objective-C++ syntax; public-header, production-composition, accessibility, localization, command, cancellation, and storage scans; `git diff --check` |
+| `727684db8` | Connected production global and instance settings persistence, legacy defaults/aliases, confirmed save/reload, override reconstruction, and bridge-wired native Settings forms | Shared arm64 CMake Debug/Release CTest 7/7; production settings defaults/aliases/validation/unknown-key/concurrency/reconstruction test; shared native Debug/Release XCTest 173/173; Debug/Release built Bundle ID `com.lloydME.Prism`; accessibility/keyboard/localization/Swift-boundary/no-drawing/storage scans; `git diff --check` |
 
 ## Current architecture findings
 
