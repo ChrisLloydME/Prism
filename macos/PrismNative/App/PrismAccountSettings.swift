@@ -695,6 +695,7 @@ struct PrismAccountSettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                         .accessibilityIdentifier("prism.settings.accounts.authentication-verification")
+                        PrismQRCodeContentView(payload: verificationURL)
                         if progress.expiresInSeconds > 0 {
                             Text("Verification instructions expire in \(progress.expiresInSeconds) seconds.")
                                 .font(.caption)
