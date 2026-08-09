@@ -28,6 +28,30 @@ final class PrismInstanceImportTests: XCTestCase {
         XCTAssertNil(model.makeBridgeRequest())
     }
 
+    func testOpenPanelTicketPreservesCancellationAndRejectsStaleSelection() throws {
+        let originalURL = URL(fileURLWithPath: "/private/tmp/fixture-import/original.zip")
+        let replacementURL = URL(fileURLWithPath: "/private/tmp/fixture-import/replacement.zip")
+        let model = PrismInstanceImportModel(
+            initialDraft: PrismInstanceImportDraft(
+                source: .localFile,
+                localFileURL: originalURL,
+                remoteURLText: "",
+                name: "Imported Fixture",
+                groupID: "",
+                iconKey: "default"
+            )
+        )
+
+        let cancelledToken = try XCTUnwrap(model.beginLocalFilePanel())
+        XCTAssertTrue(model.applyLocalFilePanelResult(nil, token: cancelledToken))
+        XCTAssertEqual(model.draft.localFileURL, originalURL.standardizedFileURL)
+
+        let staleToken = try XCTUnwrap(model.beginLocalFilePanel())
+        model.setSource(.remoteURL)
+        XCTAssertFalse(model.applyLocalFilePanelResult(replacementURL, token: staleToken))
+        XCTAssertEqual(model.draft.localFileURL, originalURL.standardizedFileURL)
+    }
+
     func testRemoteURLValidationAndSourceSwitch() throws {
         let model = PrismInstanceImportModel(
             initialDraft: PrismInstanceImportDraft(
@@ -179,7 +203,9 @@ final class PrismInstanceImportTests: XCTestCase {
             "Form {",
             "Picker(",
             "TextField(",
-            ".fileImporter(",
+            "PrismSystemOpenPanel.present",
+            "beginLocalFilePanel",
+            "applyLocalFilePanelResult",
             ".zip",
             ".data",
             "ProgressView(",

@@ -98,6 +98,7 @@ final class PrismInstanceImportModel: ObservableObject {
     private let onImport: ((PRInstanceImportRequest, Int) -> Void)?
     private let onCancel: (() -> Void)?
     private var generation = 0
+    private var filePanelGeneration = 0
 
     init(
         icons: [String] = ["default", "grass", "stone"],
@@ -145,15 +146,33 @@ final class PrismInstanceImportModel: ObservableObject {
     }
 
     func setSource(_ source: PrismInstanceImportSource) {
+        filePanelGeneration += 1
         draft.source = source
     }
 
     func setLocalFileURL(_ url: URL?) {
+        filePanelGeneration += 1
         guard let url, url.isFileURL, !url.path.isEmpty else {
             draft.localFileURL = nil
             return
         }
         draft.localFileURL = url.standardizedFileURL
+    }
+
+    func beginLocalFilePanel() -> Int? {
+        guard case .editing = state, draft.source == .localFile else { return nil }
+        filePanelGeneration += 1
+        return filePanelGeneration
+    }
+
+    @discardableResult
+    func applyLocalFilePanelResult(_ url: URL?, token: Int) -> Bool {
+        guard case .editing = state, token == filePanelGeneration else { return false }
+        filePanelGeneration += 1
+        guard let url else { return true }
+        guard url.isFileURL, !url.path.isEmpty else { return false }
+        draft.localFileURL = url.standardizedFileURL
+        return true
     }
 
     func setIcon(_ iconKey: String) {
@@ -177,6 +196,7 @@ final class PrismInstanceImportModel: ObservableObject {
     @discardableResult
     func startImport() -> Bool {
         guard let request = makeBridgeRequest(), !isImporting else { return false }
+        filePanelGeneration += 1
         generation += 1
         let activeGeneration = generation
         draft = draft.normalized
@@ -188,6 +208,7 @@ final class PrismInstanceImportModel: ObservableObject {
     @discardableResult
     func cancel() -> Bool {
         guard isImporting else { return false }
+        filePanelGeneration += 1
         generation += 1
         onCancel?()
         state = .cancelled
@@ -276,6 +297,7 @@ final class PrismInstanceImportModel: ObservableObject {
     }
 
     func reset() {
+        filePanelGeneration += 1
         generation += 1
         state = .editing
     }
@@ -302,7 +324,6 @@ enum PrismInstanceImportOutcome: Equatable, Sendable {
 struct PrismInstanceImportView: View {
     @ObservedObject var model: PrismInstanceImportModel
     let onFinished: (() -> Void)?
-    @State private var isFileImporterPresented = false
 
     init(model: PrismInstanceImportModel, onFinished: (() -> Void)? = nil) {
         self.model = model
@@ -373,7 +394,17 @@ struct PrismInstanceImportView: View {
 
                 switch model.draft.source {
                 case .localFile:
-                    Button("Choose Archive…") { isFileImporterPresented = true }
+                    Button("Choose Archive…") {
+                        guard let token = model.beginLocalFilePanel() else { return }
+                        PrismSystemOpenPanel.present(
+                            defaultURL: model.draft.localFileURL,
+                            allowedContentTypes: [.zip, .data],
+                            canChooseFiles: true,
+                            canChooseDirectories: false
+                        ) { url in
+                            _ = model.applyLocalFilePanelResult(url, token: token)
+                        }
+                    }
                         .accessibilityIdentifier("prism.instance-import.choose-file")
                     if let url = model.draft.localFileURL {
                         Text(url.lastPathComponent)
@@ -421,18 +452,6 @@ struct PrismInstanceImportView: View {
             }
         }
         .formStyle(.grouped)
-        .fileImporter(
-            isPresented: $isFileImporterPresented,
-            allowedContentTypes: [.zip, .data],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                model.setLocalFileURL(urls.first)
-            case .failure:
-                break
-            }
-        }
     }
 
     @ViewBuilder

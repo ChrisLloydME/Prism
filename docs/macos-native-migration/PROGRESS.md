@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 8, Creation, discovery, and installation
 
-Active work unit: none (M8-W6 complete)
+Active work unit: M8-W7
 
-Next ready work unit: M8-W7
+Next ready work unit: none (M8-W7 active)
 
 ## Safety baseline
 
@@ -1983,6 +1983,18 @@ Risk and limits: the native composition remains fixture-controlled and intention
 Commit: `0918f41b1` (implementation); this entry is completed in the following progress-ledger commit.
 
 Next after completion: M8-W7, use system open and save panels for the remaining provider/import/export presentations.
+
+### M8-W7: System open and save panels
+
+Status: active
+
+Outcome: in progress. Re-read the remaining provider/import/export presentation paths and define the smallest system-native open/save panel contract for native presentation. This unit must preserve existing fixture-controlled adapters and keep selected URLs/paths as Foundation values only; no custom file picker or upstream filesystem access.
+
+Working boundary: activation and source audit only so far. No implementation files changed for M8-W7 yet. No installed upstream app/data, credentials, real account, Keychain, live network, production data, signing, publishing, installation, or app launch.
+
+Required evidence before completion: system open/save panel request/result contracts for provider/import/export presentations, URL/path validation and cancellation, stale-result suppression, accessibility/localization/keyboard contracts, fixture tests, strict PLAN §9 builds/tests/Bundle ID/boundary/diff checks.
+
+Next after completion: M9-W1, classify and migrate the remaining About/news/update/shortcut/provider-choice/recovery utility surfaces.
 
 ## Completed commit index
 

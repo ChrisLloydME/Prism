@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+import UniformTypeIdentifiers
 
 @MainActor
 final class PrismInstanceCopyExportTests: XCTestCase {
@@ -137,6 +138,57 @@ final class PrismInstanceCopyExportTests: XCTestCase {
         XCTAssertNil(model.makeBridgeRequest())
     }
 
+    func testSavePanelTicketPreservesCancellationAndRejectsStaleDestination() throws {
+        let originalURL = URL(fileURLWithPath: "/private/tmp/fixture-export/original.csv")
+        let replacementURL = URL(fileURLWithPath: "/private/tmp/fixture-export/replacement.zip")
+        let model = PrismInstanceExportModel(
+            sourceInstanceIdentifier: "fixture.source",
+            initialDraft: PrismInstanceExportDraft(
+                sourceInstanceIdentifier: "fixture.source",
+                kind: .modList,
+                destinationURL: originalURL,
+                modListFormat: .csv,
+                includeAuthors: false,
+                includeVersion: false,
+                includeURL: false,
+                includeFilename: false,
+                customTemplate: ""
+            )
+        )
+
+        let cancelledToken = try XCTUnwrap(model.beginDestinationSavePanel())
+        XCTAssertTrue(model.applyDestinationSavePanelResult(nil, token: cancelledToken))
+        XCTAssertEqual(model.draft.destinationURL, originalURL.standardizedFileURL)
+
+        let staleToken = try XCTUnwrap(model.beginDestinationSavePanel())
+        model.setKind(.zipArchive)
+        XCTAssertFalse(model.applyDestinationSavePanelResult(replacementURL, token: staleToken))
+        XCTAssertEqual(model.draft.destinationURL, originalURL.standardizedFileURL)
+    }
+
+    func testSystemPanelConfigurationKeepsSingleSelectionAndExplicitKinds() {
+        let archive = PrismSystemFilePanelConfiguration(
+            defaultURL: URL(fileURLWithPath: "/private/tmp/fixture-panels/pack.zip"),
+            allowedContentTypes: [.zip, .data],
+            canChooseFiles: true,
+            canChooseDirectories: false
+        )
+        XCTAssertTrue(archive.canChooseFiles)
+        XCTAssertFalse(archive.canChooseDirectories)
+        XCTAssertFalse(archive.allowsMultipleSelection)
+        XCTAssertEqual(archive.allowedContentTypeIdentifiers, [UTType.zip.identifier, UTType.data.identifier])
+
+        let directory = PrismSystemFilePanelConfiguration(
+            allowedContentTypes: [.folder],
+            canChooseFiles: false,
+            canChooseDirectories: true
+        )
+        XCTAssertFalse(directory.canChooseFiles)
+        XCTAssertTrue(directory.canChooseDirectories)
+        XCTAssertFalse(directory.allowsMultipleSelection)
+        XCTAssertEqual(directory.allowedContentTypeIdentifiers, [UTType.folder.identifier])
+    }
+
     func testExportForwardsProgressSuccessFailureRetryCancellationAndStaleGeneration() throws {
         var generations: [Int] = []
         var cancellationCount = 0
@@ -230,9 +282,9 @@ final class PrismInstanceCopyExportTests: XCTestCase {
             "Toggle(",
             "Picker(",
             "TextField(",
-            "NSSavePanel(",
-            ".allowedContentTypes",
-            "panel.begin",
+            "PrismSystemSavePanel.present",
+            "beginDestinationSavePanel",
+            "applyDestinationSavePanelResult",
             "ProgressView(",
             "ContentUnavailableView",
             ".keyboardShortcut(.defaultAction)",
@@ -261,6 +313,20 @@ final class PrismInstanceCopyExportTests: XCTestCase {
             "PrismLauncher"
         ] {
             XCTAssertFalse(source.contains(forbiddenToken), "Forbidden copy/export token: \(forbiddenToken)")
+        }
+
+        let panelsURL = sourceRoot.appendingPathComponent("PrismNative/App/PrismSystemFilePanels.swift")
+        let panelsSource = try String(contentsOf: panelsURL, encoding: .utf8)
+        for requiredToken in [
+            "NSOpenPanel()",
+            "NSSavePanel()",
+            "allowedContentTypes",
+            "canChooseFiles",
+            "canChooseDirectories",
+            "panel.begin",
+            "response == .OK ? panel.url : nil"
+        ] {
+            XCTAssertTrue(panelsSource.contains(requiredToken), "Missing shared system panel API: \(requiredToken)")
         }
     }
 }

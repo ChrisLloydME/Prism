@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
@@ -404,6 +403,7 @@ final class PrismInstanceExportModel: ObservableObject {
     private let onExport: ((PRInstanceExportRequest, Int) -> Void)?
     private let onCancel: (() -> Void)?
     private var generation = 0
+    private var savePanelGeneration = 0
 
     init(
         sourceInstanceIdentifier: String,
@@ -454,6 +454,7 @@ final class PrismInstanceExportModel: ObservableObject {
     }
 
     func setKind(_ kind: PrismInstanceExportKind) {
+        savePanelGeneration += 1
         draft.kind = kind
         if kind == .zipArchive {
             draft.includeAuthors = false
@@ -465,11 +466,29 @@ final class PrismInstanceExportModel: ObservableObject {
     }
 
     func setDestinationURL(_ url: URL?) {
+        savePanelGeneration += 1
         guard let url, url.isFileURL, !url.path.isEmpty, url.path.hasPrefix("/") else {
             draft.destinationURL = nil
             return
         }
         draft.destinationURL = url.standardizedFileURL
+    }
+
+    func beginDestinationSavePanel() -> Int? {
+        guard case .editing = state else { return nil }
+        savePanelGeneration += 1
+        return savePanelGeneration
+    }
+
+    @discardableResult
+    func applyDestinationSavePanelResult(_ url: URL?, token: Int) -> Bool {
+        guard case .editing = state, token == savePanelGeneration else { return false }
+        savePanelGeneration += 1
+        guard let url, url.isFileURL, !url.path.isEmpty, url.path.hasPrefix("/") else {
+            return url == nil
+        }
+        draft.destinationURL = url.standardizedFileURL
+        return true
     }
 
     func makeBridgeRequest() -> PRInstanceExportRequest? {
@@ -501,6 +520,7 @@ final class PrismInstanceExportModel: ObservableObject {
     @discardableResult
     func startExport() -> Bool {
         guard let request = makeBridgeRequest(), !isExporting else { return false }
+        savePanelGeneration += 1
         generation += 1
         let activeGeneration = generation
         draft = draft.normalized
@@ -512,6 +532,7 @@ final class PrismInstanceExportModel: ObservableObject {
     @discardableResult
     func cancel() -> Bool {
         guard isExporting else { return false }
+        savePanelGeneration += 1
         generation += 1
         onCancel?()
         state = .cancelled
@@ -595,6 +616,7 @@ final class PrismInstanceExportModel: ObservableObject {
     }
 
     func reset() {
+        savePanelGeneration += 1
         generation += 1
         state = .editing
     }
@@ -613,23 +635,6 @@ enum PrismInstanceExportOutcome: Equatable, Sendable {
         case .cancelled: self = .cancelled
         case .rejected: self = .rejected
         @unknown default: return nil
-        }
-    }
-}
-
-@MainActor
-enum PrismSystemSavePanel {
-    static func present(
-        defaultFilename: String,
-        allowedContentTypes: [UTType],
-        completion: @escaping (URL?) -> Void
-    ) {
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = defaultFilename
-        panel.allowedContentTypes = allowedContentTypes
-        panel.canCreateDirectories = false
-        panel.begin { response in
-            completion(response == .OK ? panel.url : nil)
         }
     }
 }
@@ -854,9 +859,10 @@ struct PrismInstanceExportView: View {
                 }
                 .accessibilityIdentifier("prism.instance-export.kind")
                 Button("Choose Destination…") {
+                    guard let token = model.beginDestinationSavePanel() else { return }
                     let types: [UTType] = model.draft.kind == .zipArchive ? [.zip] : [.plainText, .html, .json]
-                    PrismSystemSavePanel.present(defaultFilename: model.defaultFilename, allowedContentTypes: types) {
-                        model.setDestinationURL($0)
+                    PrismSystemSavePanel.present(defaultFilename: model.defaultFilename, allowedContentTypes: types) { url in
+                        _ = model.applyDestinationSavePanelResult(url, token: token)
                     }
                 }
                 .accessibilityIdentifier("prism.instance-export.choose-destination")

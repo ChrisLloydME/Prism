@@ -264,6 +264,7 @@ final class PrismProviderInstallationModel: ObservableObject {
     private let onInstall: ((PRProviderInstallRequest, Int) -> Void)?
     private let onCancel: (() -> Void)?
     private var generation = 0
+    private var filePanelGeneration = 0
     private var pendingRecoveryDecision: PrismProviderInstallRecoveryDecision?
 
     init(
@@ -323,6 +324,7 @@ final class PrismProviderInstallationModel: ObservableObject {
 
     func setKind(_ kind: PrismProviderInstallKind) {
         guard kinds.contains(kind) else { return }
+        filePanelGeneration += 1
         draft.kind = kind
         if kind != .customArchive && kind != .ftbImport {
             draft.sourceURL = nil
@@ -330,11 +332,33 @@ final class PrismProviderInstallationModel: ObservableObject {
     }
 
     func setSourceURL(_ url: URL?) {
+        filePanelGeneration += 1
         guard let url, url.isFileURL, !url.path.isEmpty else {
             draft.sourceURL = nil
             return
         }
         draft.sourceURL = url.standardizedFileURL
+    }
+
+    func beginSourceFilePanel() -> Int? {
+        guard case .editing = state,
+              draft.kind == .customArchive || draft.kind == .ftbImport else { return nil }
+        filePanelGeneration += 1
+        return filePanelGeneration
+    }
+
+    @discardableResult
+    func applySourceFilePanelResult(_ url: URL?, token: Int) -> Bool {
+        guard case .editing = state,
+              token == filePanelGeneration,
+              draft.kind == .customArchive || draft.kind == .ftbImport else {
+            return false
+        }
+        filePanelGeneration += 1
+        guard let url else { return true }
+        guard url.isFileURL, !url.path.isEmpty else { return false }
+        draft.sourceURL = url.standardizedFileURL
+        return true
     }
 
     func setIcon(_ iconKey: String) {
@@ -365,6 +389,7 @@ final class PrismProviderInstallationModel: ObservableObject {
     func startInstall() -> Bool {
         guard let request = makeBridgeRequest(), !isInstalling else { return false }
         pendingRecoveryDecision = nil
+        filePanelGeneration += 1
         generation += 1
         let activeGeneration = generation
         draft = draft.normalized
@@ -377,6 +402,7 @@ final class PrismProviderInstallationModel: ObservableObject {
     func cancel() -> Bool {
         guard isInstalling else { return false }
         pendingRecoveryDecision = nil
+        filePanelGeneration += 1
         generation += 1
         onCancel?()
         state = .cancelled
@@ -437,6 +463,7 @@ final class PrismProviderInstallationModel: ObservableObject {
     func cancelRecovery() -> Bool {
         guard recoveryPrompt != nil else { return false }
         pendingRecoveryDecision = nil
+        filePanelGeneration += 1
         generation += 1
         state = .cancelled
         return true
@@ -538,6 +565,7 @@ final class PrismProviderInstallationModel: ObservableObject {
     }
 
     func reset() {
+        filePanelGeneration += 1
         generation += 1
         pendingRecoveryDecision = nil
         state = .editing
@@ -570,7 +598,6 @@ enum PrismProviderInstallOutcome: Equatable, Sendable {
 struct PrismProviderInstallationView: View {
     @ObservedObject var model: PrismProviderInstallationModel
     let onFinished: (() -> Void)?
-    @State private var isFileImporterPresented = false
 
     init(model: PrismProviderInstallationModel, onFinished: (() -> Void)? = nil) {
         self.model = model
@@ -719,9 +746,29 @@ struct PrismProviderInstallationView: View {
                 if model.draft.kind == .customArchive || model.draft.kind == .ftbImport {
                     Group {
                         if model.draft.kind == .ftbImport {
-                            Button("Choose FTB Folder…") { isFileImporterPresented = true }
+                            Button("Choose FTB Folder…") {
+                                guard let token = model.beginSourceFilePanel() else { return }
+                                PrismSystemOpenPanel.present(
+                                    defaultURL: model.draft.sourceURL,
+                                    allowedContentTypes: [.folder],
+                                    canChooseFiles: false,
+                                    canChooseDirectories: true
+                                ) { url in
+                                    _ = model.applySourceFilePanelResult(url, token: token)
+                                }
+                            }
                         } else {
-                            Button("Choose Archive…") { isFileImporterPresented = true }
+                            Button("Choose Archive…") {
+                                guard let token = model.beginSourceFilePanel() else { return }
+                                PrismSystemOpenPanel.present(
+                                    defaultURL: model.draft.sourceURL,
+                                    allowedContentTypes: [.zip, .data],
+                                    canChooseFiles: true,
+                                    canChooseDirectories: false
+                                ) { url in
+                                    _ = model.applySourceFilePanelResult(url, token: token)
+                                }
+                            }
                         }
                     }
                     .accessibilityIdentifier("provider-install.choose-archive")
@@ -761,15 +808,6 @@ struct PrismProviderInstallationView: View {
             }
         }
         .formStyle(.grouped)
-        .fileImporter(
-            isPresented: $isFileImporterPresented,
-            allowedContentTypes: model.draft.kind == .ftbImport ? [.folder] : [.zip, .data],
-            allowsMultipleSelection: false
-        ) { result in
-            if case .success(let urls) = result {
-                model.setSourceURL(urls.first)
-            }
-        }
     }
 
     @ViewBuilder

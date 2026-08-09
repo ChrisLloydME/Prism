@@ -127,6 +127,24 @@ final class PrismProviderInstallationTests: XCTestCase {
         XCTAssertEqual(receivedRequests.count, PrismProviderInstallKind.allCases.count)
     }
 
+    func testOpenPanelTicketPreservesCancellationAndRejectsStaleKindSelection() throws {
+        let model = PrismProviderInstallationModel(
+            initialDraft: draft(for: .customArchive)
+        )
+        let originalURL = try XCTUnwrap(model.draft.sourceURL)
+        let replacementURL = URL(fileURLWithPath: "/private/tmp/prism-native-m8-w7-fixture/replacement.zip")
+
+        let cancelledToken = try XCTUnwrap(model.beginSourceFilePanel())
+        XCTAssertTrue(model.applySourceFilePanelResult(nil, token: cancelledToken))
+        XCTAssertEqual(model.draft.sourceURL, originalURL.standardizedFileURL)
+
+        let staleToken = try XCTUnwrap(model.beginSourceFilePanel())
+        model.setKind(.modrinth)
+        XCTAssertNil(model.draft.sourceURL)
+        XCTAssertFalse(model.applySourceFilePanelResult(replacementURL, token: staleToken))
+        XCTAssertNil(model.draft.sourceURL)
+    }
+
     func testInstallationStatesCoverProgressSuccessFailureRetryCancellationRollbackAndStaleResults() throws {
         var generations: [Int] = []
         var cancellationCount = 0
@@ -289,11 +307,13 @@ final class PrismProviderInstallationTests: XCTestCase {
             "Toggle(",
             "ForEach(prompt.files)",
             "Button(\"Choose Archive",
+            "PrismSystemOpenPanel.present",
+            "beginSourceFilePanel",
+            "applySourceFilePanelResult",
             "ProgressView(",
             "ContentUnavailableView",
             ".keyboardShortcut(.defaultAction)",
             ".keyboardShortcut(.cancelAction)",
-            ".fileImporter(",
             ".accessibilityIdentifier(\"provider-install.",
             ".accessibilityValue",
             "recoveryPrompt",

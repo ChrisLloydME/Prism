@@ -49,6 +49,8 @@
 		A10000000000000000000028 /* PrismProviderInstallation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000022 /* PrismProviderInstallation.swift */; };
 		A10000000000000000000029 /* PrismProviderInstallation.swift in Tests */ = {isa = PBXBuildFile; fileRef = A20000000000000000000022 /* PrismProviderInstallation.swift */; };
 		A1000000000000000000002A /* PrismProviderInstallationTests.swift in Tests */ = {isa = PBXBuildFile; fileRef = A20000000000000000000023 /* PrismProviderInstallationTests.swift */; };
+		A1000000000000000000002B /* PrismSystemFilePanels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000024 /* PrismSystemFilePanels.swift */; };
+		A1000000000000000000002C /* PrismSystemFilePanels.swift in Tests */ = {isa = PBXBuildFile; fileRef = A20000000000000000000024 /* PrismSystemFilePanels.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -87,6 +89,7 @@
 		A20000000000000000000021 /* PrismProviderBrowsingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrismProviderBrowsingTests.swift; sourceTree = "<group>"; };
 		A20000000000000000000022 /* PrismProviderInstallation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrismProviderInstallation.swift; sourceTree = "<group>"; };
 		A20000000000000000000023 /* PrismProviderInstallationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrismProviderInstallationTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000024 /* PrismSystemFilePanels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrismSystemFilePanels.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -144,6 +147,7 @@
 				A2000000000000000000001E /* PrismInstanceCopyExport.swift */,
 				A20000000000000000000020 /* PrismProviderBrowsing.swift */,
 				A20000000000000000000022 /* PrismProviderInstallation.swift */,
+				A20000000000000000000024 /* PrismSystemFilePanels.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -302,6 +306,7 @@
 				A10000000000000000000027 /* PrismProviderBrowsingTests.swift in Tests */,
 				A10000000000000000000029 /* PrismProviderInstallation.swift in Tests */,
 				A1000000000000000000002A /* PrismProviderInstallationTests.swift in Tests */,
+				A1000000000000000000002C /* PrismSystemFilePanels.swift in Tests */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -335,6 +340,7 @@
 				A10000000000000000000022 /* PrismInstanceCopyExport.swift in Sources */,
 				A10000000000000000000025 /* PrismProviderBrowsing.swift in Sources */,
 				A10000000000000000000028 /* PrismProviderInstallation.swift in Sources */,
+				A1000000000000000000002B /* PrismSystemFilePanels.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
