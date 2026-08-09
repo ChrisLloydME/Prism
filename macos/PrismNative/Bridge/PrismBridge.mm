@@ -429,6 +429,30 @@ bool isKnownProviderInstallRollbackOutcome(PRProviderInstallRollbackOutcome outc
     return false;
 }
 
+bool isKnownProviderInstallRecoveryKind(PRProviderInstallRecoveryKind kind)
+{
+    switch (kind) {
+        case PRProviderInstallRecoveryKindOptionalFiles:
+        case PRProviderInstallRecoveryKindBlockedFiles:
+        case PRProviderInstallRecoveryKindProviderError:
+        case PRProviderInstallRecoveryKindNetworkError:
+        case PRProviderInstallRecoveryKindDiskError:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownProviderInstallRecoveryAction(PRProviderInstallRecoveryAction action)
+{
+    switch (action) {
+        case PRProviderInstallRecoveryActionContinue:
+        case PRProviderInstallRecoveryActionRetry:
+        case PRProviderInstallRecoveryActionCancel:
+            return true;
+    }
+    return false;
+}
+
 std::string stableIdentifierFromFoundation(NSString *identifier)
 {
     if (![identifier isKindOfClass:NSString.class]) {
@@ -2377,6 +2401,104 @@ PRProviderInstallKind providerInstallKindFromFacadeKind(FrontendProviderInstallK
     throw std::invalid_argument("Facade returned an unknown provider installation kind");
 }
 
+FrontendProviderInstallRecoveryKind providerInstallRecoveryKindFromFoundation(PRProviderInstallRecoveryKind kind)
+{
+    switch (kind) {
+        case PRProviderInstallRecoveryKindOptionalFiles:
+            return FrontendProviderInstallRecoveryKind::OptionalFiles;
+        case PRProviderInstallRecoveryKindBlockedFiles:
+            return FrontendProviderInstallRecoveryKind::BlockedFiles;
+        case PRProviderInstallRecoveryKindProviderError:
+            return FrontendProviderInstallRecoveryKind::ProviderError;
+        case PRProviderInstallRecoveryKindNetworkError:
+            return FrontendProviderInstallRecoveryKind::NetworkError;
+        case PRProviderInstallRecoveryKindDiskError:
+            return FrontendProviderInstallRecoveryKind::DiskError;
+    }
+    throw std::invalid_argument("Unknown provider installation recovery kind");
+}
+
+PRProviderInstallRecoveryKind providerInstallRecoveryKindFromFacadeKind(FrontendProviderInstallRecoveryKind kind)
+{
+    switch (kind) {
+        case FrontendProviderInstallRecoveryKind::OptionalFiles:
+            return PRProviderInstallRecoveryKindOptionalFiles;
+        case FrontendProviderInstallRecoveryKind::BlockedFiles:
+            return PRProviderInstallRecoveryKindBlockedFiles;
+        case FrontendProviderInstallRecoveryKind::ProviderError:
+            return PRProviderInstallRecoveryKindProviderError;
+        case FrontendProviderInstallRecoveryKind::NetworkError:
+            return PRProviderInstallRecoveryKindNetworkError;
+        case FrontendProviderInstallRecoveryKind::DiskError:
+            return PRProviderInstallRecoveryKindDiskError;
+    }
+    throw std::invalid_argument("Facade returned an unknown provider installation recovery kind");
+}
+
+FrontendProviderInstallRecoveryAction providerInstallRecoveryActionFromFoundation(PRProviderInstallRecoveryAction action)
+{
+    switch (action) {
+        case PRProviderInstallRecoveryActionContinue:
+            return FrontendProviderInstallRecoveryAction::Continue;
+        case PRProviderInstallRecoveryActionRetry:
+            return FrontendProviderInstallRecoveryAction::Retry;
+        case PRProviderInstallRecoveryActionCancel:
+            return FrontendProviderInstallRecoveryAction::Cancel;
+    }
+    throw std::invalid_argument("Unknown provider installation recovery action");
+}
+
+PRProviderInstallFileOption *providerInstallFileOptionFromFacadeOption(
+    const FrontendProviderInstallFileOption& option)
+{
+    PRProviderInstallFileOption *converted = [[PRProviderInstallFileOption alloc]
+        initWithIdentifier:foundationStringFromUTF8(option.id)
+                      name:foundationStringFromUTF8(option.name)
+                targetPath:foundationStringFromUTF8(option.targetPath)
+                  required:option.required
+                   blocked:option.blocked
+                  selected:option.selected];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid provider recovery file option");
+    }
+    return converted;
+}
+
+PRProviderInstallRecoveryPrompt *providerInstallRecoveryPromptFromFacadePrompt(
+    const FrontendProviderInstallRecoveryPrompt& prompt)
+{
+    NSMutableArray<PRProviderInstallFileOption *> *files = [NSMutableArray arrayWithCapacity:prompt.files.size()];
+    for (const auto& file : prompt.files) {
+        [files addObject:providerInstallFileOptionFromFacadeOption(file)];
+    }
+    PRProviderInstallRecoveryPrompt *converted = [[PRProviderInstallRecoveryPrompt alloc]
+        initWithKind:providerInstallRecoveryKindFromFacadeKind(prompt.kind)
+                files:files
+      localizationKey:foundationStringFromUTF8(prompt.localizationKey)
+        diagnosticText:foundationStringFromUTF8(prompt.diagnosticText)
+            retryable:prompt.retryable];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid provider recovery prompt");
+    }
+    return converted;
+}
+
+FrontendProviderInstallRecoveryDecision recoveryDecisionFromFoundation(
+    PRProviderInstallRecoveryDecision *decision)
+{
+    if (!decision) {
+        throw std::invalid_argument("Missing provider recovery decision");
+    }
+    FrontendProviderInstallRecoveryDecision converted;
+    converted.kind = providerInstallRecoveryKindFromFoundation(decision.kind);
+    converted.action = providerInstallRecoveryActionFromFoundation(decision.action);
+    converted.selectedFileIdentifiers =
+        utf8StringsFromFoundation(decision.selectedFileIdentifiers, "Provider recovery selections require strings");
+    converted.resolvedBlockedFileIdentifiers = utf8StringsFromFoundation(
+        decision.resolvedBlockedFileIdentifiers, "Blocked-file resolutions require strings");
+    return converted;
+}
+
 PRProviderInstallOutcome providerInstallOutcomeFromFacadeOutcome(FrontendProviderInstallOutcome outcome)
 {
     switch (outcome) {
@@ -2414,10 +2536,13 @@ PRProviderInstallResult *providerInstallResultFromFacadeResult(const FrontendPro
    versionIdentifier:foundationStringFromUTF8(result.versionIdentifier)
             instance:result.instance.has_value() ? summaryFromFacadeSnapshot(*result.instance) : nil
              outcome:providerInstallOutcomeFromFacadeOutcome(result.outcome)
-     rollbackOutcome:providerInstallRollbackOutcomeFromFacadeOutcome(result.rollbackOutcome)
+             rollbackOutcome:providerInstallRollbackOutcomeFromFacadeOutcome(result.rollbackOutcome)
       localizationKey:foundationStringFromUTF8AllowEmpty(result.localizationKey)
         diagnosticText:foundationStringFromUTF8(result.diagnosticText)
-             retryable:result.retryable];
+             retryable:result.retryable
+        recoveryPrompt:result.recoveryPrompt.has_value()
+            ? providerInstallRecoveryPromptFromFacadePrompt(*result.recoveryPrompt)
+            : nil];
     if (!converted) {
         throw std::invalid_argument("Facade returned an invalid provider installation result");
     }
@@ -4178,6 +4303,37 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, copy, readwrite) NSString *name;
 @property(nonatomic, copy, readwrite, nullable) NSString *groupID;
 @property(nonatomic, copy, readwrite) NSString *iconKey;
+@property(nonatomic, strong, readwrite, nullable) PRProviderInstallRecoveryDecision *recoveryDecision;
+
+@end
+
+@interface PRProviderInstallFileOption ()
+
+@property(nonatomic, copy, readwrite) NSString *identifier;
+@property(nonatomic, copy, readwrite) NSString *name;
+@property(nonatomic, copy, readwrite) NSString *targetPath;
+@property(nonatomic, assign, readwrite) BOOL required;
+@property(nonatomic, assign, readwrite) BOOL blocked;
+@property(nonatomic, assign, readwrite) BOOL selected;
+
+@end
+
+@interface PRProviderInstallRecoveryPrompt ()
+
+@property(nonatomic, assign, readwrite) PRProviderInstallRecoveryKind kind;
+@property(nonatomic, copy, readwrite) NSArray<PRProviderInstallFileOption *> *files;
+@property(nonatomic, copy, readwrite) NSString *localizationKey;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readwrite) BOOL retryable;
+
+@end
+
+@interface PRProviderInstallRecoveryDecision ()
+
+@property(nonatomic, assign, readwrite) PRProviderInstallRecoveryKind kind;
+@property(nonatomic, assign, readwrite) PRProviderInstallRecoveryAction action;
+@property(nonatomic, copy, readwrite) NSArray<NSString *> *selectedFileIdentifiers;
+@property(nonatomic, copy, readwrite) NSArray<NSString *> *resolvedBlockedFileIdentifiers;
 
 @end
 
@@ -4192,6 +4348,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, copy, readwrite) NSString *localizationKey;
 @property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
 @property(nonatomic, assign, readwrite) BOOL retryable;
+@property(nonatomic, strong, readwrite, nullable) PRProviderInstallRecoveryPrompt *recoveryPrompt;
 
 @end
 
@@ -5360,6 +5517,138 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@implementation PRProviderInstallFileOption
+
+- (instancetype)initWithIdentifier:(NSString *)identifier
+                               name:(NSString *)name
+                         targetPath:(NSString *)targetPath
+                           required:(BOOL)required
+                            blocked:(BOOL)blocked
+                           selected:(BOOL)selected
+{
+    if (!isNonEmptyString(identifier) || !isNonEmptyString(name) || !isNonEmptyString(targetPath)) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.identifier = [identifier copy];
+        self.name = [name copy];
+        self.targetPath = [targetPath copy];
+        self.required = required;
+        self.blocked = blocked;
+        self.selected = selected;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRProviderInstallRecoveryPrompt
+
+- (instancetype)initWithKind:(PRProviderInstallRecoveryKind)kind
+                         files:(NSArray<PRProviderInstallFileOption *> *)files
+               localizationKey:(NSString *)localizationKey
+                 diagnosticText:(NSString *)diagnosticText
+                     retryable:(BOOL)retryable
+{
+    if (!isKnownProviderInstallRecoveryKind(kind) || !retryable || !isNonEmptyString(localizationKey)
+        || ![files isKindOfClass:NSArray.class]) {
+        return nil;
+    }
+
+    const bool isFilePrompt = kind == PRProviderInstallRecoveryKindOptionalFiles
+        || kind == PRProviderInstallRecoveryKindBlockedFiles;
+    if (isFilePrompt != (files.count > 0)) {
+        return nil;
+    }
+
+    NSMutableSet<NSString *> *identifiers = [NSMutableSet setWithCapacity:files.count];
+    for (id value in files) {
+        if (![value isKindOfClass:PRProviderInstallFileOption.class]) {
+            return nil;
+        }
+        PRProviderInstallFileOption *file = (PRProviderInstallFileOption *)value;
+        if (![identifiers containsObject:file.identifier]) {
+            [identifiers addObject:file.identifier];
+        } else {
+            return nil;
+        }
+        if (kind == PRProviderInstallRecoveryKindOptionalFiles && (file.required || file.blocked)) {
+            return nil;
+        }
+        if (kind == PRProviderInstallRecoveryKindBlockedFiles && !file.blocked) {
+            return nil;
+        }
+    }
+
+    self = [super init];
+    if (self) {
+        self.kind = kind;
+        self.files = [files copy];
+        self.localizationKey = [localizationKey copy];
+        self.diagnosticText = [diagnosticText copy];
+        self.retryable = retryable;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRProviderInstallRecoveryDecision
+
+- (instancetype)initWithKind:(PRProviderInstallRecoveryKind)kind
+                        action:(PRProviderInstallRecoveryAction)action
+     selectedFileIdentifiers:(NSArray<NSString *> *)selectedFileIdentifiers
+resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentifiers
+{
+    if (!isKnownProviderInstallRecoveryKind(kind) || !isKnownProviderInstallRecoveryAction(action)
+        || ![selectedFileIdentifiers isKindOfClass:NSArray.class]
+        || ![resolvedBlockedFileIdentifiers isKindOfClass:NSArray.class]) {
+        return nil;
+    }
+
+    NSMutableSet<NSString *> *selected = [NSMutableSet setWithCapacity:selectedFileIdentifiers.count];
+    for (id value in selectedFileIdentifiers) {
+        if (![value isKindOfClass:NSString.class] || !isNonEmptyString((NSString *)value)
+            || [selected containsObject:value]) {
+            return nil;
+        }
+        [selected addObject:value];
+    }
+    NSMutableSet<NSString *> *resolved = [NSMutableSet setWithCapacity:resolvedBlockedFileIdentifiers.count];
+    for (id value in resolvedBlockedFileIdentifiers) {
+        if (![value isKindOfClass:NSString.class] || !isNonEmptyString((NSString *)value)
+            || [resolved containsObject:value]) {
+            return nil;
+        }
+        [resolved addObject:value];
+    }
+
+    const bool isFilePrompt = kind == PRProviderInstallRecoveryKindOptionalFiles
+        || kind == PRProviderInstallRecoveryKindBlockedFiles;
+    if (isFilePrompt) {
+        if (action != PRProviderInstallRecoveryActionContinue
+            || (kind == PRProviderInstallRecoveryKindOptionalFiles && resolved.count != 0)
+            || (kind == PRProviderInstallRecoveryKindBlockedFiles && selected.count != 0)) {
+            return nil;
+        }
+    } else if (action == PRProviderInstallRecoveryActionContinue || selected.count != 0 || resolved.count != 0) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.kind = kind;
+        self.action = action;
+        self.selectedFileIdentifiers = [selectedFileIdentifiers copy];
+        self.resolvedBlockedFileIdentifiers = [resolvedBlockedFileIdentifiers copy];
+    }
+    return self;
+}
+
+@end
+
 @implementation PRProviderInstallRequest
 
 - (instancetype)initWithKind:(PRProviderInstallKind)kind
@@ -5370,8 +5659,28 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
                      groupID:(NSString *)groupID
                      iconKey:(NSString *)iconKey
 {
+    return [self initWithKind:kind
+               packIdentifier:packIdentifier
+           versionIdentifier:versionIdentifier
+                   sourceURL:sourceURL
+                        name:name
+                     groupID:groupID
+                     iconKey:iconKey
+           recoveryDecision:nil];
+}
+
+- (instancetype)initWithKind:(PRProviderInstallKind)kind
+               packIdentifier:(NSString *)packIdentifier
+           versionIdentifier:(NSString *)versionIdentifier
+                   sourceURL:(NSURL *)sourceURL
+                        name:(NSString *)name
+                     groupID:(NSString *)groupID
+                     iconKey:(NSString *)iconKey
+           recoveryDecision:(PRProviderInstallRecoveryDecision *)recoveryDecision
+{
     if (!isKnownProviderInstallKind(kind) || !isNonEmptyString(packIdentifier)
-        || !isNonEmptyString(versionIdentifier) || !isNonEmptyString(name) || !isNonEmptyString(iconKey)) {
+        || !isNonEmptyString(versionIdentifier) || !isNonEmptyString(name) || !isNonEmptyString(iconKey)
+        || (recoveryDecision && ![recoveryDecision isKindOfClass:PRProviderInstallRecoveryDecision.class])) {
         return nil;
     }
 
@@ -5395,6 +5704,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.name = [name copy];
         self.groupID = nullableStringCopy(groupID);
         self.iconKey = [iconKey copy];
+        self.recoveryDecision = recoveryDecision;
     }
     return self;
 }
@@ -5413,6 +5723,29 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
                 diagnosticText:(NSString *)diagnosticText
                      retryable:(BOOL)retryable
 {
+    return [self initWithKind:kind
+               packIdentifier:packIdentifier
+           versionIdentifier:versionIdentifier
+                    instance:instance
+                     outcome:outcome
+             rollbackOutcome:rollbackOutcome
+              localizationKey:localizationKey
+                diagnosticText:diagnosticText
+                     retryable:retryable
+            recoveryPrompt:nil];
+}
+
+- (instancetype)initWithKind:(PRProviderInstallKind)kind
+               packIdentifier:(NSString *)packIdentifier
+           versionIdentifier:(NSString *)versionIdentifier
+                    instance:(PRInstanceSummary *)instance
+                     outcome:(PRProviderInstallOutcome)outcome
+             rollbackOutcome:(PRProviderInstallRollbackOutcome)rollbackOutcome
+              localizationKey:(NSString *)localizationKey
+                diagnosticText:(NSString *)diagnosticText
+                     retryable:(BOOL)retryable
+            recoveryPrompt:(PRProviderInstallRecoveryPrompt *)recoveryPrompt
+{
     if (!isKnownProviderInstallKind(kind) || !isKnownProviderInstallOutcome(outcome)
         || !isKnownProviderInstallRollbackOutcome(rollbackOutcome) || !isNonEmptyString(packIdentifier)
         || !isNonEmptyString(versionIdentifier) || !isNonEmptyString(localizationKey)
@@ -5422,7 +5755,9 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         || (outcome == PRProviderInstallOutcomeSucceeded
             && rollbackOutcome != PRProviderInstallRollbackOutcomeNotRequired)
         || (outcome == PRProviderInstallOutcomeRejected
-            && rollbackOutcome != PRProviderInstallRollbackOutcomeNotRequired)) {
+            && rollbackOutcome != PRProviderInstallRollbackOutcomeNotRequired)
+        || (recoveryPrompt && (!retryable || outcome != PRProviderInstallOutcomeFailed
+                               || ![recoveryPrompt isKindOfClass:PRProviderInstallRecoveryPrompt.class]))) {
         return nil;
     }
 
@@ -5437,6 +5772,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.localizationKey = [localizationKey copy];
         self.diagnosticText = [diagnosticText copy];
         self.retryable = retryable;
+        self.recoveryPrompt = recoveryPrompt;
     }
     return self;
 }
@@ -10124,6 +10460,9 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
                     installRequest.name = utf8TextFromFoundation(requestCopy.name);
                     installRequest.groupId = requestCopy.groupID ? utf8TextFromFoundation(requestCopy.groupID) : "";
                     installRequest.iconKey = stableIdentifierFromFoundation(requestCopy.iconKey);
+                    if (requestCopy.recoveryDecision) {
+                        installRequest.recoveryDecision = recoveryDecisionFromFoundation(requestCopy.recoveryDecision);
+                    }
                     const FrontendProviderInstallResult installResult = bridge->_facade->installProviderPack(
                         installRequest,
                         [&](const FrontendTaskSnapshot& snapshot) {

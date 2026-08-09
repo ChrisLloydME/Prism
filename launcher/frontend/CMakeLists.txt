@@ -43,6 +43,13 @@ if(BUILD_TESTING)
     target_link_libraries(Launcher_frontend_provider_install_contract_test PRIVATE Launcher_frontend)
     add_test(NAME FrontendFacadeProviderInstallContract COMMAND Launcher_frontend_provider_install_contract_test)
 
+    add_executable(Launcher_frontend_provider_install_recovery_contract_test
+        FrontendFacadeProviderInstallRecoveryContractTest.cpp
+    )
+    target_compile_features(Launcher_frontend_provider_install_recovery_contract_test PRIVATE cxx_std_20)
+    target_link_libraries(Launcher_frontend_provider_install_recovery_contract_test PRIVATE Launcher_frontend)
+    add_test(NAME FrontendFacadeProviderInstallRecoveryContract COMMAND Launcher_frontend_provider_install_recovery_contract_test)
+
     add_executable(Launcher_frontend_public_header_test
         FrontendFacadePublicHeaderTest.cpp
     )

@@ -871,6 +871,50 @@ enum class FrontendProviderInstallKind : std::uint8_t {
 enum class FrontendProviderInstallOutcome : std::uint8_t { Succeeded, Failed, Cancelled, Rejected };
 enum class FrontendProviderInstallRollbackOutcome : std::uint8_t { NotRequired, Applied, Failed };
 
+enum class FrontendProviderInstallRecoveryKind : std::uint8_t {
+    OptionalFiles,
+    BlockedFiles,
+    ProviderError,
+    NetworkError,
+    DiskError,
+};
+
+enum class FrontendProviderInstallRecoveryAction : std::uint8_t { Continue, Retry, Cancel };
+
+/// A file-level choice surfaced by an existing provider task before it can
+/// continue. The adapter owns the actual archive/path resolution; the native
+/// contract carries only stable metadata and a confirmed selection bit.
+struct FrontendProviderInstallFileOption final {
+    std::string id;
+    std::string name;
+    std::string targetPath;
+    bool required = false;
+    bool blocked = false;
+    bool selected = false;
+};
+
+/// A typed recovery prompt returned as part of a failed provider task. File
+/// prompts are used for optional or blocked resources; provider/network/disk
+/// prompts carry no file list and expose retryability through the same value
+/// contract.
+struct FrontendProviderInstallRecoveryPrompt final {
+    FrontendProviderInstallRecoveryKind kind = FrontendProviderInstallRecoveryKind::ProviderError;
+    std::vector<FrontendProviderInstallFileOption> files;
+    std::string localizationKey;
+    std::string diagnosticText;
+    bool retryable = false;
+};
+
+/// A user-confirmed recovery decision supplied on the next install attempt.
+/// The adapter is responsible for resolving selected IDs to manifests,
+/// staging files, and any provider-owned local source paths.
+struct FrontendProviderInstallRecoveryDecision final {
+    FrontendProviderInstallRecoveryKind kind = FrontendProviderInstallRecoveryKind::ProviderError;
+    FrontendProviderInstallRecoveryAction action = FrontendProviderInstallRecoveryAction::Cancel;
+    std::vector<std::string> selectedFileIdentifiers;
+    std::vector<std::string> resolvedBlockedFileIdentifiers;
+};
+
 /// Explicit provider-pack installation input. Provider identifiers and
 /// version identifiers are metadata values; the adapter owns manifests,
 /// staging, network/archive tasks, optional/blocked-file decisions, and the
@@ -885,6 +929,7 @@ struct FrontendProviderInstallRequest final {
     std::string name;
     std::string groupId;
     std::string iconKey = "default";
+    std::optional<FrontendProviderInstallRecoveryDecision> recoveryDecision;
 };
 
 /// Confirmed result for one fixture-controlled provider installation. A
@@ -901,6 +946,7 @@ struct FrontendProviderInstallResult final {
     std::string localizationKey;
     std::string diagnosticText;
     bool retryable = false;
+    std::optional<FrontendProviderInstallRecoveryPrompt> recoveryPrompt;
 };
 
 inline constexpr std::size_t kFrontendLogMaxEntries = 512;

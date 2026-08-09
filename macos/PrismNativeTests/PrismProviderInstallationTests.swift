@@ -35,6 +35,65 @@ final class PrismProviderInstallationTests: XCTestCase {
         )
     }
 
+    private func recoveryFile(
+        identifier: String,
+        name: String,
+        targetPath: String,
+        required: Bool = false,
+        blocked: Bool = false,
+        selected: Bool
+    ) throws -> PRProviderInstallFileOption {
+        try XCTUnwrap(
+            PRProviderInstallFileOption(
+                identifier: identifier,
+                name: name,
+                targetPath: targetPath,
+                required: required,
+                blocked: blocked,
+                selected: selected
+            )
+        )
+    }
+
+    private func recoveryPrompt(
+        kind: PRProviderInstallRecoveryKind,
+        files: [PRProviderInstallFileOption]
+    ) throws -> PRProviderInstallRecoveryPrompt {
+        try XCTUnwrap(
+            PRProviderInstallRecoveryPrompt(
+                kind: kind,
+                files: files,
+                localizationKey: kind == .optionalFiles
+                    ? "providers.install.optionalFiles"
+                    : (kind == .blockedFiles
+                        ? "providers.install.blockedFiles"
+                        : "providers.install.recoveryError"),
+                diagnosticText: "fixture recovery",
+                retryable: true
+            )
+        )
+    }
+
+    private func failedResult(
+        prompt: PRProviderInstallRecoveryPrompt,
+        rollbackOutcome: PRProviderInstallRollbackOutcome = .applied
+    ) throws -> PRProviderInstallResult {
+        try XCTUnwrap(
+            PRProviderInstallResult(
+                kind: .modrinth,
+                packIdentifier: "pack.fixture",
+                versionIdentifier: "version.fixture",
+                instance: nil,
+                outcome: .failed,
+                rollbackOutcome: rollbackOutcome,
+                localizationKey: prompt.localizationKey,
+                diagnosticText: prompt.diagnosticText,
+                retryable: true,
+                recoveryPrompt: prompt
+            )
+        )
+    }
+
     func testInstallationRequestCoversEveryProviderTaskFamilyAndCustomSourceBoundary() throws {
         XCTAssertEqual(PrismProviderInstallKind.allCases.count, 9)
         var receivedRequests: [PRProviderInstallRequest] = []
@@ -145,6 +204,75 @@ final class PrismProviderInstallationTests: XCTestCase {
         XCTAssertTrue(model.isInstalling)
     }
 
+    func testRecoveryPromptsPreserveSelectionsAndTypedRetryDecisions() throws {
+        var receivedRequests: [PRProviderInstallRequest] = []
+        let model = PrismProviderInstallationModel(
+            initialDraft: draft(for: .modrinth),
+            onInstall: { request, _ in receivedRequests.append(request) }
+        )
+
+        XCTAssertTrue(model.startInstall())
+        let optionalPrompt = try recoveryPrompt(
+            kind: .optionalFiles,
+            files: [
+                try recoveryFile(
+                    identifier: "optional-a",
+                    name: "Optional A",
+                    targetPath: "mods/optional-a.jar",
+                    selected: true
+                ),
+                try recoveryFile(
+                    identifier: "optional-b",
+                    name: "Optional B",
+                    targetPath: "mods/optional-b.jar",
+                    selected: false
+                ),
+            ]
+        )
+        XCTAssertTrue(model.apply(result: try failedResult(prompt: optionalPrompt)))
+        XCTAssertEqual(model.recoveryPrompt?.kind, .optionalFiles)
+        XCTAssertFalse(model.failure?.isRetryAvailable ?? true)
+        XCTAssertTrue(model.setRecoveryFileSelection("optional-b", selected: true))
+        XCTAssertTrue(model.continueRecovery())
+        let optionalRequest = try XCTUnwrap(receivedRequests.last)
+        XCTAssertEqual(optionalRequest.recoveryDecision?.kind, .optionalFiles)
+        XCTAssertEqual(optionalRequest.recoveryDecision?.action, .continue)
+        XCTAssertEqual(optionalRequest.recoveryDecision?.selectedFileIdentifiers, ["optional-a", "optional-b"])
+        XCTAssertEqual(optionalRequest.recoveryDecision?.resolvedBlockedFileIdentifiers, [])
+
+        XCTAssertTrue(model.apply(result: try failedResult(prompt: try recoveryPrompt(
+            kind: .blockedFiles,
+            files: [try recoveryFile(
+                identifier: "blocked-a",
+                name: "Blocked A",
+                targetPath: "mods/blocked-a.jar",
+                required: true,
+                blocked: true,
+                selected: true
+            )]
+        ))))
+        XCTAssertTrue(model.cancelRecovery())
+        XCTAssertEqual(model.state, .cancelled)
+
+        for kind in [
+            PRProviderInstallRecoveryKind.providerError,
+            .networkError,
+            .diskError,
+        ] {
+            model.reset()
+            XCTAssertTrue(model.startInstall())
+            let prompt = try recoveryPrompt(kind: kind, files: [])
+            XCTAssertTrue(model.apply(result: try failedResult(prompt: prompt)))
+            XCTAssertTrue(model.failure?.isRetryAvailable ?? false)
+            XCTAssertTrue(model.retry())
+            let request = try XCTUnwrap(receivedRequests.last)
+            XCTAssertEqual(request.recoveryDecision?.kind, kind)
+            XCTAssertEqual(request.recoveryDecision?.action, .retry)
+            XCTAssertEqual(request.recoveryDecision?.selectedFileIdentifiers, [])
+            XCTAssertEqual(request.recoveryDecision?.resolvedBlockedFileIdentifiers, [])
+        }
+    }
+
     func testInstallationSurfaceUsesSystemControlsLocalizationKeysAndKeepsBoundaryClean() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -158,6 +286,8 @@ final class PrismProviderInstallationTests: XCTestCase {
             "Section(\"Pack\")",
             "Picker(",
             "TextField(",
+            "Toggle(",
+            "ForEach(prompt.files)",
             "Button(\"Choose Archive",
             "ProgressView(",
             "ContentUnavailableView",
@@ -165,6 +295,11 @@ final class PrismProviderInstallationTests: XCTestCase {
             ".keyboardShortcut(.cancelAction)",
             ".fileImporter(",
             ".accessibilityIdentifier(\"provider-install.",
+            ".accessibilityValue",
+            "recoveryPrompt",
+            "setRecoveryFileSelection",
+            "continueRecovery",
+            "LocalizedStringKey",
             "providers.install."
         ] {
             XCTAssertTrue(source.contains(requiredToken), "Missing native provider installation API: \(requiredToken)")

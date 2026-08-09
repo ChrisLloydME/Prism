@@ -67,6 +67,125 @@ enum PrismProviderInstallRollbackOutcome: String, Equatable, Sendable {
     }
 }
 
+enum PrismProviderInstallRecoveryKind: String, Equatable, Sendable {
+    case optionalFiles
+    case blockedFiles
+    case providerError
+    case networkError
+    case diskError
+
+    init?(bridgeValue: PRProviderInstallRecoveryKind) {
+        switch bridgeValue {
+        case .optionalFiles: self = .optionalFiles
+        case .blockedFiles: self = .blockedFiles
+        case .providerError: self = .providerError
+        case .networkError: self = .networkError
+        case .diskError: self = .diskError
+        @unknown default: return nil
+        }
+    }
+
+    var bridgeValue: PRProviderInstallRecoveryKind {
+        switch self {
+        case .optionalFiles: return .optionalFiles
+        case .blockedFiles: return .blockedFiles
+        case .providerError: return .providerError
+        case .networkError: return .networkError
+        case .diskError: return .diskError
+        }
+    }
+
+    var isFileSelection: Bool {
+        self == .optionalFiles || self == .blockedFiles
+    }
+}
+
+enum PrismProviderInstallRecoveryAction: String, Equatable, Sendable {
+    case `continue`
+    case retry
+    case cancel
+
+    var bridgeValue: PRProviderInstallRecoveryAction {
+        switch self {
+        case .continue: return .continue
+        case .retry: return .retry
+        case .cancel: return .cancel
+        }
+    }
+}
+
+struct PrismProviderInstallRecoveryFile: Equatable, Identifiable, Sendable {
+    let id: String
+    let name: String
+    let targetPath: String
+    let required: Bool
+    let blocked: Bool
+    var selected: Bool
+
+    init?(bridgeValue: PRProviderInstallFileOption) {
+        let identifier = bridgeValue.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = bridgeValue.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let targetPath = bridgeValue.targetPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !identifier.isEmpty, !name.isEmpty, !targetPath.isEmpty else { return nil }
+        self.id = identifier
+        self.name = name
+        self.targetPath = targetPath
+        self.required = bridgeValue.required
+        self.blocked = bridgeValue.blocked
+        self.selected = bridgeValue.selected
+    }
+
+    var bridgeValue: PRProviderInstallFileOption? {
+        PRProviderInstallFileOption(
+            identifier: id,
+            name: name,
+            targetPath: targetPath,
+            required: required,
+            blocked: blocked,
+            selected: selected
+        )
+    }
+}
+
+struct PrismProviderInstallRecoveryPrompt: Equatable, Sendable {
+    let kind: PrismProviderInstallRecoveryKind
+    var files: [PrismProviderInstallRecoveryFile]
+    let localizationKey: String
+    let diagnosticText: String?
+    let retryable: Bool
+
+    init?(bridgeValue: PRProviderInstallRecoveryPrompt) {
+        guard let kind = PrismProviderInstallRecoveryKind(bridgeValue: bridgeValue.kind),
+              bridgeValue.retryable,
+              !bridgeValue.localizationKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        let files = bridgeValue.files.compactMap(PrismProviderInstallRecoveryFile.init(bridgeValue:))
+        guard files.count == bridgeValue.files.count, kind.isFileSelection == !files.isEmpty else { return nil }
+        self.kind = kind
+        self.files = files
+        self.localizationKey = bridgeValue.localizationKey
+        self.diagnosticText = bridgeValue.diagnosticText
+        self.retryable = bridgeValue.retryable
+    }
+}
+
+struct PrismProviderInstallRecoveryDecision: Equatable, Sendable {
+    let kind: PrismProviderInstallRecoveryKind
+    let action: PrismProviderInstallRecoveryAction
+    let selectedFileIdentifiers: [String]
+    let resolvedBlockedFileIdentifiers: [String]
+
+    var bridgeValue: PRProviderInstallRecoveryDecision? {
+        PRProviderInstallRecoveryDecision(
+            kind: kind.bridgeValue,
+            action: action.bridgeValue,
+            selectedFileIdentifiers: selectedFileIdentifiers,
+            resolvedBlockedFileIdentifiers: resolvedBlockedFileIdentifiers
+        )
+    }
+}
+
 struct PrismProviderInstallationDraft: Equatable, Sendable {
     var kind: PrismProviderInstallKind
     var packIdentifier: String
@@ -121,8 +240,9 @@ struct PrismProviderInstallationFailure: Equatable, Sendable {
     let diagnosticText: String?
     let retryable: Bool
     let rollbackOutcome: PrismProviderInstallRollbackOutcome
+    var recoveryPrompt: PrismProviderInstallRecoveryPrompt? = nil
 
-    var isRetryAvailable: Bool { retryable }
+    var isRetryAvailable: Bool { retryable && !(recoveryPrompt?.kind.isFileSelection ?? false) }
 }
 
 enum PrismProviderInstallationState: Equatable, Sendable {
@@ -144,6 +264,7 @@ final class PrismProviderInstallationModel: ObservableObject {
     private let onInstall: ((PRProviderInstallRequest, Int) -> Void)?
     private let onCancel: (() -> Void)?
     private var generation = 0
+    private var pendingRecoveryDecision: PrismProviderInstallRecoveryDecision?
 
     init(
         kinds: [PrismProviderInstallKind] = PrismProviderInstallKind.allCases,
@@ -191,6 +312,10 @@ final class PrismProviderInstallationModel: ObservableObject {
         guard case .failed(let failure) = state else { return nil }
         return failure
     }
+    var recoveryPrompt: PrismProviderInstallRecoveryPrompt? { failure?.recoveryPrompt }
+    var canContinueRecovery: Bool {
+        recoveryPrompt?.kind.isFileSelection == true
+    }
     var installedInstance: PrismInstanceRow? {
         guard case .succeeded(let instance) = state else { return nil }
         return instance
@@ -220,6 +345,8 @@ final class PrismProviderInstallationModel: ObservableObject {
     func makeBridgeRequest() -> PRProviderInstallRequest? {
         let normalized = draft.normalized
         guard normalized.validationMessage == nil else { return nil }
+        let bridgeRecoveryDecision = pendingRecoveryDecision?.bridgeValue
+        guard pendingRecoveryDecision == nil || bridgeRecoveryDecision != nil else { return nil }
         return PRProviderInstallRequest(
             kind: normalized.kind.bridgeValue,
             packIdentifier: normalized.packIdentifier,
@@ -229,13 +356,15 @@ final class PrismProviderInstallationModel: ObservableObject {
                 : nil,
             name: normalized.name,
             groupID: normalized.groupID.isEmpty ? nil : normalized.groupID,
-            iconKey: normalized.iconKey
+            iconKey: normalized.iconKey,
+            recoveryDecision: bridgeRecoveryDecision
         )
     }
 
     @discardableResult
     func startInstall() -> Bool {
         guard let request = makeBridgeRequest(), !isInstalling else { return false }
+        pendingRecoveryDecision = nil
         generation += 1
         let activeGeneration = generation
         draft = draft.normalized
@@ -247,6 +376,7 @@ final class PrismProviderInstallationModel: ObservableObject {
     @discardableResult
     func cancel() -> Bool {
         guard isInstalling else { return false }
+        pendingRecoveryDecision = nil
         generation += 1
         onCancel?()
         state = .cancelled
@@ -256,8 +386,60 @@ final class PrismProviderInstallationModel: ObservableObject {
     @discardableResult
     func retry() -> Bool {
         guard let failure, failure.isRetryAvailable else { return false }
+        if let prompt = failure.recoveryPrompt {
+            pendingRecoveryDecision = PrismProviderInstallRecoveryDecision(
+                kind: prompt.kind,
+                action: .retry,
+                selectedFileIdentifiers: [],
+                resolvedBlockedFileIdentifiers: []
+            )
+        } else {
+            pendingRecoveryDecision = nil
+        }
         state = .editing
         return startInstall()
+    }
+
+    @discardableResult
+    func setRecoveryFileSelection(_ identifier: String, selected: Bool) -> Bool {
+        guard case .failed(var failure) = state,
+              var prompt = failure.recoveryPrompt,
+              prompt.kind.isFileSelection,
+              let index = prompt.files.firstIndex(where: { $0.id == identifier }) else {
+            return false
+        }
+        prompt.files[index].selected = selected
+        failure.recoveryPrompt = prompt
+        state = .failed(failure)
+        return true
+    }
+
+    @discardableResult
+    func continueRecovery() -> Bool {
+        guard let prompt = recoveryPrompt, prompt.kind.isFileSelection else { return false }
+        let selectedIdentifiers = prompt.kind == .optionalFiles
+            ? prompt.files.filter(\.selected).map(\.id)
+            : []
+        let resolvedIdentifiers = prompt.kind == .blockedFiles
+            ? prompt.files.filter(\.selected).map(\.id)
+            : []
+        pendingRecoveryDecision = PrismProviderInstallRecoveryDecision(
+            kind: prompt.kind,
+            action: .continue,
+            selectedFileIdentifiers: selectedIdentifiers,
+            resolvedBlockedFileIdentifiers: resolvedIdentifiers
+        )
+        state = .editing
+        return startInstall()
+    }
+
+    @discardableResult
+    func cancelRecovery() -> Bool {
+        guard recoveryPrompt != nil else { return false }
+        pendingRecoveryDecision = nil
+        generation += 1
+        state = .cancelled
+        return true
     }
 
     @discardableResult
@@ -284,6 +466,23 @@ final class PrismProviderInstallationModel: ObservableObject {
 
         let localizationKey = bridgeResult.localizationKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !localizationKey.isEmpty else { return false }
+        let recoveryPrompt: PrismProviderInstallRecoveryPrompt?
+        if let bridgePrompt = bridgeResult.recoveryPrompt {
+            guard let convertedPrompt = PrismProviderInstallRecoveryPrompt(bridgeValue: bridgePrompt) else {
+                state = .failed(
+                    PrismProviderInstallationFailure(
+                        localizationKey: "providers.install.invalidResult",
+                        diagnosticText: nil,
+                        retryable: true,
+                        rollbackOutcome: .failed
+                    )
+                )
+                return false
+            }
+            recoveryPrompt = convertedPrompt
+        } else {
+            recoveryPrompt = nil
+        }
         switch outcome {
         case .succeeded:
             guard let bridgeInstance = bridgeResult.instance,
@@ -309,7 +508,8 @@ final class PrismProviderInstallationModel: ObservableObject {
                     localizationKey: localizationKey,
                     diagnosticText: bridgeResult.diagnosticText,
                     retryable: bridgeResult.retryable,
-                    rollbackOutcome: PrismProviderInstallRollbackOutcome(bridgeValue: bridgeResult.rollbackOutcome)
+                    rollbackOutcome: PrismProviderInstallRollbackOutcome(bridgeValue: bridgeResult.rollbackOutcome),
+                    recoveryPrompt: recoveryPrompt
                 )
             )
         case .cancelled:
@@ -339,6 +539,7 @@ final class PrismProviderInstallationModel: ObservableObject {
 
     func reset() {
         generation += 1
+        pendingRecoveryDecision = nil
         state = .editing
     }
 
@@ -403,27 +604,91 @@ struct PrismProviderInstallationView: View {
                         .accessibilityIdentifier("provider-install.start-again")
                 }
             case .failed(let failure):
-                ContentUnavailableView {
-                    Label("Unable to Install Provider Pack", systemImage: "exclamationmark.triangle")
-                } description: {
-                    VStack(spacing: 6) {
-                        Text(LocalizedStringKey(failure.localizationKey))
-                        Text(failure.rollbackOutcome.displayText)
+                failedView(failure)
+            }
+        }
+        .frame(minWidth: 440, minHeight: 360)
+        .accessibilityIdentifier("provider-install.surface")
+    }
+
+    @ViewBuilder
+    private func failedView(_ failure: PrismProviderInstallationFailure) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            ContentUnavailableView {
+                Label("Unable to Install Provider Pack", systemImage: "exclamationmark.triangle")
+            } description: {
+                VStack(spacing: 6) {
+                    Text(LocalizedStringKey(failure.localizationKey))
+                    if let diagnosticText = failure.diagnosticText, !diagnosticText.isEmpty {
+                        Text(diagnosticText)
                             .foregroundStyle(.secondary)
                     }
-                } actions: {
+                    Text(failure.rollbackOutcome.displayText)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let prompt = failure.recoveryPrompt, prompt.kind.isFileSelection {
+                Form {
+                    Section(LocalizedStringKey(prompt.localizationKey)) {
+                        ForEach(prompt.files) { file in
+                            Toggle(
+                                isOn: recoverySelectionBinding(for: file.id)
+                            ) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(file.name)
+                                    Text(file.targetPath)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .accessibilityIdentifier("provider-install.recovery.file.\(file.id)")
+                            .accessibilityValue(Text(file.selected ? "Selected" : "Not Selected"))
+                        }
+                    }
+                }
+                .formStyle(.grouped)
+
+                HStack {
+                    Spacer()
+                    Button("Cancel", role: .cancel) { _ = model.cancelRecovery() }
+                        .keyboardShortcut(.cancelAction)
+                        .accessibilityIdentifier("provider-install.recovery.cancel")
+                    Button("Continue") { _ = model.continueRecovery() }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(!model.canContinueRecovery)
+                        .accessibilityIdentifier("provider-install.recovery.continue")
+                }
+            } else {
+                HStack {
+                    Spacer()
                     if failure.isRetryAvailable {
                         Button("Retry") { _ = model.retry() }
                             .keyboardShortcut(.defaultAction)
                             .accessibilityIdentifier("provider-install.retry")
+                    }
+                    if failure.recoveryPrompt != nil {
+                        Button("Cancel", role: .cancel) { _ = model.cancelRecovery() }
+                            .keyboardShortcut(.cancelAction)
+                            .accessibilityIdentifier("provider-install.recovery.cancel")
                     }
                     Button("Edit", role: .cancel) { model.reset() }
                         .accessibilityIdentifier("provider-install.edit")
                 }
             }
         }
-        .frame(minWidth: 440, minHeight: 360)
-        .accessibilityIdentifier("provider-install.surface")
+        .padding()
+    }
+
+    private func recoverySelectionBinding(for identifier: String) -> Binding<Bool> {
+        Binding(
+            get: {
+                model.recoveryPrompt?.files.first(where: { $0.id == identifier })?.selected ?? false
+            },
+            set: { selected in
+                _ = model.setRecoveryFileSelection(identifier, selected: selected)
+            }
+        )
     }
 
     private var editingForm: some View {

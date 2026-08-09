@@ -1465,6 +1465,105 @@ bool isKnownProviderInstallRollbackOutcome(FrontendProviderInstallRollbackOutcom
     return false;
 }
 
+bool isKnownProviderInstallRecoveryKind(FrontendProviderInstallRecoveryKind kind) noexcept
+{
+    switch (kind) {
+        case FrontendProviderInstallRecoveryKind::OptionalFiles:
+        case FrontendProviderInstallRecoveryKind::BlockedFiles:
+        case FrontendProviderInstallRecoveryKind::ProviderError:
+        case FrontendProviderInstallRecoveryKind::NetworkError:
+        case FrontendProviderInstallRecoveryKind::DiskError:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownProviderInstallRecoveryAction(FrontendProviderInstallRecoveryAction action) noexcept
+{
+    switch (action) {
+        case FrontendProviderInstallRecoveryAction::Continue:
+        case FrontendProviderInstallRecoveryAction::Retry:
+        case FrontendProviderInstallRecoveryAction::Cancel:
+            return true;
+    }
+    return false;
+}
+
+void validateProviderInstallFileOptions(
+    FrontendProviderInstallRecoveryKind kind,
+    const std::vector<FrontendProviderInstallFileOption>& files)
+{
+    if (kind != FrontendProviderInstallRecoveryKind::OptionalFiles
+        && kind != FrontendProviderInstallRecoveryKind::BlockedFiles) {
+        if (!files.empty()) {
+            throw std::invalid_argument("Provider error recovery prompts cannot carry file choices");
+        }
+        return;
+    }
+    if (files.empty()) {
+        throw std::invalid_argument("File recovery prompts require at least one file choice");
+    }
+
+    std::set<std::string> identifiers;
+    for (const auto& file : files) {
+        if (file.id.empty() || file.name.empty() || file.targetPath.empty() || !identifiers.insert(file.id).second) {
+            throw std::invalid_argument("Provider recovery files require unique stable metadata");
+        }
+        if (kind == FrontendProviderInstallRecoveryKind::OptionalFiles) {
+            if (file.required || file.blocked) {
+                throw std::invalid_argument("Optional recovery files cannot be required or blocked");
+            }
+        } else if (!file.blocked) {
+            throw std::invalid_argument("Blocked recovery files must be marked blocked");
+        }
+    }
+}
+
+void validateProviderInstallRecoveryPrompt(const FrontendProviderInstallRecoveryPrompt& prompt)
+{
+    if (!isKnownProviderInstallRecoveryKind(prompt.kind) || prompt.localizationKey.empty() || !prompt.retryable) {
+        throw std::invalid_argument("Provider recovery prompts require a known retryable error contract");
+    }
+    validateProviderInstallFileOptions(prompt.kind, prompt.files);
+}
+
+void validateProviderInstallRecoveryDecision(const FrontendProviderInstallRecoveryDecision& decision)
+{
+    if (!isKnownProviderInstallRecoveryKind(decision.kind) || !isKnownProviderInstallRecoveryAction(decision.action)) {
+        throw std::invalid_argument("Provider recovery decisions require known kind and action");
+    }
+
+    std::set<std::string> selected;
+    for (const auto& identifier : decision.selectedFileIdentifiers) {
+        if (identifier.empty() || !selected.insert(identifier).second) {
+            throw std::invalid_argument("Provider recovery selections require unique stable identifiers");
+        }
+    }
+    std::set<std::string> resolved;
+    for (const auto& identifier : decision.resolvedBlockedFileIdentifiers) {
+        if (identifier.empty() || !resolved.insert(identifier).second) {
+            throw std::invalid_argument("Blocked-file resolutions require unique stable identifiers");
+        }
+    }
+
+    const bool isFilePrompt = decision.kind == FrontendProviderInstallRecoveryKind::OptionalFiles
+        || decision.kind == FrontendProviderInstallRecoveryKind::BlockedFiles;
+    if (isFilePrompt) {
+        if (decision.action != FrontendProviderInstallRecoveryAction::Continue
+            || (decision.kind == FrontendProviderInstallRecoveryKind::OptionalFiles
+                && !decision.resolvedBlockedFileIdentifiers.empty())
+            || (decision.kind == FrontendProviderInstallRecoveryKind::BlockedFiles
+                && !decision.selectedFileIdentifiers.empty())) {
+            throw std::invalid_argument("File recovery decisions must continue with the matching selection list");
+        }
+    } else {
+        if (decision.action == FrontendProviderInstallRecoveryAction::Continue
+            || !decision.selectedFileIdentifiers.empty() || !decision.resolvedBlockedFileIdentifiers.empty()) {
+            throw std::invalid_argument("Provider error recovery decisions only support retry or cancel");
+        }
+    }
+}
+
 void validateProviderInstallRequest(const FrontendProviderInstallRequest& request)
 {
     if (!isKnownProviderInstallKind(request.kind) || request.packIdentifier.empty()
@@ -1479,6 +1578,9 @@ void validateProviderInstallRequest(const FrontendProviderInstallRequest& reques
     }
     if (!requiresLocalSource && !request.sourcePath.empty()) {
         throw std::invalid_argument("Only local provider installation may carry a source path");
+    }
+    if (request.recoveryDecision.has_value()) {
+        validateProviderInstallRecoveryDecision(*request.recoveryDecision);
     }
 }
 
@@ -1508,6 +1610,12 @@ void validateProviderInstallResult(
     if (result.rollbackOutcome == FrontendProviderInstallRollbackOutcome::Applied
         && result.outcome == FrontendProviderInstallOutcome::Succeeded) {
         throw std::invalid_argument("Successful provider installation cannot report applied rollback");
+    }
+    if (result.recoveryPrompt.has_value()) {
+        if (result.outcome != FrontendProviderInstallOutcome::Failed) {
+            throw std::invalid_argument("Provider recovery prompts require a failed installation result");
+        }
+        validateProviderInstallRecoveryPrompt(*result.recoveryPrompt);
     }
 }
 

@@ -3818,4 +3818,93 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     XCTAssertEqual(cancelledCompletionCount, (NSUInteger)0);
 }
 
+- (void)testProviderInstallationRecoveryConvertsFoundationValues
+{
+    auto receivedRequest = std::make_shared<FrontendProviderInstallRequest>();
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.installProviderPack = [receivedRequest](
+                                           const std::filesystem::path&,
+                                           const FrontendProviderInstallRequest& request,
+                                           const FrontendRuntimeDependencies::ProviderInstallProgressHandler& progress,
+                                           const FrontendRuntimeDependencies::ProviderInstallCancellationCheck&) {
+        *receivedRequest = request;
+        progress(FrontendTaskSnapshot{ "provider-install.recovery", "Install Provider Pack", FrontendTaskState::Running,
+                                       FrontendTaskProgressKind::Determinate, 0.5, true, {}, std::nullopt });
+        const FrontendTaskTerminalResult terminal{
+            FrontendTaskTerminalOutcome::Failed, "providers.install.optionalFiles", {}, "", false };
+        progress(FrontendTaskSnapshot{ "provider-install.recovery", "Install Provider Pack", FrontendTaskState::Failed,
+                                       FrontendTaskProgressKind::Determinate, 0.5, false, {}, terminal });
+
+        FrontendProviderInstallRecoveryPrompt recoveryPrompt;
+        recoveryPrompt.kind = FrontendProviderInstallRecoveryKind::OptionalFiles;
+        recoveryPrompt.files = { { "optional-a", "Optional A", "mods/optional-a.jar", false, false, true } };
+        recoveryPrompt.localizationKey = "providers.install.optionalFiles";
+        recoveryPrompt.diagnosticText = "Fixture optional files require confirmation.";
+        recoveryPrompt.retryable = true;
+
+        FrontendProviderInstallResult result;
+        result.kind = request.kind;
+        result.outcome = FrontendProviderInstallOutcome::Failed;
+        result.packIdentifier = request.packIdentifier;
+        result.versionIdentifier = request.versionIdentifier;
+        result.rollbackOutcome = FrontendProviderInstallRollbackOutcome::Applied;
+        result.localizationKey = recoveryPrompt.localizationKey;
+        result.diagnosticText = recoveryPrompt.diagnosticText;
+        result.retryable = true;
+        result.recoveryPrompt = std::move(recoveryPrompt);
+        return result;
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    PRProviderInstallRecoveryDecision *decision = [[PRProviderInstallRecoveryDecision alloc]
+        initWithKind:PRProviderInstallRecoveryKindOptionalFiles
+               action:PRProviderInstallRecoveryActionContinue
+selectedFileIdentifiers:@[ @"optional-a" ]
+resolvedBlockedFileIdentifiers:@[]];
+    XCTAssertNotNil(decision);
+    PRProviderInstallRequest *request = [[PRProviderInstallRequest alloc]
+        initWithKind:PRProviderInstallKindModrinth
+       packIdentifier:@"pack.recovery.bridge"
+   versionIdentifier:@"version.recovery.bridge"
+           sourceURL:nil
+                name:@"Recovery Provider Pack"
+             groupID:@"fixture-group"
+             iconKey:@"default"
+   recoveryDecision:decision];
+    XCTAssertNotNil(request);
+
+    XCTestExpectation *completion = [self expectationWithDescription:@"Provider recovery completed"];
+    __block PRProviderInstallResult *receivedResult = nil;
+    __block PRBridgeError *receivedError = nil;
+    PRBridgeObservationToken *token = [bridge
+        installProviderPackWithRequest:request
+                              progress:nil
+                            completion:^(PRProviderInstallResult *result, PRBridgeError *error) {
+        receivedResult = result;
+        receivedError = error;
+        [completion fulfill];
+    }];
+    XCTAssertNotNil(token);
+    [self waitForExpectations:@[ completion ] timeout:2.0];
+
+    XCTAssertNil(receivedError);
+    XCTAssertTrue(token.isCancelled);
+    XCTAssertEqual(receivedRequest->kind, FrontendProviderInstallKind::Modrinth);
+    XCTAssertTrue(receivedRequest->recoveryDecision.has_value());
+    XCTAssertEqual(receivedRequest->recoveryDecision->kind, FrontendProviderInstallRecoveryKind::OptionalFiles);
+    XCTAssertEqual(receivedRequest->recoveryDecision->action, FrontendProviderInstallRecoveryAction::Continue);
+    XCTAssertEqual(receivedRequest->recoveryDecision->selectedFileIdentifiers,
+                   std::vector<std::string>{ "optional-a" });
+    XCTAssertNotNil(receivedResult);
+    XCTAssertEqual(receivedResult.outcome, PRProviderInstallOutcomeFailed);
+    XCTAssertEqual(receivedResult.rollbackOutcome, PRProviderInstallRollbackOutcomeApplied);
+    XCTAssertEqual(receivedResult.recoveryPrompt.kind, PRProviderInstallRecoveryKindOptionalFiles);
+    XCTAssertEqual(receivedResult.recoveryPrompt.files.count, (NSUInteger)1);
+    XCTAssertEqualObjects(receivedResult.recoveryPrompt.files.firstObject.identifier, @"optional-a");
+    XCTAssertTrue(receivedResult.recoveryPrompt.files.firstObject.selected);
+    XCTAssertTrue(receivedResult.recoveryPrompt.retryable);
+}
+
 @end

@@ -555,6 +555,74 @@ typedef NS_ENUM(NSInteger, PRProviderInstallRollbackOutcome) {
     PRProviderInstallRollbackOutcomeFailed,
 };
 
+typedef NS_ENUM(NSInteger, PRProviderInstallRecoveryKind) {
+    PRProviderInstallRecoveryKindOptionalFiles = 0,
+    PRProviderInstallRecoveryKindBlockedFiles,
+    PRProviderInstallRecoveryKindProviderError,
+    PRProviderInstallRecoveryKindNetworkError,
+    PRProviderInstallRecoveryKindDiskError,
+};
+
+typedef NS_ENUM(NSInteger, PRProviderInstallRecoveryAction) {
+    PRProviderInstallRecoveryActionContinue = 0,
+    PRProviderInstallRecoveryActionRetry,
+    PRProviderInstallRecoveryActionCancel,
+};
+
+/// Immutable file metadata used by optional and blocked-file recovery prompts.
+@interface PRProviderInstallFileOption : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithIdentifier:(NSString *)identifier
+                                        name:(NSString *)name
+                                  targetPath:(NSString *)targetPath
+                                    required:(BOOL)required
+                                     blocked:(BOOL)blocked
+                                    selected:(BOOL)selected NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, copy, readonly) NSString *name;
+@property(nonatomic, copy, readonly) NSString *targetPath;
+@property(nonatomic, assign, readonly) BOOL required;
+@property(nonatomic, assign, readonly) BOOL blocked;
+@property(nonatomic, assign, readonly) BOOL selected;
+
+@end
+
+/// Immutable typed recovery prompt returned with a failed provider install.
+@interface PRProviderInstallRecoveryPrompt : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithKind:(PRProviderInstallRecoveryKind)kind
+                                files:(NSArray<PRProviderInstallFileOption *> *)files
+                      localizationKey:(NSString *)localizationKey
+                        diagnosticText:(nullable NSString *)diagnosticText
+                            retryable:(BOOL)retryable NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, assign, readonly) PRProviderInstallRecoveryKind kind;
+@property(nonatomic, copy, readonly) NSArray<PRProviderInstallFileOption *> *files;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL retryable;
+
+@end
+
+/// Immutable user-confirmed recovery decision supplied on a retry.
+@interface PRProviderInstallRecoveryDecision : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithKind:(PRProviderInstallRecoveryKind)kind
+                                action:(PRProviderInstallRecoveryAction)action
+             selectedFileIdentifiers:(NSArray<NSString *> *)selectedFileIdentifiers
+        resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentifiers NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, assign, readonly) PRProviderInstallRecoveryKind kind;
+@property(nonatomic, assign, readonly) PRProviderInstallRecoveryAction action;
+@property(nonatomic, copy, readonly) NSArray<NSString *> *selectedFileIdentifiers;
+@property(nonatomic, copy, readonly) NSArray<NSString *> *resolvedBlockedFileIdentifiers;
+
+@end
+
 /// Foundation-only provider installation input. Staging, manifests, task
 /// ownership, optional/blocked-file choices, and final instance commits remain
 /// in Objective-C++. A source URL is allowed only for a local custom archive
@@ -568,7 +636,16 @@ typedef NS_ENUM(NSInteger, PRProviderInstallRollbackOutcome) {
                            sourceURL:(nullable NSURL *)sourceURL
                                 name:(NSString *)name
                              groupID:(nullable NSString *)groupID
-                             iconKey:(NSString *)iconKey NS_DESIGNATED_INITIALIZER;
+                             iconKey:(NSString *)iconKey;
+
+- (nullable instancetype)initWithKind:(PRProviderInstallKind)kind
+                       packIdentifier:(NSString *)packIdentifier
+                   versionIdentifier:(NSString *)versionIdentifier
+                           sourceURL:(nullable NSURL *)sourceURL
+                                name:(NSString *)name
+                             groupID:(nullable NSString *)groupID
+                             iconKey:(NSString *)iconKey
+                   recoveryDecision:(nullable PRProviderInstallRecoveryDecision *)recoveryDecision NS_DESIGNATED_INITIALIZER;
 
 @property(nonatomic, assign, readonly) PRProviderInstallKind kind;
 @property(nonatomic, copy, readonly) NSString *packIdentifier;
@@ -577,6 +654,7 @@ typedef NS_ENUM(NSInteger, PRProviderInstallRollbackOutcome) {
 @property(nonatomic, copy, readonly) NSString *name;
 @property(nonatomic, copy, readonly, nullable) NSString *groupID;
 @property(nonatomic, copy, readonly) NSString *iconKey;
+@property(nonatomic, strong, readonly, nullable) PRProviderInstallRecoveryDecision *recoveryDecision;
 
 @end
 
@@ -593,7 +671,18 @@ typedef NS_ENUM(NSInteger, PRProviderInstallRollbackOutcome) {
                      rollbackOutcome:(PRProviderInstallRollbackOutcome)rollbackOutcome
                       localizationKey:(NSString *)localizationKey
                         diagnosticText:(nullable NSString *)diagnosticText
-                             retryable:(BOOL)retryable NS_DESIGNATED_INITIALIZER;
+                             retryable:(BOOL)retryable;
+
+- (nullable instancetype)initWithKind:(PRProviderInstallKind)kind
+                       packIdentifier:(NSString *)packIdentifier
+                   versionIdentifier:(NSString *)versionIdentifier
+                            instance:(nullable PRInstanceSummary *)instance
+                             outcome:(PRProviderInstallOutcome)outcome
+                     rollbackOutcome:(PRProviderInstallRollbackOutcome)rollbackOutcome
+                      localizationKey:(NSString *)localizationKey
+                        diagnosticText:(nullable NSString *)diagnosticText
+                             retryable:(BOOL)retryable
+                    recoveryPrompt:(nullable PRProviderInstallRecoveryPrompt *)recoveryPrompt NS_DESIGNATED_INITIALIZER;
 
 @property(nonatomic, assign, readonly) PRProviderInstallKind kind;
 @property(nonatomic, copy, readonly) NSString *packIdentifier;
@@ -604,6 +693,7 @@ typedef NS_ENUM(NSInteger, PRProviderInstallRollbackOutcome) {
 @property(nonatomic, copy, readonly) NSString *localizationKey;
 @property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
 @property(nonatomic, assign, readonly) BOOL retryable;
+@property(nonatomic, strong, readonly, nullable) PRProviderInstallRecoveryPrompt *recoveryPrompt;
 
 @end
 
