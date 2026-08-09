@@ -2245,7 +2245,7 @@ HIG decision: none beyond preserving the already-approved native app/scene and s
 
 Architecture and risk: the explicit Info.plist, `.icns` resource, and entitlements file are Apple bundle inputs and do not cross the Swift/Objective-C++/C++ boundary. The target keeps `CODE_SIGN_STYLE = Automatic` and `ENABLE_HARDENED_RUNTIME = YES` as existing project settings, while all verification passes `CODE_SIGNING_ALLOWED=NO`; no signing state was changed or exercised. The native app still has the M10-W1 fixture/unavailable composition and retained Qt caller gaps, and the static Sparkle metadata must not be interpreted as a live update implementation.
 
-Commit: implementation commit to be recorded in the immediate ledger-finalization commit.
+Commit: `b359becb1` (implementation); this entry is finalized in the immediate ledger-finalization commit.
 
 Prerequisite: M10-W1 final parity audit is complete. Next after completion: M10-W3 clean-build verification under the shared storage policy.
 
@@ -2344,6 +2344,7 @@ Prerequisite: M10-W5 complete. Next after completion: none; only then can the mi
 | `5eea92583` | S0-W1 bundle-scoped production storage isolation, exact bridge identity composition, containment guards, and bounded generated-build cleanup | Focused native tests 16/16; full Debug/Release XCTest 168/168; Debug/Release builds; C++ facade/public-header CTest 2/2; Bundle ID `com.lloydME.Prism`; Objective-C/Objective-C++ syntax; persistence/path and Swift boundary scans; final storage inventory; `git diff --check` |
 | `e876565c5` | Finalized M9-W4 R1-R4 rendering disposition and E2 QR exception acceptance after the former Xcode/task-log blocker resolved | Shared-path M9-W4 focused XCTest 2/2; full Debug/Release XCTest 168/168; Debug/Release builds; Bundle ID `com.lloydME.Prism`; no-screenshot/non-launch rendering and accessibility evidence; `git diff --check` |
 | `a6c1d5614` | Recorded the M10-W1 final parity audit, mixed acceptance status, explicit cutover prerequisites, and the sole next ready M10-W2 unit | Shared facade CMake/CTest 5/5; shared Debug/Release builds; full native XCTest 168/168 in both configurations; Bundle ID `com.lloydME.Prism`; ObjC/ObjC++ syntax; composition/retained-caller/localization/persistence scans; storage inventory; `git diff --check` |
+| `b359becb1` | Migrated the native macOS bundle metadata, version, icon, entitlements, document/URL declarations, and static update metadata into PrismNative | Shared-path Debug/Release builds; focused packaging XCTest 1/1; full Debug/Release XCTest 169/169; Bundle ID/version/icon/entitlement/plist checks; no-signing/no-launch evidence; storage inventory; `git diff --check` |
 
 ## Current architecture findings
 
