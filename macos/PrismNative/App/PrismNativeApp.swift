@@ -9,6 +9,7 @@ struct PrismNativeApp: App {
     @StateObject private var accountModel = PrismAccountModel()
     @StateObject private var authenticationModel = PrismAccountAuthenticationModel()
     @StateObject private var offlineIdentityModel = PrismOfflineLaunchIdentityModel()
+    @StateObject private var skinModel = PrismSkinManagementModel()
     @StateObject private var shortcutModel = PrismShortcutCreationModel(
         instanceIdentifier: "fixture.instance",
         instanceName: "Fixture Instance",
@@ -33,7 +34,8 @@ struct PrismNativeApp: App {
                 javaModel: javaDiscoveryModel,
                 accountModel: accountModel,
                 authenticationModel: authenticationModel,
-                offlineIdentityModel: offlineIdentityModel
+                offlineIdentityModel: offlineIdentityModel,
+                skinModel: skinModel
             )
         }
 
@@ -56,5 +58,10 @@ struct PrismNativeApp: App {
             PrismShortcutCreationView(model: shortcutModel)
         }
         .defaultSize(width: 600, height: 500)
+
+        Window("Manage Skins", id: "prism.skin-management") {
+            PrismSkinManagementView(model: skinModel)
+        }
+        .defaultSize(width: 980, height: 660)
     }
 }

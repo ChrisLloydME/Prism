@@ -491,6 +491,7 @@ struct PrismAccountSettingsView: View {
     @ObservedObject var model: PrismAccountModel
     @ObservedObject var authenticationModel: PrismAccountAuthenticationModel
     @ObservedObject var offlineIdentityModel: PrismOfflineLaunchIdentityModel
+    let onManageSkins: ((String) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -604,6 +605,17 @@ struct PrismAccountSettingsView: View {
             }
             .listStyle(.inset)
             .frame(minHeight: 150)
+
+            if let account = model.activeAccount,
+               account.type == .microsoft,
+               account.state == .online,
+               account.ownsMinecraft {
+                Button("Manage Skins…", systemImage: "person.crop.square") {
+                    onManageSkins?(account.id)
+                }
+                .help(Text("Manage the selected Microsoft account's Minecraft skin."))
+                .accessibilityIdentifier("prism.settings.accounts.manage-skins")
+            }
 
             HStack {
                 LabeledContent("Active Account") {

@@ -492,11 +492,13 @@ final class PrismGlobalSettingsModel: ObservableObject {
 }
 
 struct PrismSettingsView: View {
+    @Environment(\.openWindow) private var openWindow
     @ObservedObject var model: PrismGlobalSettingsModel
     @ObservedObject var javaModel: PrismJavaDiscoveryModel
     @ObservedObject var accountModel: PrismAccountModel
     @ObservedObject var authenticationModel: PrismAccountAuthenticationModel
     @ObservedObject var offlineIdentityModel: PrismOfflineLaunchIdentityModel
+    @ObservedObject var skinModel: PrismSkinManagementModel
     @State private var isDirectoryImporterPresented = false
     @State private var selectedTab: SettingsTab = .appearance
 
@@ -550,7 +552,11 @@ struct PrismSettingsView: View {
                 PrismAccountSettingsView(
                     model: accountModel,
                     authenticationModel: authenticationModel,
-                    offlineIdentityModel: offlineIdentityModel
+                    offlineIdentityModel: offlineIdentityModel,
+                    onManageSkins: { accountIdentifier in
+                        skinModel.setAccountContext(identifier: accountIdentifier)
+                        openWindow(id: "prism.skin-management")
+                    }
                 )
                     .tabItem { Label("Accounts", systemImage: "person.crop.circle") }
                     .tag(SettingsTab.accounts)
