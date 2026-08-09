@@ -1257,6 +1257,204 @@ int main()
                (void) importFacade.importInstance(instanceImportRequest);
            });
 
+    FrontendInstanceCopyRequest instanceCopyRequest;
+    instanceCopyRequest.sourceInstanceIdentifier = "fixture-source";
+    instanceCopyRequest.name = "Copied Fixture";
+    instanceCopyRequest.groupId = "fixture-copies";
+    instanceCopyRequest.iconKey = "default";
+    instanceCopyRequest.options.useSymbolicLinks = true;
+    instanceCopyRequest.options.linkRecursively = true;
+    instanceCopyRequest.options.dontLinkSaves = true;
+    std::size_t copyCalls = 0;
+    std::size_t copyProgressEvents = 0;
+    bool copyRootMatches = true;
+    bool copyRequestPreserved = false;
+    bool copyCancellationCheckObserved = false;
+    auto copyDependencies = makeFixtureDependencies();
+    copyDependencies.copyInstance = [&](
+                                         const std::filesystem::path& root,
+                                         const FrontendInstanceCopyRequest& request,
+                                         const FrontendRuntimeDependencies::InstanceCopyProgressHandler& progress,
+                                         const FrontendRuntimeDependencies::InstanceCopyCancellationCheck& isCancelled) {
+        copyRootMatches = copyRootMatches && root == fixtureRoot.lexically_normal();
+        ++copyCalls;
+        copyRequestPreserved = copyRequestPreserved
+            || (request.sourceInstanceIdentifier == instanceCopyRequest.sourceInstanceIdentifier
+                && request.name == instanceCopyRequest.name && request.groupId == instanceCopyRequest.groupId
+                && request.iconKey == instanceCopyRequest.iconKey
+                && request.options.useSymbolicLinks && request.options.linkRecursively
+                && request.options.dontLinkSaves);
+        const std::string taskIdentifier = request.options.dontLinkSaves ? "instance-copy.links" : "instance-copy.cancel";
+        progress(FrontendTaskSnapshot{ taskIdentifier, "Copy Instance", FrontendTaskState::Queued,
+                                       FrontendTaskProgressKind::None, 0.0, true, {}, std::nullopt });
+        ++copyProgressEvents;
+        progress(FrontendTaskSnapshot{ taskIdentifier, "Copy Instance", FrontendTaskState::Running,
+                                       FrontendTaskProgressKind::Determinate, 0.5, true, {}, std::nullopt });
+        ++copyProgressEvents;
+        if (isCancelled && isCancelled()) {
+            copyCancellationCheckObserved = true;
+            const FrontendTaskTerminalResult terminal{
+                FrontendTaskTerminalOutcome::Cancelled, "instances.copy.cancelled", {}, "Fixture cancelled", false };
+            progress(FrontendTaskSnapshot{ taskIdentifier, "Copy Instance", FrontendTaskState::Cancelled,
+                                           FrontendTaskProgressKind::Determinate, 0.5, false, {}, terminal });
+            ++copyProgressEvents;
+            return FrontendInstanceCopyResult{
+                FrontendInstanceCopyOutcome::Cancelled,
+                std::nullopt,
+                "instances.copy.cancelled",
+                "Fixture cancelled",
+                false,
+                true,
+            };
+        }
+
+        const FrontendTaskTerminalResult terminal{
+            FrontendTaskTerminalOutcome::Succeeded, "instances.copy.completed", {}, "", false };
+        progress(FrontendTaskSnapshot{ taskIdentifier, "Copy Instance", FrontendTaskState::Succeeded,
+                                       FrontendTaskProgressKind::Determinate, 1.0, false, {}, terminal });
+        ++copyProgressEvents;
+        return FrontendInstanceCopyResult{
+            FrontendInstanceCopyOutcome::Succeeded,
+            FrontendInstanceSnapshot{ "fixture.copied", request.name, request.iconKey, request.groupId },
+            "instances.copy.completed",
+            "",
+            false,
+            false,
+        };
+    };
+    FrontendFacade copyFacade(fixtureRoot / "nested" / "..", std::move(copyDependencies));
+    const auto copiedInstance = copyFacade.copyInstance(instanceCopyRequest);
+    const auto cancelledCopy = copyFacade.copyInstance(instanceCopyRequest, {}, [] { return true; });
+    const bool instanceCopyContract = copiedInstance.outcome == FrontendInstanceCopyOutcome::Succeeded
+        && copiedInstance.instance.has_value() && copiedInstance.instance->id == "fixture.copied"
+        && copiedInstance.instance->name == "Copied Fixture"
+        && cancelledCopy.outcome == FrontendInstanceCopyOutcome::Cancelled && !cancelledCopy.instance.has_value()
+        && copyCalls == 2 && copyProgressEvents == 6 && copyRootMatches && copyRequestPreserved
+        && copyCancellationCheckObserved;
+    const bool rejectedInvalidCopyRequest = throwsInvalidArgument([&copyFacade] {
+        FrontendInstanceCopyRequest invalid;
+        invalid.sourceInstanceIdentifier = "fixture-source";
+        invalid.name = "Copied Fixture";
+        invalid.iconKey = "default";
+        invalid.options.useClone = true;
+        invalid.options.useSymbolicLinks = true;
+        (void) copyFacade.copyInstance(invalid);
+    }) && throwsInvalidArgument([&copyFacade] {
+        FrontendInstanceCopyRequest invalid;
+        invalid.sourceInstanceIdentifier = "fixture-source";
+        invalid.name = "Copied Fixture";
+        invalid.iconKey = "default";
+        invalid.options.useHardLinks = true;
+        (void) copyFacade.copyInstance(invalid);
+    });
+    const bool missingInstanceCopyPortIsSafe = emptyFacade.copyInstance(instanceCopyRequest).outcome
+        == FrontendInstanceCopyOutcome::Rejected;
+    const bool rejectedPostShutdownInstanceCopy = copyFacade.shutdown()
+        && throwsLogicError([&copyFacade, &instanceCopyRequest] {
+               (void) copyFacade.copyInstance(instanceCopyRequest);
+           });
+
+    FrontendInstanceExportRequest instanceExportRequest;
+    instanceExportRequest.kind = FrontendInstanceExportKind::ZipArchive;
+    instanceExportRequest.sourceInstanceIdentifier = "fixture-source";
+    instanceExportRequest.destinationPath = (fixtureRoot / "exports" / "fixture.zip").lexically_normal();
+    std::size_t exportCalls = 0;
+    std::size_t exportProgressEvents = 0;
+    bool exportRootMatches = true;
+    bool exportRequestPreserved = false;
+    bool exportCancellationCheckObserved = false;
+    auto exportDependencies = makeFixtureDependencies();
+    exportDependencies.exportInstance = [&](
+                                           const std::filesystem::path& root,
+                                           const FrontendInstanceExportRequest& request,
+                                           const FrontendRuntimeDependencies::InstanceExportProgressHandler& progress,
+                                           const FrontendRuntimeDependencies::InstanceExportCancellationCheck& isCancelled) {
+        exportRootMatches = exportRootMatches && root == fixtureRoot.lexically_normal();
+        ++exportCalls;
+        exportRequestPreserved = exportRequestPreserved
+            || (request.sourceInstanceIdentifier == instanceExportRequest.sourceInstanceIdentifier
+                && request.destinationPath == instanceExportRequest.destinationPath
+                && request.kind == FrontendInstanceExportKind::ZipArchive && request.customTemplate.empty());
+        const std::string taskIdentifier = request.kind == FrontendInstanceExportKind::ZipArchive
+            ? "instance-export.zip"
+            : "instance-export.mod-list";
+        progress(FrontendTaskSnapshot{ taskIdentifier, "Export Instance", FrontendTaskState::Queued,
+                                       FrontendTaskProgressKind::None, 0.0, true, {}, std::nullopt });
+        ++exportProgressEvents;
+        progress(FrontendTaskSnapshot{ taskIdentifier, "Export Instance", FrontendTaskState::Running,
+                                       FrontendTaskProgressKind::Determinate, 0.5, true, {}, std::nullopt });
+        ++exportProgressEvents;
+        if (isCancelled && isCancelled()) {
+            exportCancellationCheckObserved = true;
+            const FrontendTaskTerminalResult terminal{
+                FrontendTaskTerminalOutcome::Cancelled, "instances.export.cancelled", {}, "Fixture cancelled", false };
+            progress(FrontendTaskSnapshot{ taskIdentifier, "Export Instance", FrontendTaskState::Cancelled,
+                                           FrontendTaskProgressKind::Determinate, 0.5, false, {}, terminal });
+            ++exportProgressEvents;
+            return FrontendInstanceExportResult{
+                request.kind,
+                FrontendInstanceExportOutcome::Cancelled,
+                request.destinationPath,
+                "instances.export.cancelled",
+                "Fixture cancelled",
+                false,
+                true,
+            };
+        }
+
+        const FrontendTaskTerminalResult terminal{
+            FrontendTaskTerminalOutcome::Succeeded, "instances.export.completed", {}, "", false };
+        progress(FrontendTaskSnapshot{ taskIdentifier, "Export Instance", FrontendTaskState::Succeeded,
+                                       FrontendTaskProgressKind::Determinate, 1.0, false, {}, terminal });
+        ++exportProgressEvents;
+        return FrontendInstanceExportResult{
+            request.kind,
+            FrontendInstanceExportOutcome::Succeeded,
+            request.destinationPath,
+            "instances.export.completed",
+            "",
+            false,
+            false,
+        };
+    };
+    FrontendFacade exportFacade(fixtureRoot / "nested" / "..", std::move(exportDependencies));
+    const auto exportedZip = exportFacade.exportInstance(instanceExportRequest);
+    FrontendInstanceExportRequest modListExportRequest = instanceExportRequest;
+    modListExportRequest.kind = FrontendInstanceExportKind::ModList;
+    modListExportRequest.modListFormat = FrontendModListExportFormat::Custom;
+    modListExportRequest.modListFieldMask = kFrontendModListFieldAll;
+    modListExportRequest.customTemplate = "{name},{version}";
+    const auto cancelledModListExport = exportFacade.exportInstance(modListExportRequest, {}, [] { return true; });
+    const bool instanceExportContract = exportedZip.outcome == FrontendInstanceExportOutcome::Succeeded
+        && exportedZip.kind == FrontendInstanceExportKind::ZipArchive
+        && exportedZip.destinationPath == instanceExportRequest.destinationPath
+        && cancelledModListExport.outcome == FrontendInstanceExportOutcome::Cancelled
+        && cancelledModListExport.kind == FrontendInstanceExportKind::ModList
+        && exportCalls == 2 && exportProgressEvents == 6 && exportRootMatches && exportRequestPreserved
+        && exportCancellationCheckObserved;
+    const bool rejectedInvalidExportRequest = throwsInvalidArgument([&exportFacade] {
+        FrontendInstanceExportRequest invalid;
+        invalid.kind = FrontendInstanceExportKind::ZipArchive;
+        invalid.sourceInstanceIdentifier = "fixture-source";
+        invalid.destinationPath = "relative-fixture.zip";
+        (void) exportFacade.exportInstance(invalid);
+    }) && throwsInvalidArgument([&exportFacade, &instanceExportRequest] {
+        FrontendInstanceExportRequest invalid = instanceExportRequest;
+        invalid.customTemplate = "not allowed for zip";
+        (void) exportFacade.exportInstance(invalid);
+    }) && throwsInvalidArgument([&exportFacade, &instanceExportRequest] {
+        FrontendInstanceExportRequest invalid = instanceExportRequest;
+        invalid.kind = FrontendInstanceExportKind::ModList;
+        invalid.modListFormat = FrontendModListExportFormat::Custom;
+        (void) exportFacade.exportInstance(invalid);
+    });
+    const bool missingInstanceExportPortIsSafe = emptyFacade.exportInstance(instanceExportRequest).outcome
+        == FrontendInstanceExportOutcome::Rejected;
+    const bool rejectedPostShutdownInstanceExport = exportFacade.shutdown()
+        && throwsLogicError([&exportFacade, &instanceExportRequest] {
+               (void) exportFacade.exportInstance(instanceExportRequest);
+           });
+
     std::vector<std::string> launchCalls;
     std::vector<std::string> stopCalls;
     bool commandRootMatches = true;
@@ -1713,7 +1911,11 @@ int main()
                && invalidOfflineUpdateRejected && missingOfflineIdentityPortsAreSafe
                && rejectedPostShutdownOfflineIdentityWork && instanceImportContract
                && rejectedInvalidImportRequest && missingInstanceImportPortIsSafe
-               && rejectedPostShutdownInstanceImport
+               && rejectedPostShutdownInstanceImport && instanceCopyContract
+               && rejectedInvalidCopyRequest && missingInstanceCopyPortIsSafe
+               && rejectedPostShutdownInstanceCopy && instanceExportContract
+               && rejectedInvalidExportRequest && missingInstanceExportPortIsSafe
+               && rejectedPostShutdownInstanceExport
                && rejectedEmptyRoot && rejectedRelativeRoot && rejectedIncompleteDependencies
                && lifecycleContract && callbacksRanExactlyOnce && destructorShutdownContract && !error
         ? 0

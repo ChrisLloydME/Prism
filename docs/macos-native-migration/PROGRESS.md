@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: Milestone 8, Creation, discovery, and installation
 
-Active work unit: M8-W3
+Active work unit: none (M8-W3 complete; activate the next unit at the next round boundary)
 
-Next ready work unit: M8-W3
+Next ready work unit: M8-W4
 
 ## Safety baseline
 
@@ -1805,11 +1805,56 @@ Next after completion: M8-W3, define fixture-controlled copy and export instance
 
 ### M8-W3: Fixture-controlled copy and export instance
 
-Status: active
+Status: complete
 
-Outcome: in progress. Define the next Milestone 8 native copy/export seam using confirmed backend results, explicit cancellation/error recovery, and system save-panel semantics.
+Outcome: implemented the fixture-controlled native copy, ZIP export, and text mod-list export seam. The QWidget-free facade validates legacy copy/link/clone policy, explicit export kinds and formats, progress, cancellation, retryability, rollback metadata, and terminal-result invariants. Objective-C++ is the only Foundation/C++ conversion and callback-lifetime boundary; Swift owns draft, progress, cancellation, retry, stale-result suppression, and confirmed-success state.
 
-Working boundary: begin by re-reading `CopyInstanceDialog`, `ExportInstanceDialog`, `ExportPackDialog`, `ExportToModListDialog`, and their copy/export backend tasks. Use fixture-controlled temporary roots and `fileExporter`/`NSSavePanel` values only. Do not read or write upstream application data, real accounts, Keychain, production files, provider services, or live network resources; do not add provider browsing or installation behavior in this work unit.
+Legacy evidence: `CopyInstanceDialog` maps the eight ordinary copy selections and mutually-exclusive links/clone options into `InstanceCopyTask`; `InstanceList::wrapInstanceTask` owns temporary staging and commit; `ExportInstanceDialog` uses a standard save dialog and `ExportToZipTask`; `ExportToModListDialog` formats HTML/Markdown/plain text/JSON/CSV/custom output synchronously. Provider pack export (`ExportPackDialog`, Flame, and Modrinth) is deliberately deferred to the provider work units.
+
+Working boundary: use fixture-controlled temporary roots and system-selected absolute file URLs only. The new runner ports do not read or write upstream application data, real accounts, Keychain, production files, provider services, or live network resources. No provider browsing, pack installation, staging commit, legacy `SaveIcon` side effect, or production file write was added.
+
+Files changed:
+
+- `launcher/frontend/FrontendFacade.cpp`
+- `launcher/frontend/FrontendFacade.h`
+- `launcher/frontend/FrontendFacadeContractTest.cpp`
+- `macos/PrismNative.xcodeproj/project.pbxproj`
+- `macos/PrismNative/Bridge/PrismBridge.h`
+- `macos/PrismNative/Bridge/PrismBridge.mm`
+- `macos/PrismNative/Bridge/PrismBridgeModels.h`
+- `macos/PrismNative/App/PrismInstanceCopyExport.swift`
+- `macos/PrismNativeTests/PrismBridgeFacadeIntegrationTests.mm`
+- `macos/PrismNativeTests/PrismInstanceCopyExportTests.swift`
+
+Architecture: `FrontendInstanceCopyRequest` preserves the legacy default selections and rejects invalid link/clone, hard-link, recursive-link, and save-link combinations before invoking an injected runner. `FrontendInstanceExportRequest` accepts only an absolute destination and separates ZIP archive from mod-list format/field-mask/custom-template semantics. The facade guarantees no progress after a terminal event and rejects malformed runner results. `PRPrismBridge` copies Foundation strings and `NSURL` values, converts to C++ paths only in private Objective-C++ code, serializes work on its backend queue, delivers on the main actor, owns observation state, and suppresses callbacks after cancellation or shutdown. Swift never references Qt, C++, filesystem readers, processes, network clients, Keychain, or ownership wrappers.
+
+Verification:
+
+- Focused native copy/export and bridge XCTest: `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-m8-w3-focused-tests CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test -only-testing:PrismNativeTests/PrismInstanceCopyExportTests -only-testing:PrismNativeTests/PrismBridgeFacadeIntegrationTests/testInstanceCopyAndExportConvertFoundationValuesAndSuppressCancelledDelivery` — passed 6/6. The tests cover copy policy normalization, progress and cancellation, ZIP and custom mod-list requests, retry/error recovery, stale-generation suppression, Foundation URL/path conversion, main-actor delivery, and late-completion suppression.
+- Universal macOS 14 facade: `cmake --build .deriveddata-prism-native-backend --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test --parallel 2`; `ctest --test-dir .deriveddata-prism-native-backend --output-on-failure` — build passed and CTest passed 3/3 (`FrontendFacadeContract`, `FrontendFacadeInstanceDetailContract`, `FrontendFacadePublicHeaders`).
+- arm64 macOS 14 facade: `cmake --build /private/tmp/prism-m6-w5-arm64-backend --target Launcher_frontend Launcher_frontend_contract_test Launcher_frontend_public_header_test --parallel 2`; `ctest --test-dir /private/tmp/prism-m6-w5-arm64-backend --output-on-failure -R '^(FrontendFacadeContract|FrontendFacadePublicHeaders)$'` — build passed and CTest passed 2/2.
+- Existing arm64 Qt composition: `cmake --build /private/tmp/prism-m5-w4-cmake --target Prism --parallel 2` — passed without executing the application. Existing macOS 26-versus-14 dependency deployment warnings, missing Vulkan headers, and missing `clang-format` warning remain non-blocking and unchanged.
+- Full native Debug: `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-m8-w3-debug CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build` and the equivalent `... test` command — build passed and XCTest passed 135/135.
+- Full native Release: the equivalent `xcodebuild` build and test commands with `-configuration Release -derivedDataPath .deriveddata-m8-w3-release` — build passed and XCTest passed 135/135.
+- Identity and architecture: `plutil -extract CFBundleIdentifier raw -o -` on both Debug and Release `Prism.app/Contents/Info.plist` returned `com.lloydME.Prism`; `file`/`lipo -info` confirmed both app binaries and the universal facade archive are `x86_64 arm64`.
+- Boundary and structure: Objective-C public-header `clang -fsyntax-only`, Objective-C++ bridge `clang++ -fsyntax-only -std=c++20 -fobjc-arc -fblocks -target arm64-apple-macos14.0`, Swift control/accessibility/localization-shape scans, forbidden Qt/C++/ownership/network/file-reader/process/upstream-data/custom-drawing scans, and `git diff --check` all passed. Standard `Form`, `Section`, `Picker`, `TextField`, `Toggle`, `Button`, `ProgressView`, `ContentUnavailableView`, `Label`, default-action shortcut, accessibility identifiers/values, and `NSSavePanel.begin` usage were confirmed structurally.
+- No application executable was launched; no screenshot, recording, visual snapshot test, upstream application/data, real account, Keychain, credential, production service, signing, installation, publishing, push, or destructive operation was used.
+
+HIG decision: use SwiftUI `Form`/`Section` with system `Toggle`, `Picker`, `TextField`, `Button`, `ProgressView`, `ContentUnavailableView`, and `Label`. Use `NSSavePanel` with `allowedContentTypes`, `begin`, and a URL-only completion rather than a custom file picker or direct write. Default actions, disabled states, localized recovery keys, and stable accessibility identifiers/values remain system semantics. No third-party UI framework, custom control, custom drawing, title-bar replacement, or rendering exception was introduced.
+
+Risk and limits: the fixture runner is not wired to live `InstanceCopyTask`, `ExportToZipTask`, `ExportToModList`, staging/commit, provider APIs, network downloads, filesystem mutation, or app-level composition. Provider-specific pack export, browsing, installation, optional/blocked-file handling, provider/network/disk errors, rollback, and production adapter parity remain later work. The native model currently exposes the contract as a standalone tested seam; the legacy `SaveIcon` side effect is intentionally not reproduced. No custom-rendering exception was added.
+
+Commit: pending implementation commit; this entry will receive the implementation hash in the follow-up progress-ledger commit.
+
+Next after completion: M8-W4, browse providers with shared search, filtering, pagination, version selection, and cancellation models. Do not start provider installation until the browsing evidence is verified and committed.
+
+### M8-W4: Fixture-controlled provider browsing
+
+Status: ready
+
+Outcome: queued. Define the shared provider search, filter, pagination, version-selection, cancellation, and error-recovery contract using fixtures only.
+
+Working boundary: do not begin until M8-W3 is committed. Re-read the provider choice/search/version dialogs and existing provider task ownership before editing. Keep provider services, credentials, live network, production caches, and installation mutations out of this work unit.
 
 ## Completed commit index
 

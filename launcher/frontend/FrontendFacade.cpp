@@ -1098,6 +1098,130 @@ void validateInstanceImportResult(
     }
 }
 
+bool isKnownInstanceCopyOutcome(FrontendInstanceCopyOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendInstanceCopyOutcome::Succeeded:
+        case FrontendInstanceCopyOutcome::Failed:
+        case FrontendInstanceCopyOutcome::Cancelled:
+        case FrontendInstanceCopyOutcome::Rejected:
+            return true;
+    }
+    return false;
+}
+
+void validateInstanceCopyRequest(const FrontendInstanceCopyRequest& request)
+{
+    if (request.sourceInstanceIdentifier.empty() || request.name.empty() || request.iconKey.empty()) {
+        throw std::invalid_argument("Instance copy requires a source identifier, name, and icon key");
+    }
+
+    const auto& options = request.options;
+    const bool usesLinks = options.useSymbolicLinks || options.useHardLinks;
+    if (options.useClone && usesLinks) {
+        throw std::invalid_argument("Instance clone cannot be combined with symbolic or hard links");
+    }
+    if (options.useHardLinks && !options.linkRecursively) {
+        throw std::invalid_argument("Hard-link copies require recursive linking");
+    }
+    if (options.dontLinkSaves && (!usesLinks || !options.copySaves)) {
+        throw std::invalid_argument("Do-not-link-saves requires linked save data");
+    }
+}
+
+void validateInstanceCopyResult(
+    const FrontendInstanceCopyResult& result,
+    const FrontendInstanceCopyRequest& request)
+{
+    if (!isKnownInstanceCopyOutcome(result.outcome) || result.localizationKey.empty()) {
+        throw std::invalid_argument("Instance copy results require a known outcome and localization key");
+    }
+
+    if (result.outcome == FrontendInstanceCopyOutcome::Succeeded) {
+        if (!result.instance.has_value() || !result.instance->hasStableIdentifier() || result.instance->name.empty()
+            || result.instance->name != request.name || result.instance->groupId != request.groupId
+            || result.instance->iconKey != request.iconKey) {
+            throw std::invalid_argument("Successful instance copy must confirm the requested instance values");
+        }
+    } else if (result.instance.has_value()) {
+        throw std::invalid_argument("Non-successful instance copy cannot carry an instance summary");
+    }
+}
+
+bool isKnownInstanceExportKind(FrontendInstanceExportKind kind) noexcept
+{
+    switch (kind) {
+        case FrontendInstanceExportKind::ZipArchive:
+        case FrontendInstanceExportKind::ModList:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownModListExportFormat(FrontendModListExportFormat format) noexcept
+{
+    switch (format) {
+        case FrontendModListExportFormat::HTML:
+        case FrontendModListExportFormat::Markdown:
+        case FrontendModListExportFormat::PlainText:
+        case FrontendModListExportFormat::JSON:
+        case FrontendModListExportFormat::CSV:
+        case FrontendModListExportFormat::Custom:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownInstanceExportOutcome(FrontendInstanceExportOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendInstanceExportOutcome::Succeeded:
+        case FrontendInstanceExportOutcome::Failed:
+        case FrontendInstanceExportOutcome::Cancelled:
+        case FrontendInstanceExportOutcome::Rejected:
+            return true;
+    }
+    return false;
+}
+
+void validateInstanceExportRequest(const FrontendInstanceExportRequest& request)
+{
+    if (!isKnownInstanceExportKind(request.kind) || request.sourceInstanceIdentifier.empty()
+        || request.destinationPath.empty() || !request.destinationPath.is_absolute()) {
+        throw std::invalid_argument("Instance exports require a known kind, source identifier, and absolute destination");
+    }
+
+    if (request.kind == FrontendInstanceExportKind::ZipArchive) {
+        if (request.modListFieldMask != 0 || !request.customTemplate.empty()) {
+            throw std::invalid_argument("ZIP exports cannot carry mod-list formatting options");
+        }
+        return;
+    }
+
+    if (!isKnownModListExportFormat(request.modListFormat)
+        || (request.modListFieldMask & ~kFrontendModListFieldAll) != 0) {
+        throw std::invalid_argument("Mod-list exports require a known format and field mask");
+    }
+    if (request.modListFormat == FrontendModListExportFormat::Custom && request.customTemplate.empty()) {
+        throw std::invalid_argument("Custom mod-list exports require a template");
+    }
+    if (request.modListFormat != FrontendModListExportFormat::Custom && !request.customTemplate.empty()) {
+        throw std::invalid_argument("Only custom mod-list exports may carry a template");
+    }
+}
+
+void validateInstanceExportResult(
+    const FrontendInstanceExportResult& result,
+    const FrontendInstanceExportRequest& request)
+{
+    if (!isKnownInstanceExportKind(result.kind) || result.kind != request.kind
+        || !isKnownInstanceExportOutcome(result.outcome) || result.localizationKey.empty()
+        || result.destinationPath.empty() || !result.destinationPath.is_absolute()
+        || result.destinationPath.lexically_normal() != request.destinationPath.lexically_normal()) {
+        throw std::invalid_argument("Instance export results must confirm the requested kind and destination");
+    }
+}
+
 std::string truncateUTF8(std::string value, std::size_t maxBytes)
 {
     if (value.size() <= maxBytes) {
@@ -1949,6 +2073,123 @@ FrontendInstanceImportResult executeInstanceImport(
     return result;
 }
 
+FrontendInstanceCopyResult executeInstanceCopy(
+    const FrontendRuntimeDependencies::InstanceCopyRunner& runner,
+    const std::filesystem::path& dataRoot,
+    const FrontendInstanceCopyRequest& request,
+    const FrontendRuntimeDependencies::InstanceCopyProgressHandler& progressHandler,
+    const FrontendRuntimeDependencies::InstanceCopyCancellationCheck& cancellationCheck)
+{
+    validateInstanceCopyRequest(request);
+    if (!runner) {
+        return FrontendInstanceCopyResult{
+            FrontendInstanceCopyOutcome::Rejected,
+            std::nullopt,
+            "instances.copy.unavailable",
+            "Instance copy is unavailable.",
+            true,
+            false,
+        };
+    }
+
+    bool terminalProgressSeen = false;
+    FrontendTaskState terminalState = FrontendTaskState::Queued;
+    const auto progress = [&](const FrontendTaskSnapshot& snapshot) {
+        validateTaskSnapshot(snapshot);
+        if (snapshot.title.empty()) {
+            throw std::invalid_argument("Instance copy progress requires a task title");
+        }
+        if (terminalProgressSeen) {
+            throw std::invalid_argument("Instance copy cannot report progress after a terminal event");
+        }
+        if (isTerminalTaskState(snapshot.state)) {
+            terminalProgressSeen = true;
+            terminalState = snapshot.state;
+        }
+        if (progressHandler) {
+            progressHandler(snapshot);
+        }
+    };
+
+    auto result = runner(dataRoot, request, progress, cancellationCheck);
+    validateInstanceCopyResult(result, request);
+    if (result.outcome == FrontendInstanceCopyOutcome::Rejected) {
+        if (terminalProgressSeen) {
+            throw std::invalid_argument("Rejected instance copy cannot report a terminal progress event");
+        }
+        return result;
+    }
+
+    const bool matchingTerminalState = (result.outcome == FrontendInstanceCopyOutcome::Succeeded
+                                         && terminalState == FrontendTaskState::Succeeded)
+        || (result.outcome == FrontendInstanceCopyOutcome::Failed && terminalState == FrontendTaskState::Failed)
+        || (result.outcome == FrontendInstanceCopyOutcome::Cancelled
+            && terminalState == FrontendTaskState::Cancelled);
+    if (!terminalProgressSeen || !matchingTerminalState) {
+        throw std::invalid_argument("Instance copy result must match its terminal progress event");
+    }
+    return result;
+}
+
+FrontendInstanceExportResult executeInstanceExport(
+    const FrontendRuntimeDependencies::InstanceExportRunner& runner,
+    const std::filesystem::path& dataRoot,
+    const FrontendInstanceExportRequest& request,
+    const FrontendRuntimeDependencies::InstanceExportProgressHandler& progressHandler,
+    const FrontendRuntimeDependencies::InstanceExportCancellationCheck& cancellationCheck)
+{
+    validateInstanceExportRequest(request);
+    if (!runner) {
+        return FrontendInstanceExportResult{
+            request.kind,
+            FrontendInstanceExportOutcome::Rejected,
+            request.destinationPath,
+            "instances.export.unavailable",
+            "Instance export is unavailable.",
+            true,
+            false,
+        };
+    }
+
+    bool terminalProgressSeen = false;
+    FrontendTaskState terminalState = FrontendTaskState::Queued;
+    const auto progress = [&](const FrontendTaskSnapshot& snapshot) {
+        validateTaskSnapshot(snapshot);
+        if (snapshot.title.empty()) {
+            throw std::invalid_argument("Instance export progress requires a task title");
+        }
+        if (terminalProgressSeen) {
+            throw std::invalid_argument("Instance export cannot report progress after a terminal event");
+        }
+        if (isTerminalTaskState(snapshot.state)) {
+            terminalProgressSeen = true;
+            terminalState = snapshot.state;
+        }
+        if (progressHandler) {
+            progressHandler(snapshot);
+        }
+    };
+
+    auto result = runner(dataRoot, request, progress, cancellationCheck);
+    validateInstanceExportResult(result, request);
+    if (result.outcome == FrontendInstanceExportOutcome::Rejected) {
+        if (terminalProgressSeen) {
+            throw std::invalid_argument("Rejected instance export cannot report a terminal progress event");
+        }
+        return result;
+    }
+
+    const bool matchingTerminalState = (result.outcome == FrontendInstanceExportOutcome::Succeeded
+                                         && terminalState == FrontendTaskState::Succeeded)
+        || (result.outcome == FrontendInstanceExportOutcome::Failed && terminalState == FrontendTaskState::Failed)
+        || (result.outcome == FrontendInstanceExportOutcome::Cancelled
+            && terminalState == FrontendTaskState::Cancelled);
+    if (!terminalProgressSeen || !matchingTerminalState) {
+        throw std::invalid_argument("Instance export result must match its terminal progress event");
+    }
+    return result;
+}
+
 }  // namespace
 
 FrontendFacade::FrontendFacade(std::filesystem::path dataRoot, FrontendRuntimeDependencies runtimeDependencies)
@@ -2186,6 +2427,26 @@ FrontendInstanceImportResult FrontendFacade::importInstance(
     ensureRunning(m_lifecycleState);
     return executeInstanceImport(
         m_runtimeDependencies.importInstance, m_dataRoot, request, progressHandler, cancellationCheck);
+}
+
+FrontendInstanceCopyResult FrontendFacade::copyInstance(
+    const FrontendInstanceCopyRequest& request,
+    const FrontendRuntimeDependencies::InstanceCopyProgressHandler& progressHandler,
+    const FrontendRuntimeDependencies::InstanceCopyCancellationCheck& cancellationCheck) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeInstanceCopy(
+        m_runtimeDependencies.copyInstance, m_dataRoot, request, progressHandler, cancellationCheck);
+}
+
+FrontendInstanceExportResult FrontendFacade::exportInstance(
+    const FrontendInstanceExportRequest& request,
+    const FrontendRuntimeDependencies::InstanceExportProgressHandler& progressHandler,
+    const FrontendRuntimeDependencies::InstanceExportCancellationCheck& cancellationCheck) const
+{
+    ensureRunning(m_lifecycleState);
+    return executeInstanceExport(
+        m_runtimeDependencies.exportInstance, m_dataRoot, request, progressHandler, cancellationCheck);
 }
 
 FrontendOfflineLaunchIdentityLoadResult FrontendFacade::loadOfflineLaunchIdentity(

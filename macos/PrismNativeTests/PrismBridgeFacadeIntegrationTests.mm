@@ -3260,4 +3260,225 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     XCTAssertEqual(cancellationCompletionCount, (NSUInteger)0);
 }
 
+- (void)testInstanceCopyAndExportConvertFoundationValuesAndSuppressCancelledDelivery
+{
+    auto rootMatches = std::make_shared<std::atomic<bool>>(true);
+    auto receivedCopyRequest = std::make_shared<FrontendInstanceCopyRequest>();
+    auto receivedExportRequest = std::make_shared<FrontendInstanceExportRequest>();
+    auto progressCalls = std::make_shared<std::atomic<std::size_t>>(0);
+    const std::string fixtureRoot = self.fixtureRootURL.path.UTF8String;
+    const std::string destinationPath =
+        [self.fixtureRootURL.path stringByAppendingPathComponent:@"exports/fixture.csv"].fileSystemRepresentation;
+
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.copyInstance = [rootMatches, receivedCopyRequest, progressCalls, fixtureRoot](
+                                    const std::filesystem::path& root,
+                                    const FrontendInstanceCopyRequest& request,
+                                    const FrontendRuntimeDependencies::InstanceCopyProgressHandler& progress,
+                                    const FrontendRuntimeDependencies::InstanceCopyCancellationCheck&) {
+        *rootMatches = root == std::filesystem::path(fixtureRoot).lexically_normal();
+        *receivedCopyRequest = request;
+        progress(FrontendTaskSnapshot{ "instance-copy.fixture", "Copy Instance", FrontendTaskState::Queued,
+                                       FrontendTaskProgressKind::None, 0.0, true, {}, std::nullopt });
+        ++*progressCalls;
+        progress(FrontendTaskSnapshot{ "instance-copy.fixture", "Copy Instance", FrontendTaskState::Running,
+                                       FrontendTaskProgressKind::Determinate, 0.5, true, {}, std::nullopt });
+        ++*progressCalls;
+        const FrontendTaskTerminalResult terminal{
+            FrontendTaskTerminalOutcome::Succeeded, "instances.copy.completed", {}, "", false };
+        progress(FrontendTaskSnapshot{ "instance-copy.fixture", "Copy Instance", FrontendTaskState::Succeeded,
+                                       FrontendTaskProgressKind::Determinate, 1.0, false, {}, terminal });
+        ++*progressCalls;
+        return FrontendInstanceCopyResult{
+            FrontendInstanceCopyOutcome::Succeeded,
+            FrontendInstanceSnapshot{ "fixture.copied", request.name, request.iconKey, request.groupId },
+            "instances.copy.completed",
+            "",
+            false,
+            false,
+        };
+    };
+    dependencies.exportInstance = [rootMatches, receivedExportRequest, progressCalls, fixtureRoot, destinationPath](
+                                      const std::filesystem::path& root,
+                                      const FrontendInstanceExportRequest& request,
+                                      const FrontendRuntimeDependencies::InstanceExportProgressHandler& progress,
+                                      const FrontendRuntimeDependencies::InstanceExportCancellationCheck&) {
+        *rootMatches = *rootMatches && root == std::filesystem::path(fixtureRoot).lexically_normal();
+        *receivedExportRequest = request;
+        progress(FrontendTaskSnapshot{ "instance-export.fixture", "Export Instance", FrontendTaskState::Queued,
+                                       FrontendTaskProgressKind::None, 0.0, true, {}, std::nullopt });
+        ++*progressCalls;
+        progress(FrontendTaskSnapshot{ "instance-export.fixture", "Export Instance", FrontendTaskState::Running,
+                                       FrontendTaskProgressKind::Determinate, 0.5, true, {}, std::nullopt });
+        ++*progressCalls;
+        const FrontendTaskTerminalResult terminal{
+            FrontendTaskTerminalOutcome::Succeeded, "instances.export.completed", {}, "", false };
+        progress(FrontendTaskSnapshot{ "instance-export.fixture", "Export Instance", FrontendTaskState::Succeeded,
+                                       FrontendTaskProgressKind::Determinate, 1.0, false, {}, terminal });
+        ++*progressCalls;
+        return FrontendInstanceExportResult{
+            request.kind,
+            FrontendInstanceExportOutcome::Succeeded,
+            std::filesystem::path(destinationPath),
+            "instances.export.completed",
+            "",
+            false,
+            false,
+        };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    PRInstanceCopyRequest *copyRequest = [[PRInstanceCopyRequest alloc]
+        initWithSourceInstanceIdentifier:@"fixture.source"
+                                      name:@"Copied Fixture"
+                                   groupID:@"fixture-copies"
+                                   iconKey:@"default"
+                                 copySaves:YES
+                              keepPlaytime:YES
+                          copyGameOptions:YES
+                       copyResourcePacks:YES
+                        copyShaderPacks:YES
+                             copyServers:YES
+                                copyMods:YES
+                         copyScreenshots:YES
+                      useSymbolicLinks:YES
+                        linkRecursively:YES
+                          useHardLinks:NO
+                          dontLinkSaves:YES
+                                useClone:NO];
+    XCTAssertNotNil(copyRequest);
+
+    XCTestExpectation *copyCompletion = [self expectationWithDescription:@"Instance copy completed"];
+    __block PRInstanceCopyResult *receivedCopyResult = nil;
+    __block PRBridgeError *receivedCopyError = nil;
+    __block BOOL copyCompletionOnMain = NO;
+    PRBridgeObservationToken *copyToken = [bridge
+        copyInstanceWithRequest:copyRequest
+                        progress:nil
+                      completion:^(PRInstanceCopyResult *result, PRBridgeError *error) {
+        copyCompletionOnMain = [NSThread isMainThread];
+        receivedCopyResult = result;
+        receivedCopyError = error;
+        [copyCompletion fulfill];
+    }];
+    XCTAssertNotNil(copyToken);
+    [self waitForExpectations:@[ copyCompletion ] timeout:2.0];
+    XCTAssertTrue(copyCompletionOnMain);
+    XCTAssertNil(receivedCopyError);
+    XCTAssertTrue(copyToken.isCancelled);
+    XCTAssertEqual(progressCalls->load(), (size_t)3);
+    XCTAssertTrue(rootMatches->load());
+    XCTAssertEqual(receivedCopyRequest->sourceInstanceIdentifier, "fixture.source");
+    XCTAssertEqual(receivedCopyRequest->name, "Copied Fixture");
+    XCTAssertTrue(receivedCopyRequest->options.useSymbolicLinks);
+    XCTAssertTrue(receivedCopyRequest->options.linkRecursively);
+    XCTAssertTrue(receivedCopyRequest->options.dontLinkSaves);
+    XCTAssertEqual(receivedCopyResult.outcome, PRInstanceCopyOutcomeSucceeded);
+    XCTAssertEqualObjects(receivedCopyResult.localizationKey, @"instances.copy.completed");
+    XCTAssertEqualObjects(receivedCopyResult.instance.identifier, @"fixture.copied");
+
+    NSURL *destinationURL = [NSURL fileURLWithPath:
+        [self.fixtureRootURL.path stringByAppendingPathComponent:@"exports/fixture.csv"]];
+    PRInstanceExportRequest *exportRequest = [[PRInstanceExportRequest alloc]
+        initWithSourceInstanceIdentifier:@"fixture.source"
+                          destinationURL:destinationURL
+                                   kind:PRInstanceExportKindModList
+                         modListFormat:PRModListExportFormatCSV
+                           includeAuthors:YES
+                           includeVersion:YES
+                                includeURL:NO
+                            includeFilename:YES
+                           customTemplate:@""];
+    XCTAssertNotNil(exportRequest);
+
+    XCTestExpectation *exportCompletion = [self expectationWithDescription:@"Instance export completed"];
+    __block PRInstanceExportResult *receivedExportResult = nil;
+    __block PRBridgeError *receivedExportError = nil;
+    PRBridgeObservationToken *exportToken = [bridge
+        exportInstanceWithRequest:exportRequest
+                          progress:nil
+                        completion:^(PRInstanceExportResult *result, PRBridgeError *error) {
+        receivedExportResult = result;
+        receivedExportError = error;
+        [exportCompletion fulfill];
+    }];
+    XCTAssertNotNil(exportToken);
+    [self waitForExpectations:@[ exportCompletion ] timeout:2.0];
+    XCTAssertNil(receivedExportError);
+    XCTAssertTrue(exportToken.isCancelled);
+    XCTAssertTrue(rootMatches->load());
+    XCTAssertEqual(receivedExportRequest->kind, FrontendInstanceExportKind::ModList);
+    XCTAssertEqual(receivedExportRequest->modListFormat, FrontendModListExportFormat::CSV);
+    XCTAssertEqual(receivedExportRequest->modListFieldMask,
+                   kFrontendModListFieldAuthors | kFrontendModListFieldVersion | kFrontendModListFieldFilename);
+    XCTAssertEqual(receivedExportRequest->destinationPath, std::filesystem::path(destinationPath));
+    XCTAssertEqual(receivedExportResult.outcome, PRInstanceExportOutcomeSucceeded);
+    XCTAssertEqual(receivedExportResult.kind, PRInstanceExportKindModList);
+    XCTAssertEqualObjects(receivedExportResult.destinationURL.path, destinationURL.path);
+
+    dispatch_semaphore_t runnerEntered = dispatch_semaphore_create(0);
+    dispatch_semaphore_t releaseRunner = dispatch_semaphore_create(0);
+    FrontendRuntimeDependencies cancelledDependencies = baseFixtureDependencies();
+    cancelledDependencies.copyInstance = [runnerEntered, releaseRunner](
+                                             const std::filesystem::path&,
+                                             const FrontendInstanceCopyRequest&,
+                                             const FrontendRuntimeDependencies::InstanceCopyProgressHandler& progress,
+                                             const FrontendRuntimeDependencies::InstanceCopyCancellationCheck& isCancelled) {
+        progress(FrontendTaskSnapshot{ "instance-copy.cancel", "Copy Instance", FrontendTaskState::Queued,
+                                       FrontendTaskProgressKind::None, 0.0, true, {}, std::nullopt });
+        dispatch_semaphore_signal(runnerEntered);
+        dispatch_semaphore_wait(releaseRunner, DISPATCH_TIME_FOREVER);
+        if (isCancelled && isCancelled()) {
+            const FrontendTaskTerminalResult terminal{
+                FrontendTaskTerminalOutcome::Cancelled, "instances.copy.cancelled", {}, "", false };
+            progress(FrontendTaskSnapshot{ "instance-copy.cancel", "Copy Instance", FrontendTaskState::Cancelled,
+                                           FrontendTaskProgressKind::None, 0.0, false, {}, terminal });
+            return FrontendInstanceCopyResult{
+                FrontendInstanceCopyOutcome::Cancelled,
+                std::nullopt,
+                "instances.copy.cancelled",
+                "",
+                false,
+                true,
+            };
+        }
+        const FrontendTaskTerminalResult terminal{
+            FrontendTaskTerminalOutcome::Succeeded, "instances.copy.completed", {}, "", false };
+        progress(FrontendTaskSnapshot{ "instance-copy.cancel", "Copy Instance", FrontendTaskState::Succeeded,
+                                       FrontendTaskProgressKind::Determinate, 1.0, false, {}, terminal });
+        return FrontendInstanceCopyResult{
+            FrontendInstanceCopyOutcome::Succeeded,
+            FrontendInstanceSnapshot{ "fixture.copied", "Copied Fixture", "default", "fixture-copies" },
+            "instances.copy.completed",
+            "",
+            false,
+            false,
+        };
+    };
+    PRPrismBridge *cancelledBridge = [self bridgeWithDependencies:std::move(cancelledDependencies)
+                                                cancellationHandler:nil
+                                                   shutdownHandler:nil];
+    XCTestExpectation *cancelledDrained = [self expectationWithDescription:@"Cancelled instance copy drained"];
+    __block NSUInteger cancellationCompletionCount = 0;
+    PRBridgeObservationToken *cancelToken = [cancelledBridge
+        copyInstanceWithRequest:copyRequest
+                        progress:nil
+                      completion:^(__unused PRInstanceCopyResult *result, __unused PRBridgeError *error) {
+        cancellationCompletionCount += 1;
+    }];
+    XCTAssertNotNil(cancelToken);
+    XCTAssertEqual(dispatch_semaphore_wait(runnerEntered, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC)), 0);
+    XCTAssertTrue([cancelToken cancel]);
+    dispatch_semaphore_signal(releaseRunner);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [cancelledDrained fulfill];
+    });
+    [self waitForExpectations:@[ cancelledDrained ] timeout:2.0];
+    XCTAssertEqual(cancellationCompletionCount, (NSUInteger)0);
+}
+
 @end

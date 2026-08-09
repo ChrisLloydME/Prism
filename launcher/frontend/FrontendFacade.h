@@ -655,6 +655,84 @@ struct FrontendInstanceImportResult final {
     bool partialChangesRolledBack = false;
 };
 
+enum class FrontendInstanceCopyOutcome : std::uint8_t { Succeeded, Failed, Cancelled, Rejected };
+
+/// Explicit copy policy carried from the native copy form. The adapter owns
+/// the source instance, staging directory, filesystem capability checks, and
+/// final commit; these booleans only preserve the legacy policy choices.
+struct FrontendInstanceCopyOptions final {
+    bool copySaves = true;
+    bool keepPlaytime = true;
+    bool copyGameOptions = true;
+    bool copyResourcePacks = true;
+    bool copyShaderPacks = true;
+    bool copyServers = true;
+    bool copyMods = true;
+    bool copyScreenshots = true;
+    bool useSymbolicLinks = false;
+    bool linkRecursively = false;
+    bool useHardLinks = false;
+    bool dontLinkSaves = false;
+    bool useClone = false;
+};
+
+/// Explicit, non-UI input for copying one instance into a new staged
+/// instance. No source path or Qt object crosses the facade contract.
+struct FrontendInstanceCopyRequest final {
+    std::string sourceInstanceIdentifier;
+    std::string name;
+    std::string groupId;
+    std::string iconKey = "default";
+    FrontendInstanceCopyOptions options;
+};
+
+/// Confirmed result for one fixture-controlled copy task. A successful result
+/// carries only the committed immutable instance summary.
+struct FrontendInstanceCopyResult final {
+    FrontendInstanceCopyOutcome outcome = FrontendInstanceCopyOutcome::Rejected;
+    std::optional<FrontendInstanceSnapshot> instance;
+    std::string localizationKey;
+    std::string diagnosticText;
+    bool retryable = false;
+    bool partialChangesRolledBack = false;
+};
+
+enum class FrontendInstanceExportKind : std::uint8_t { ZipArchive, ModList };
+enum class FrontendModListExportFormat : std::uint8_t { HTML, Markdown, PlainText, JSON, CSV, Custom };
+
+inline constexpr std::uint32_t kFrontendModListFieldAuthors = 1U << 0;
+inline constexpr std::uint32_t kFrontendModListFieldVersion = 1U << 1;
+inline constexpr std::uint32_t kFrontendModListFieldURL = 1U << 2;
+inline constexpr std::uint32_t kFrontendModListFieldFilename = 1U << 3;
+inline constexpr std::uint32_t kFrontendModListFieldAll = kFrontendModListFieldAuthors
+    | kFrontendModListFieldVersion | kFrontendModListFieldURL | kFrontendModListFieldFilename;
+
+enum class FrontendInstanceExportOutcome : std::uint8_t { Succeeded, Failed, Cancelled, Rejected };
+
+/// Explicit local export input. The destination is the URL/path selected by a
+/// system save panel; archive writing, mod enumeration, formatting, cleanup,
+/// and cancellation remain inside the injected backend runner.
+struct FrontendInstanceExportRequest final {
+    FrontendInstanceExportKind kind = FrontendInstanceExportKind::ZipArchive;
+    std::string sourceInstanceIdentifier;
+    std::filesystem::path destinationPath;
+    FrontendModListExportFormat modListFormat = FrontendModListExportFormat::HTML;
+    std::uint32_t modListFieldMask = 0;
+    std::string customTemplate;
+};
+
+/// Confirmed result for a local ZIP or mod-list export. The destination is
+/// echoed so the UI can report exactly which user-selected URL was handled.
+struct FrontendInstanceExportResult final {
+    FrontendInstanceExportKind kind = FrontendInstanceExportKind::ZipArchive;
+    FrontendInstanceExportOutcome outcome = FrontendInstanceExportOutcome::Rejected;
+    std::filesystem::path destinationPath;
+    std::string localizationKey;
+    std::string diagnosticText;
+    bool retryable = false;
+    bool partialChangesRolledBack = false;
+};
+
 inline constexpr std::size_t kFrontendLogMaxEntries = 512;
 inline constexpr std::size_t kFrontendLogMaxBytes = 256 * 1024;
 
@@ -747,6 +825,20 @@ struct FrontendRuntimeDependencies final {
         const FrontendInstanceImportRequest&,
         const InstanceImportProgressHandler&,
         const InstanceImportCancellationCheck&)>;
+    using InstanceCopyProgressHandler = std::function<void(const FrontendTaskSnapshot&)>;
+    using InstanceCopyCancellationCheck = std::function<bool()>;
+    using InstanceCopyRunner = std::function<FrontendInstanceCopyResult(
+        const std::filesystem::path&,
+        const FrontendInstanceCopyRequest&,
+        const InstanceCopyProgressHandler&,
+        const InstanceCopyCancellationCheck&)>;
+    using InstanceExportProgressHandler = std::function<void(const FrontendTaskSnapshot&)>;
+    using InstanceExportCancellationCheck = std::function<bool()>;
+    using InstanceExportRunner = std::function<FrontendInstanceExportResult(
+        const std::filesystem::path&,
+        const FrontendInstanceExportRequest&,
+        const InstanceExportProgressHandler&,
+        const InstanceExportCancellationCheck&)>;
     using OfflineLaunchIdentityLoader = std::function<FrontendOfflineLaunchIdentityLoadResult(
         const std::filesystem::path&, const FrontendOfflineLaunchIdentityRequest&)>;
     using OfflineLaunchIdentityUpdater = std::function<FrontendOfflineLaunchIdentityUpdateResult(
@@ -786,6 +878,8 @@ struct FrontendRuntimeDependencies final {
     AccountAuthenticationRunner authenticateAccount;
     VanillaCreationRunner createVanillaInstance;
     InstanceImportRunner importInstance;
+    InstanceCopyRunner copyInstance;
+    InstanceExportRunner exportInstance;
     OfflineLaunchIdentityLoader loadOfflineLaunchIdentity;
     OfflineLaunchIdentityUpdater updateOfflineLaunchIdentity;
     TaskSnapshotLoader loadTaskSnapshot;
@@ -862,6 +956,14 @@ class FrontendFacade final {
         const FrontendInstanceImportRequest& request,
         const FrontendRuntimeDependencies::InstanceImportProgressHandler& progressHandler = {},
         const FrontendRuntimeDependencies::InstanceImportCancellationCheck& cancellationCheck = {}) const;
+    FrontendInstanceCopyResult copyInstance(
+        const FrontendInstanceCopyRequest& request,
+        const FrontendRuntimeDependencies::InstanceCopyProgressHandler& progressHandler = {},
+        const FrontendRuntimeDependencies::InstanceCopyCancellationCheck& cancellationCheck = {}) const;
+    FrontendInstanceExportResult exportInstance(
+        const FrontendInstanceExportRequest& request,
+        const FrontendRuntimeDependencies::InstanceExportProgressHandler& progressHandler = {},
+        const FrontendRuntimeDependencies::InstanceExportCancellationCheck& cancellationCheck = {}) const;
     FrontendOfflineLaunchIdentityLoadResult loadOfflineLaunchIdentity(
         const FrontendOfflineLaunchIdentityRequest& request) const;
     FrontendOfflineLaunchIdentityUpdateResult updateOfflineLaunchIdentity(

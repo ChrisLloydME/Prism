@@ -1110,6 +1110,19 @@ std::filesystem::path resourceSourcePathFromFoundation(NSURL *sourceURL)
     return std::filesystem::path(fileSystemRepresentation);
 }
 
+std::filesystem::path exportDestinationPathFromFoundation(NSURL *destinationURL)
+{
+    if (!destinationURL || !destinationURL.isFileURL || destinationURL.path.length == 0
+        || !destinationURL.path.isAbsolutePath) {
+        throw std::invalid_argument("Instance export requires an absolute destination URL");
+    }
+    const char *fileSystemRepresentation = destinationURL.fileSystemRepresentation;
+    if (!fileSystemRepresentation || fileSystemRepresentation[0] == '\0') {
+        throw std::invalid_argument("Instance export requires a filesystem representation");
+    }
+    return std::filesystem::path(fileSystemRepresentation).lexically_normal();
+}
+
 PRInstanceJoinTarget joinTargetFromFacadeTarget(FrontendInstanceJoinTarget target)
 {
     switch (target) {
@@ -1817,6 +1830,114 @@ PRInstanceImportResult *instanceImportResultFromFacadeResult(const FrontendInsta
   partialChangesRolledBack:result.partialChangesRolledBack];
     if (!converted) {
         throw std::invalid_argument("Facade returned an invalid instance import result");
+    }
+    return converted;
+}
+
+PRInstanceCopyOutcome instanceCopyOutcomeFromFacadeResult(FrontendInstanceCopyOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendInstanceCopyOutcome::Succeeded:
+            return PRInstanceCopyOutcomeSucceeded;
+        case FrontendInstanceCopyOutcome::Failed:
+            return PRInstanceCopyOutcomeFailed;
+        case FrontendInstanceCopyOutcome::Cancelled:
+            return PRInstanceCopyOutcomeCancelled;
+        case FrontendInstanceCopyOutcome::Rejected:
+            return PRInstanceCopyOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown instance copy outcome");
+}
+
+PRInstanceCopyResult *instanceCopyResultFromFacadeResult(const FrontendInstanceCopyResult& result)
+{
+    PRInstanceSummary *instance = result.instance.has_value() ? summaryFromFacadeSnapshot(*result.instance) : nil;
+    PRInstanceCopyResult *converted = [[PRInstanceCopyResult alloc]
+        initWithInstance:instance
+                  outcome:instanceCopyOutcomeFromFacadeResult(result.outcome)
+           localizationKey:foundationStringFromUTF8AllowEmpty(result.localizationKey)
+             diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+                 retryable:result.retryable
+  partialChangesRolledBack:result.partialChangesRolledBack];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid instance copy result");
+    }
+    return converted;
+}
+
+PRInstanceExportKind instanceExportKindFromFacadeKind(FrontendInstanceExportKind kind)
+{
+    switch (kind) {
+        case FrontendInstanceExportKind::ZipArchive:
+            return PRInstanceExportKindZipArchive;
+        case FrontendInstanceExportKind::ModList:
+            return PRInstanceExportKindModList;
+    }
+    throw std::invalid_argument("Facade returned an unknown instance export kind");
+}
+
+PRModListExportFormat modListExportFormatFromFacadeFormat(FrontendModListExportFormat format)
+{
+    switch (format) {
+        case FrontendModListExportFormat::HTML:
+            return PRModListExportFormatHTML;
+        case FrontendModListExportFormat::Markdown:
+            return PRModListExportFormatMarkdown;
+        case FrontendModListExportFormat::PlainText:
+            return PRModListExportFormatPlainText;
+        case FrontendModListExportFormat::JSON:
+            return PRModListExportFormatJSON;
+        case FrontendModListExportFormat::CSV:
+            return PRModListExportFormatCSV;
+        case FrontendModListExportFormat::Custom:
+            return PRModListExportFormatCustom;
+    }
+    throw std::invalid_argument("Facade returned an unknown mod-list export format");
+}
+
+PRInstanceExportOutcome instanceExportOutcomeFromFacadeResult(FrontendInstanceExportOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendInstanceExportOutcome::Succeeded:
+            return PRInstanceExportOutcomeSucceeded;
+        case FrontendInstanceExportOutcome::Failed:
+            return PRInstanceExportOutcomeFailed;
+        case FrontendInstanceExportOutcome::Cancelled:
+            return PRInstanceExportOutcomeCancelled;
+        case FrontendInstanceExportOutcome::Rejected:
+            return PRInstanceExportOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown instance export outcome");
+}
+
+NSURL *fileURLFromFacadePath(const std::filesystem::path& path)
+{
+    if (path.empty() || !path.is_absolute()) {
+        throw std::invalid_argument("Facade returned an invalid instance export destination");
+    }
+    const std::string representation = path.string();
+    NSString *pathString = [[NSString alloc] initWithBytes:representation.data()
+                                                     length:representation.size()
+                                                   encoding:NSUTF8StringEncoding];
+    NSURL *url = pathString ? [NSURL fileURLWithPath:pathString] : nil;
+    if (!url || !url.isFileURL || url.path.length == 0 || !url.path.isAbsolutePath) {
+        throw std::invalid_argument("Facade returned an invalid instance export destination URL");
+    }
+    return url;
+}
+
+PRInstanceExportResult *instanceExportResultFromFacadeResult(const FrontendInstanceExportResult& result)
+{
+    PRInstanceExportResult *converted = [[PRInstanceExportResult alloc]
+        initWithKind:instanceExportKindFromFacadeKind(result.kind)
+              outcome:instanceExportOutcomeFromFacadeResult(result.outcome)
+       destinationURL:fileURLFromFacadePath(result.destinationPath)
+     localizationKey:foundationStringFromUTF8AllowEmpty(result.localizationKey)
+       diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+           retryable:result.retryable
+    partialChangesRolledBack:result.partialChangesRolledBack];
+    if (!converted) {
+        throw std::invalid_argument("Facade returned an invalid instance export result");
     }
     return converted;
 }
@@ -2914,6 +3035,66 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@interface PRBridgeInstanceCopyDelivery : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithProgress:(nullable PRTaskStatus *)progress
+                           result:(nullable PRInstanceCopyResult *)result
+                            error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRTaskStatus *progress;
+@property(nonatomic, strong, readonly, nullable) PRInstanceCopyResult *result;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeInstanceCopyDelivery
+
+- (instancetype)initWithProgress:(PRTaskStatus *)progress
+                           result:(PRInstanceCopyResult *)result
+                            error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _progress = progress;
+        _result = result;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
+@interface PRBridgeInstanceExportDelivery : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithProgress:(nullable PRTaskStatus *)progress
+                           result:(nullable PRInstanceExportResult *)result
+                            error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRTaskStatus *progress;
+@property(nonatomic, strong, readonly, nullable) PRInstanceExportResult *result;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+@implementation PRBridgeInstanceExportDelivery
+
+- (instancetype)initWithProgress:(PRTaskStatus *)progress
+                           result:(PRInstanceExportResult *)result
+                            error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _progress = progress;
+        _result = result;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
 @interface PRBridgeInstanceImportDelivery : NSObject
 
 - (instancetype)init NS_UNAVAILABLE;
@@ -3151,6 +3332,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *accountAuthenticationRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *vanillaCreationRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *instanceImportRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *instanceCopyRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *instanceExportRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *offlineIdentityLoadRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *offlineIdentityUpdateRequestStates;
 @property(nonatomic, strong) NSLock *observationLock;
@@ -3189,6 +3372,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 - (void)removeAccountAuthenticationRequest:(PRBridgeObservationState *)request;
 - (void)removeVanillaCreationRequest:(PRBridgeObservationState *)request;
 - (void)removeInstanceImportRequest:(PRBridgeObservationState *)request;
+- (void)removeInstanceCopyRequest:(PRBridgeObservationState *)request;
+- (void)removeInstanceExportRequest:(PRBridgeObservationState *)request;
 - (void)removeOfflineIdentityLoadRequest:(PRBridgeObservationState *)request;
 - (void)removeOfflineIdentityUpdateRequest:(PRBridgeObservationState *)request;
 - (nullable PRBridgeObservationToken *)loadTaskStatusWithIdentifier:(NSString *)identifier
@@ -3253,6 +3438,65 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @property(nonatomic, strong, readwrite, nullable) PRInstanceSummary *instance;
 @property(nonatomic, assign, readwrite) PRInstanceImportOutcome outcome;
+@property(nonatomic, copy, readwrite) NSString *localizationKey;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readwrite) BOOL retryable;
+@property(nonatomic, assign, readwrite) BOOL partialChangesRolledBack;
+
+@end
+
+@interface PRInstanceCopyRequest ()
+
+@property(nonatomic, copy, readwrite) NSString *sourceInstanceIdentifier;
+@property(nonatomic, copy, readwrite) NSString *name;
+@property(nonatomic, copy, readwrite, nullable) NSString *groupID;
+@property(nonatomic, copy, readwrite) NSString *iconKey;
+@property(nonatomic, assign, readwrite) BOOL copySaves;
+@property(nonatomic, assign, readwrite) BOOL keepPlaytime;
+@property(nonatomic, assign, readwrite) BOOL copyGameOptions;
+@property(nonatomic, assign, readwrite) BOOL copyResourcePacks;
+@property(nonatomic, assign, readwrite) BOOL copyShaderPacks;
+@property(nonatomic, assign, readwrite) BOOL copyServers;
+@property(nonatomic, assign, readwrite) BOOL copyMods;
+@property(nonatomic, assign, readwrite) BOOL copyScreenshots;
+@property(nonatomic, assign, readwrite) BOOL useSymbolicLinks;
+@property(nonatomic, assign, readwrite) BOOL linkRecursively;
+@property(nonatomic, assign, readwrite) BOOL useHardLinks;
+@property(nonatomic, assign, readwrite) BOOL dontLinkSaves;
+@property(nonatomic, assign, readwrite) BOOL useClone;
+
+@end
+
+@interface PRInstanceCopyResult ()
+
+@property(nonatomic, strong, readwrite, nullable) PRInstanceSummary *instance;
+@property(nonatomic, assign, readwrite) PRInstanceCopyOutcome outcome;
+@property(nonatomic, copy, readwrite) NSString *localizationKey;
+@property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readwrite) BOOL retryable;
+@property(nonatomic, assign, readwrite) BOOL partialChangesRolledBack;
+
+@end
+
+@interface PRInstanceExportRequest ()
+
+@property(nonatomic, copy, readwrite) NSString *sourceInstanceIdentifier;
+@property(nonatomic, copy, readwrite) NSURL *destinationURL;
+@property(nonatomic, assign, readwrite) PRInstanceExportKind kind;
+@property(nonatomic, assign, readwrite) PRModListExportFormat modListFormat;
+@property(nonatomic, assign, readwrite) BOOL includeAuthors;
+@property(nonatomic, assign, readwrite) BOOL includeVersion;
+@property(nonatomic, assign, readwrite) BOOL includeURL;
+@property(nonatomic, assign, readwrite) BOOL includeFilename;
+@property(nonatomic, copy, readwrite) NSString *customTemplate;
+
+@end
+
+@interface PRInstanceExportResult ()
+
+@property(nonatomic, assign, readwrite) PRInstanceExportKind kind;
+@property(nonatomic, assign, readwrite) PRInstanceExportOutcome outcome;
+@property(nonatomic, copy, readwrite) NSURL *destinationURL;
 @property(nonatomic, copy, readwrite) NSString *localizationKey;
 @property(nonatomic, copy, readwrite, nullable) NSString *diagnosticText;
 @property(nonatomic, assign, readwrite) BOOL retryable;
@@ -3933,6 +4177,206 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     if (self) {
         self.instance = instance;
         self.outcome = outcome;
+        self.localizationKey = [localizationKey copy];
+        self.diagnosticText = [diagnosticText copy];
+        self.retryable = retryable;
+        self.partialChangesRolledBack = partialChangesRolledBack;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRInstanceCopyRequest
+
+- (instancetype)initWithSourceInstanceIdentifier:(NSString *)sourceInstanceIdentifier
+                                              name:(NSString *)name
+                                           groupID:(NSString *)groupID
+                                           iconKey:(NSString *)iconKey
+                                         copySaves:(BOOL)copySaves
+                                      keepPlaytime:(BOOL)keepPlaytime
+                                  copyGameOptions:(BOOL)copyGameOptions
+                               copyResourcePacks:(BOOL)copyResourcePacks
+                                copyShaderPacks:(BOOL)copyShaderPacks
+                                     copyServers:(BOOL)copyServers
+                                        copyMods:(BOOL)copyMods
+                                 copyScreenshots:(BOOL)copyScreenshots
+                              useSymbolicLinks:(BOOL)useSymbolicLinks
+                                linkRecursively:(BOOL)linkRecursively
+                                  useHardLinks:(BOOL)useHardLinks
+                                  dontLinkSaves:(BOOL)dontLinkSaves
+                                        useClone:(BOOL)useClone
+{
+    if (!isNonEmptyString(sourceInstanceIdentifier) || !isNonEmptyString(name) || !isNonEmptyString(iconKey)) {
+        return nil;
+    }
+    const BOOL usesLinks = useSymbolicLinks || useHardLinks;
+    if ((useClone && usesLinks) || (useHardLinks && !linkRecursively) || (dontLinkSaves && (!usesLinks || !copySaves))) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.sourceInstanceIdentifier = [sourceInstanceIdentifier copy];
+        self.name = [name copy];
+        self.groupID = nullableStringCopy(groupID);
+        self.iconKey = [iconKey copy];
+        self.copySaves = copySaves;
+        self.keepPlaytime = keepPlaytime;
+        self.copyGameOptions = copyGameOptions;
+        self.copyResourcePacks = copyResourcePacks;
+        self.copyShaderPacks = copyShaderPacks;
+        self.copyServers = copyServers;
+        self.copyMods = copyMods;
+        self.copyScreenshots = copyScreenshots;
+        self.useSymbolicLinks = useSymbolicLinks;
+        self.linkRecursively = linkRecursively;
+        self.useHardLinks = useHardLinks;
+        self.dontLinkSaves = dontLinkSaves;
+        self.useClone = useClone;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRInstanceCopyResult
+
+- (instancetype)initWithInstance:(PRInstanceSummary *)instance
+                          outcome:(PRInstanceCopyOutcome)outcome
+                   localizationKey:(NSString *)localizationKey
+                     diagnosticText:(NSString *)diagnosticText
+                         retryable:(BOOL)retryable
+          partialChangesRolledBack:(BOOL)partialChangesRolledBack
+{
+    switch (outcome) {
+        case PRInstanceCopyOutcomeSucceeded:
+        case PRInstanceCopyOutcomeFailed:
+        case PRInstanceCopyOutcomeCancelled:
+        case PRInstanceCopyOutcomeRejected:
+            break;
+        default:
+            return nil;
+    }
+    if (!isNonEmptyString(localizationKey) || (instance && ![instance isKindOfClass:PRInstanceSummary.class])
+        || (outcome == PRInstanceCopyOutcomeSucceeded && !instance)
+        || (outcome != PRInstanceCopyOutcomeSucceeded && instance)) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.instance = instance;
+        self.outcome = outcome;
+        self.localizationKey = [localizationKey copy];
+        self.diagnosticText = [diagnosticText copy];
+        self.retryable = retryable;
+        self.partialChangesRolledBack = partialChangesRolledBack;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRInstanceExportRequest
+
+- (instancetype)initWithSourceInstanceIdentifier:(NSString *)sourceInstanceIdentifier
+                                      destinationURL:(NSURL *)destinationURL
+                                               kind:(PRInstanceExportKind)kind
+                                     modListFormat:(PRModListExportFormat)modListFormat
+                                       includeAuthors:(BOOL)includeAuthors
+                                       includeVersion:(BOOL)includeVersion
+                                            includeURL:(BOOL)includeURL
+                                        includeFilename:(BOOL)includeFilename
+                                       customTemplate:(NSString *)customTemplate
+{
+    if (!isNonEmptyString(sourceInstanceIdentifier) || !destinationURL.isFileURL || destinationURL.path.length == 0
+        || !destinationURL.path.isAbsolutePath || ![customTemplate isKindOfClass:NSString.class]) {
+        return nil;
+    }
+    switch (kind) {
+        case PRInstanceExportKindZipArchive:
+            if (includeAuthors || includeVersion || includeURL || includeFilename || customTemplate.length != 0) {
+                return nil;
+            }
+            break;
+        case PRInstanceExportKindModList:
+            switch (modListFormat) {
+                case PRModListExportFormatHTML:
+                case PRModListExportFormatMarkdown:
+                case PRModListExportFormatPlainText:
+                case PRModListExportFormatJSON:
+                case PRModListExportFormatCSV:
+                    if (customTemplate.length != 0) {
+                        return nil;
+                    }
+                    break;
+                case PRModListExportFormatCustom:
+                    if (customTemplate.length == 0) {
+                        return nil;
+                    }
+                    break;
+                default:
+                    return nil;
+            }
+            break;
+        default:
+            return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.sourceInstanceIdentifier = [sourceInstanceIdentifier copy];
+        self.destinationURL = [destinationURL.standardizedURL copy];
+        self.kind = kind;
+        self.modListFormat = modListFormat;
+        self.includeAuthors = includeAuthors;
+        self.includeVersion = includeVersion;
+        self.includeURL = includeURL;
+        self.includeFilename = includeFilename;
+        self.customTemplate = [customTemplate copy];
+    }
+    return self;
+}
+
+@end
+
+@implementation PRInstanceExportResult
+
+- (instancetype)initWithKind:(PRInstanceExportKind)kind
+                      outcome:(PRInstanceExportOutcome)outcome
+               destinationURL:(NSURL *)destinationURL
+             localizationKey:(NSString *)localizationKey
+               diagnosticText:(NSString *)diagnosticText
+                   retryable:(BOOL)retryable
+    partialChangesRolledBack:(BOOL)partialChangesRolledBack
+{
+    switch (kind) {
+        case PRInstanceExportKindZipArchive:
+        case PRInstanceExportKindModList:
+            break;
+        default:
+            return nil;
+    }
+    switch (outcome) {
+        case PRInstanceExportOutcomeSucceeded:
+        case PRInstanceExportOutcomeFailed:
+        case PRInstanceExportOutcomeCancelled:
+        case PRInstanceExportOutcomeRejected:
+            break;
+        default:
+            return nil;
+    }
+    if (!destinationURL.isFileURL || destinationURL.path.length == 0 || !destinationURL.path.isAbsolutePath
+        || !isNonEmptyString(localizationKey)) {
+        return nil;
+    }
+
+    self = [super init];
+    if (self) {
+        self.kind = kind;
+        self.outcome = outcome;
+        self.destinationURL = [destinationURL.standardizedURL copy];
         self.localizationKey = [localizationKey copy];
         self.diagnosticText = [diagnosticText copy];
         self.retryable = retryable;
@@ -5417,6 +5861,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.accountAuthenticationRequestStates = [NSMutableArray array];
         self.vanillaCreationRequestStates = [NSMutableArray array];
         self.instanceImportRequestStates = [NSMutableArray array];
+        self.instanceCopyRequestStates = [NSMutableArray array];
+        self.instanceExportRequestStates = [NSMutableArray array];
         self.offlineIdentityLoadRequestStates = [NSMutableArray array];
         self.offlineIdentityUpdateRequestStates = [NSMutableArray array];
         self.observationLock = [[NSLock alloc] init];
@@ -8057,6 +8503,274 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     return [[PRBridgeObservationToken alloc] initWithState:observation];
 }
 
+- (PRBridgeObservationToken *)copyInstanceWithRequest:(PRInstanceCopyRequest *)request
+                                              progress:(PRInstanceCopyProgressHandler)progress
+                                            completion:(PRInstanceCopyCompletionHandler)completion
+{
+    if (!request || !completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    PRInstanceCopyRequest *requestCopy = request;
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *observation = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeInstanceCopyDelivery *delivery = (PRBridgeInstanceCopyDelivery *)value;
+        if (delivery.progress && progress) {
+            progress(delivery.progress);
+        }
+        if (delivery.result || delivery.error) {
+            [weakRequest cancel];
+            completion(delivery.result, delivery.error);
+        }
+    }];
+    weakRequest = observation;
+    observation.removalHandler = ^{
+        [weakBridge removeInstanceCopyRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [observation cancel];
+        return nil;
+    }
+    [self.instanceCopyRequestStates addObject:observation];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRInstanceCopyResult *result = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    FrontendInstanceCopyRequest copyRequest;
+                    copyRequest.sourceInstanceIdentifier = stableIdentifierFromFoundation(
+                        requestCopy.sourceInstanceIdentifier);
+                    copyRequest.name = utf8TextFromFoundation(requestCopy.name);
+                    copyRequest.groupId = requestCopy.groupID ? utf8TextFromFoundation(requestCopy.groupID) : "";
+                    copyRequest.iconKey = stableIdentifierFromFoundation(requestCopy.iconKey);
+                    copyRequest.options.copySaves = requestCopy.copySaves;
+                    copyRequest.options.keepPlaytime = requestCopy.keepPlaytime;
+                    copyRequest.options.copyGameOptions = requestCopy.copyGameOptions;
+                    copyRequest.options.copyResourcePacks = requestCopy.copyResourcePacks;
+                    copyRequest.options.copyShaderPacks = requestCopy.copyShaderPacks;
+                    copyRequest.options.copyServers = requestCopy.copyServers;
+                    copyRequest.options.copyMods = requestCopy.copyMods;
+                    copyRequest.options.copyScreenshots = requestCopy.copyScreenshots;
+                    copyRequest.options.useSymbolicLinks = requestCopy.useSymbolicLinks;
+                    copyRequest.options.linkRecursively = requestCopy.linkRecursively;
+                    copyRequest.options.useHardLinks = requestCopy.useHardLinks;
+                    copyRequest.options.dontLinkSaves = requestCopy.dontLinkSaves;
+                    copyRequest.options.useClone = requestCopy.useClone;
+                    const FrontendInstanceCopyResult copyResult = bridge->_facade->copyInstance(
+                        copyRequest,
+                        [&](const FrontendTaskSnapshot& snapshot) {
+                            if (state.isCancelled) {
+                                return;
+                            }
+                            PRTaskStatus *convertedStatus = taskStatusFromFacadeSnapshot(snapshot);
+                            [state deliverOnMainActor:[[PRBridgeInstanceCopyDelivery alloc]
+                                initWithProgress:convertedStatus
+                                           result:nil
+                                            error:nil]];
+                        },
+                        [&] { return state.isCancelled; });
+                    result = instanceCopyResultFromFacadeResult(copyResult);
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid instance copy request"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Instance copy cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Instance copy unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown instance copy failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeInstanceCopyDelivery alloc]
+                initWithProgress:nil
+                           result:result
+                            error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:observation];
+}
+
+- (PRBridgeObservationToken *)exportInstanceWithRequest:(PRInstanceExportRequest *)request
+                                                progress:(PRInstanceExportProgressHandler)progress
+                                              completion:(PRInstanceExportCompletionHandler)completion
+{
+    if (!request || !completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    PRInstanceExportRequest *requestCopy = request;
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *observation = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeInstanceExportDelivery *delivery = (PRBridgeInstanceExportDelivery *)value;
+        if (delivery.progress && progress) {
+            progress(delivery.progress);
+        }
+        if (delivery.result || delivery.error) {
+            [weakRequest cancel];
+            completion(delivery.result, delivery.error);
+        }
+    }];
+    weakRequest = observation;
+    observation.removalHandler = ^{
+        [weakBridge removeInstanceExportRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [observation cancel];
+        return nil;
+    }
+    [self.instanceExportRequestStates addObject:observation];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRInstanceExportResult *result = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    FrontendInstanceExportRequest exportRequest;
+                    switch (requestCopy.kind) {
+                        case PRInstanceExportKindZipArchive:
+                            exportRequest.kind = FrontendInstanceExportKind::ZipArchive;
+                            break;
+                        case PRInstanceExportKindModList:
+                            exportRequest.kind = FrontendInstanceExportKind::ModList;
+                            break;
+                        default:
+                            throw std::invalid_argument("Unknown instance export kind");
+                    }
+                    switch (requestCopy.modListFormat) {
+                        case PRModListExportFormatHTML:
+                            exportRequest.modListFormat = FrontendModListExportFormat::HTML;
+                            break;
+                        case PRModListExportFormatMarkdown:
+                            exportRequest.modListFormat = FrontendModListExportFormat::Markdown;
+                            break;
+                        case PRModListExportFormatPlainText:
+                            exportRequest.modListFormat = FrontendModListExportFormat::PlainText;
+                            break;
+                        case PRModListExportFormatJSON:
+                            exportRequest.modListFormat = FrontendModListExportFormat::JSON;
+                            break;
+                        case PRModListExportFormatCSV:
+                            exportRequest.modListFormat = FrontendModListExportFormat::CSV;
+                            break;
+                        case PRModListExportFormatCustom:
+                            exportRequest.modListFormat = FrontendModListExportFormat::Custom;
+                            break;
+                        default:
+                            throw std::invalid_argument("Unknown mod-list export format");
+                    }
+                    exportRequest.sourceInstanceIdentifier = stableIdentifierFromFoundation(
+                        requestCopy.sourceInstanceIdentifier);
+                    exportRequest.destinationPath = exportDestinationPathFromFoundation(requestCopy.destinationURL);
+                    if (requestCopy.includeAuthors) {
+                        exportRequest.modListFieldMask |= kFrontendModListFieldAuthors;
+                    }
+                    if (requestCopy.includeVersion) {
+                        exportRequest.modListFieldMask |= kFrontendModListFieldVersion;
+                    }
+                    if (requestCopy.includeURL) {
+                        exportRequest.modListFieldMask |= kFrontendModListFieldURL;
+                    }
+                    if (requestCopy.includeFilename) {
+                        exportRequest.modListFieldMask |= kFrontendModListFieldFilename;
+                    }
+                    exportRequest.customTemplate = utf8TextFromFoundation(requestCopy.customTemplate);
+                    const FrontendInstanceExportResult exportResult = bridge->_facade->exportInstance(
+                        exportRequest,
+                        [&](const FrontendTaskSnapshot& snapshot) {
+                            if (state.isCancelled) {
+                                return;
+                            }
+                            PRTaskStatus *convertedStatus = taskStatusFromFacadeSnapshot(snapshot);
+                            [state deliverOnMainActor:[[PRBridgeInstanceExportDelivery alloc]
+                                initWithProgress:convertedStatus
+                                           result:nil
+                                            error:nil]];
+                        },
+                        [&] { return state.isCancelled; });
+                    result = instanceExportResultFromFacadeResult(exportResult);
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid instance export request"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Instance export cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Instance export unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown instance export failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeInstanceExportDelivery alloc]
+                initWithProgress:nil
+                           result:result
+                            error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:observation];
+}
+
 - (PRBridgeObservationToken *)loadOfflineLaunchIdentityWithMode:(PROfflineLaunchIdentityMode)mode
                                                 accountIdentifier:(NSString *)accountIdentifier
                                                      fallbackName:(NSString *)fallbackName
@@ -8553,6 +9267,26 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.observationLock unlock];
 }
 
+- (void)removeInstanceCopyRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.instanceCopyRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.instanceCopyRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
+- (void)removeInstanceExportRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.instanceExportRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.instanceExportRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
 - (void)removeOfflineIdentityLoadRequest:(PRBridgeObservationState *)request
 {
     [self.observationLock lock];
@@ -8606,6 +9340,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [observations addObjectsFromArray:self.accountAuthenticationRequestStates];
     [observations addObjectsFromArray:self.vanillaCreationRequestStates];
     [observations addObjectsFromArray:self.instanceImportRequestStates];
+    [observations addObjectsFromArray:self.instanceCopyRequestStates];
+    [observations addObjectsFromArray:self.instanceExportRequestStates];
     [observations addObjectsFromArray:self.offlineIdentityLoadRequestStates];
     [observations addObjectsFromArray:self.offlineIdentityUpdateRequestStates];
     [self.instanceObservationStates removeAllObjects];
@@ -8637,6 +9373,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     [self.accountAuthenticationRequestStates removeAllObjects];
     [self.vanillaCreationRequestStates removeAllObjects];
     [self.instanceImportRequestStates removeAllObjects];
+    [self.instanceCopyRequestStates removeAllObjects];
+    [self.instanceExportRequestStates removeAllObjects];
     [self.offlineIdentityLoadRequestStates removeAllObjects];
     [self.offlineIdentityUpdateRequestStates removeAllObjects];
     [self.observationLock unlock];

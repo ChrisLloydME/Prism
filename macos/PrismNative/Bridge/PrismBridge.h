@@ -92,6 +92,12 @@ typedef void (^PRVanillaCreationCompletionHandler)(PRVanillaCreationResult * _Nu
 typedef void (^PRInstanceImportProgressHandler)(PRTaskStatus *progress);
 typedef void (^PRInstanceImportCompletionHandler)(PRInstanceImportResult * _Nullable result,
                                                    PRBridgeError * _Nullable error);
+typedef void (^PRInstanceCopyProgressHandler)(PRTaskStatus *progress);
+typedef void (^PRInstanceCopyCompletionHandler)(PRInstanceCopyResult * _Nullable result,
+                                                 PRBridgeError * _Nullable error);
+typedef void (^PRInstanceExportProgressHandler)(PRTaskStatus *progress);
+typedef void (^PRInstanceExportCompletionHandler)(PRInstanceExportResult * _Nullable result,
+                                                   PRBridgeError * _Nullable error);
 typedef void (^PROfflineLaunchIdentityLoadCompletionHandler)(PROfflineLaunchIdentityLoadResult * _Nullable result,
                                                               PRBridgeError * _Nullable error);
 typedef void (^PROfflineLaunchIdentityUpdateCompletionHandler)(PROfflineLaunchIdentityUpdateResult * _Nullable result,
@@ -238,6 +244,20 @@ typedef void (^PROfflineLaunchIdentityUpdateCompletionHandler)(PROfflineLaunchId
 - (nullable PRBridgeObservationToken *)importInstanceWithRequest:(PRInstanceImportRequest *)request
                                                          progress:(nullable PRInstanceImportProgressHandler)progress
                                                        completion:(PRInstanceImportCompletionHandler)completion;
+
+/// Runs the fixture-controlled instance copy contract. Copy policy is plain
+/// Foundation data; staging, filesystem links/clones, cleanup, cancellation,
+/// and final commit remain in the injected facade runner.
+- (nullable PRBridgeObservationToken *)copyInstanceWithRequest:(PRInstanceCopyRequest *)request
+                                                        progress:(nullable PRInstanceCopyProgressHandler)progress
+                                                      completion:(PRInstanceCopyCompletionHandler)completion;
+
+/// Runs a fixture-controlled local ZIP or mod-list export. The destination
+/// comes from the system save panel and is echoed as a Foundation URL; archive
+/// writing, formatting, cleanup, and cancellation remain adapter-owned.
+- (nullable PRBridgeObservationToken *)exportInstanceWithRequest:(PRInstanceExportRequest *)request
+                                                          progress:(nullable PRInstanceExportProgressHandler)progress
+                                                        completion:(PRInstanceExportCompletionHandler)completion;
 
 /// Loads immutable, non-secret instance settings for a standard native Form.
 - (nullable PRBridgeObservationToken *)loadInstanceSettingsWithIdentifier:(NSString *)identifier

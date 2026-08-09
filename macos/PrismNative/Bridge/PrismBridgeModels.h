@@ -177,6 +177,146 @@ typedef NS_ENUM(NSInteger, PRInstanceImportOutcome) {
 
 @end
 
+typedef NS_ENUM(NSInteger, PRInstanceCopyOutcome) {
+    PRInstanceCopyOutcomeSucceeded = 0,
+    PRInstanceCopyOutcomeFailed,
+    PRInstanceCopyOutcomeCancelled,
+    PRInstanceCopyOutcomeRejected,
+};
+
+/// Foundation-only copy policy. Source paths, staging, filesystem capability
+/// checks, and the final commit remain inside the adapter runner.
+@interface PRInstanceCopyRequest : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithSourceInstanceIdentifier:(NSString *)sourceInstanceIdentifier
+                                                      name:(NSString *)name
+                                                   groupID:(nullable NSString *)groupID
+                                                   iconKey:(NSString *)iconKey
+                                                 copySaves:(BOOL)copySaves
+                                              keepPlaytime:(BOOL)keepPlaytime
+                                          copyGameOptions:(BOOL)copyGameOptions
+                                       copyResourcePacks:(BOOL)copyResourcePacks
+                                        copyShaderPacks:(BOOL)copyShaderPacks
+                                             copyServers:(BOOL)copyServers
+                                                copyMods:(BOOL)copyMods
+                                         copyScreenshots:(BOOL)copyScreenshots
+                                      useSymbolicLinks:(BOOL)useSymbolicLinks
+                                        linkRecursively:(BOOL)linkRecursively
+                                          useHardLinks:(BOOL)useHardLinks
+                                          dontLinkSaves:(BOOL)dontLinkSaves
+                                                useClone:(BOOL)useClone NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *sourceInstanceIdentifier;
+@property(nonatomic, copy, readonly) NSString *name;
+@property(nonatomic, copy, readonly, nullable) NSString *groupID;
+@property(nonatomic, copy, readonly) NSString *iconKey;
+@property(nonatomic, assign, readonly) BOOL copySaves;
+@property(nonatomic, assign, readonly) BOOL keepPlaytime;
+@property(nonatomic, assign, readonly) BOOL copyGameOptions;
+@property(nonatomic, assign, readonly) BOOL copyResourcePacks;
+@property(nonatomic, assign, readonly) BOOL copyShaderPacks;
+@property(nonatomic, assign, readonly) BOOL copyServers;
+@property(nonatomic, assign, readonly) BOOL copyMods;
+@property(nonatomic, assign, readonly) BOOL copyScreenshots;
+@property(nonatomic, assign, readonly) BOOL useSymbolicLinks;
+@property(nonatomic, assign, readonly) BOOL linkRecursively;
+@property(nonatomic, assign, readonly) BOOL useHardLinks;
+@property(nonatomic, assign, readonly) BOOL dontLinkSaves;
+@property(nonatomic, assign, readonly) BOOL useClone;
+
+@end
+
+/// Immutable confirmed result for one fixture-controlled instance copy task.
+@interface PRInstanceCopyResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithInstance:(nullable PRInstanceSummary *)instance
+                                  outcome:(PRInstanceCopyOutcome)outcome
+                           localizationKey:(NSString *)localizationKey
+                             diagnosticText:(nullable NSString *)diagnosticText
+                                 retryable:(BOOL)retryable
+                  partialChangesRolledBack:(BOOL)partialChangesRolledBack NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, strong, readonly, nullable) PRInstanceSummary *instance;
+@property(nonatomic, assign, readonly) PRInstanceCopyOutcome outcome;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL retryable;
+@property(nonatomic, assign, readonly) BOOL partialChangesRolledBack;
+
+@end
+
+typedef NS_ENUM(NSInteger, PRInstanceExportKind) {
+    PRInstanceExportKindZipArchive = 0,
+    PRInstanceExportKindModList,
+};
+
+typedef NS_ENUM(NSInteger, PRModListExportFormat) {
+    PRModListExportFormatHTML = 0,
+    PRModListExportFormatMarkdown,
+    PRModListExportFormatPlainText,
+    PRModListExportFormatJSON,
+    PRModListExportFormatCSV,
+    PRModListExportFormatCustom,
+};
+
+typedef NS_ENUM(NSInteger, PRInstanceExportOutcome) {
+    PRInstanceExportOutcomeSucceeded = 0,
+    PRInstanceExportOutcomeFailed,
+    PRInstanceExportOutcomeCancelled,
+    PRInstanceExportOutcomeRejected,
+};
+
+/// Foundation-only local export input. The destination URL must come from a
+/// system save panel; no backend path or file contents cross this boundary.
+@interface PRInstanceExportRequest : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithSourceInstanceIdentifier:(NSString *)sourceInstanceIdentifier
+                                              destinationURL:(NSURL *)destinationURL
+                                                       kind:(PRInstanceExportKind)kind
+                                             modListFormat:(PRModListExportFormat)modListFormat
+                                               includeAuthors:(BOOL)includeAuthors
+                                               includeVersion:(BOOL)includeVersion
+                                                    includeURL:(BOOL)includeURL
+                                                includeFilename:(BOOL)includeFilename
+                                               customTemplate:(NSString *)customTemplate NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, copy, readonly) NSString *sourceInstanceIdentifier;
+@property(nonatomic, copy, readonly) NSURL *destinationURL;
+@property(nonatomic, assign, readonly) PRInstanceExportKind kind;
+@property(nonatomic, assign, readonly) PRModListExportFormat modListFormat;
+@property(nonatomic, assign, readonly) BOOL includeAuthors;
+@property(nonatomic, assign, readonly) BOOL includeVersion;
+@property(nonatomic, assign, readonly) BOOL includeURL;
+@property(nonatomic, assign, readonly) BOOL includeFilename;
+@property(nonatomic, copy, readonly) NSString *customTemplate;
+
+@end
+
+/// Immutable confirmed result for one local ZIP or mod-list export.
+@interface PRInstanceExportResult : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithKind:(PRInstanceExportKind)kind
+                              outcome:(PRInstanceExportOutcome)outcome
+                       destinationURL:(NSURL *)destinationURL
+                     localizationKey:(NSString *)localizationKey
+                       diagnosticText:(nullable NSString *)diagnosticText
+                           retryable:(BOOL)retryable
+            partialChangesRolledBack:(BOOL)partialChangesRolledBack NS_DESIGNATED_INITIALIZER;
+
+@property(nonatomic, assign, readonly) PRInstanceExportKind kind;
+@property(nonatomic, assign, readonly) PRInstanceExportOutcome outcome;
+@property(nonatomic, copy, readonly) NSURL *destinationURL;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL retryable;
+@property(nonatomic, assign, readonly) BOOL partialChangesRolledBack;
+
+@end
+
 /// Immutable instance metadata and notes for the native detail form.
 @interface PRInstanceDetails : NSObject
 
