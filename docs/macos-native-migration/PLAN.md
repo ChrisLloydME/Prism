@@ -18,6 +18,12 @@ This document is the durable command surface for migrating Prism Launcher from Q
 
 The plan owns stable decisions, boundaries, phase order, verification, commit rules, and stop conditions. `PROGRESS.md` owns current state. An agent may update progress and implementation details, but must not silently weaken the constraints in this plan.
 
+### Urgent storage-isolation override (2026-08-09)
+
+The user observed accounts and Java information from their normally used Prism Launcher installation inside Native Prism Settings. This observation invalidates every earlier claim that naming the native data root `Prism` or merely checking non-equality with `PrismLauncher` proves isolation. Treat this as a release-blocking safety defect. Do not inspect the user's real files to confirm it; the observation itself is sufficient evidence that the current contract is unsafe.
+
+Before any remaining migration or cutover work, production composition must prove that Native Prism uses its own bundle-scoped persistence namespace and cannot discover, inherit, import, fall back to, or write any Prism Launcher support state. Fixture-only account and Java tests do not satisfy this requirement.
+
 ## 2. Start-of-turn protocol
 
 Every implementation turn must begin in this order:
@@ -38,10 +44,10 @@ If the worktree contains unrelated changes, preserve them and commit only files 
 ```text
 /goal Complete the PrismNative Xcode target on the macos-native branch as a feature-complete, Apple-native, macOS-only Prism Launcher frontend. Preserve the existing launcher behavior and data formats, reuse the existing C++ core through a testable QWidget-free backend facade, and expose that facade to Swift only through an Objective-C++ bridge using Foundation value types, commands, state, and events.
 验证：At the start of every turn read PLAN.md, PROGRESS.md, git status, and recent commit bodies. Maintain the migration inventory and evidence ledger in PROGRESS.md. Build Debug and Release configurations with xcodebuild, run PrismNativeTests, run the smallest relevant CMake build and C++ tests for backend changes, run git diff --check, and inspect the built Info.plist with plutil to prove that CFBundleIdentifier remains com.lloydME.Prism. Verify UI structure with native API inspection, ViewModel and command tests, accessibility metadata checks, menu and shortcut tests, localization checks, and Apple HIG conformance records. Never launch the application, capture screenshots, record the screen, or use visual snapshot tests as completion evidence.
-约束：Keep the bundle identifier fixed at com.lloydME.Prism and keep all files and runtime data isolated from the installed upstream Prism Launcher. Prefer Apple-provided SwiftUI and AppKit controls and behavior. Do not custom-draw a system control. Swift must not import Qt or expose C++ ownership. Objective-C++ exclusively owns C++ and Qt lifetime, threading, cancellation, and type conversion. Do not rewrite stable launcher business logic without a regression test. Do not add a third-party UI framework. Do not weaken accessibility, keyboard operation, localization, cancellation, error recovery, or data compatibility.
+约束：Keep the bundle identifier fixed at com.lloydME.Prism. The production Application Support root must be exactly the bundle-scoped `~/Library/Application Support/com.lloydME.Prism` namespace, and every other persistent macOS namespace must use `com.lloydME.Prism`; never use the generic `Prism` or upstream `PrismLauncher` identity. Native Prism must not discover, inherit, import, fall back to, read, or write any upstream account, Java, instance, settings, cache, log, preference, saved-state, or Keychain data. Prefer Apple-provided SwiftUI and AppKit controls and behavior. Do not custom-draw a system control. Swift must not import Qt or expose C++ ownership. Objective-C++ exclusively owns C++ and Qt lifetime, threading, cancellation, and type conversion. Do not rewrite stable launcher business logic without a regression test. Do not add a third-party UI framework. Do not weaken accessibility, keyboard operation, localization, cancellation, error recovery, or data compatibility.
 边界：Write only under macos, docs/macos-native-migration, directly required launcher backend and build configuration files, and directly related tests. Do not read or modify the installed upstream application, the upstream Application Support directory, real accounts, Keychain items, production API data, signing settings, notarization state, or unrelated platform code. Keep caches, generated output, and fixture data in ignored or temporary directories. Do not push, publish, install, sign, notarize, or open a pull request without separate user authorization.
 迭代策略：Implement one work unit at a time. Each unit must have a narrow outcome, tests, documentation update, and independent commit. Before every commit update PROGRESS.md with status, files, commands, results, HIG decisions, risks, and next step. Use a Conventional Commit subject and a detailed body that records behavior, architecture, exact verification, known limits, and follow-up. Never commit failing checks or stale progress. After the same failure twice, stop retrying and obtain new evidence from logs, callers, tests, official Apple documentation, or the legacy implementation. After interruption or context compaction, resume only from PLAN.md, PROGRESS.md, git status, and committed evidence.
-完成条件：Every in-scope Qt UI workflow in the migration inventory has a native implementation, a documented facade and bridge contract, automated non-launch verification, and a completed progress entry. PrismNative completes all core launcher workflows without QWidget or QDialog. Debug and Release builds pass, all native and directly relevant C++ tests pass, Bundle ID and data isolation contracts pass, no forbidden runtime visual verification was used, every custom-rendering exception is justified, the progress ledger contains a final commit index and remaining non-blocking limitations, and the worktree is clean.
+完成条件：Every in-scope Qt UI workflow in the migration inventory has a native implementation, a documented facade and bridge contract, automated non-launch verification, and a completed progress entry. PrismNative completes all core launcher workflows without QWidget or QDialog. Debug and Release builds pass, all native and directly relevant C++ tests pass, Bundle ID and bundle-scoped storage isolation contracts pass, and production composition has no generic `Prism`, upstream `PrismLauncher`, legacy fallback, automatic import, shared preferences, or shared Keychain path. No forbidden runtime visual verification was used, every custom-rendering exception is justified, the progress ledger contains a final commit index and remaining non-blocking limitations, and the worktree is clean.
 暂停条件：Pause before accessing upstream user data, real accounts, Keychain, credentials, signing, notarization, publishing, pushing, or destructive operations. Pause if a workflow appears to require a third-party UI framework, substantial custom drawing, an irreversible data-format change, an authentication behavior change, or a product decision not settled by this plan. If the same blocker survives three rounds using distinct new evidence, record the blocker and exact recovery requirement in PROGRESS.md, then stop.
 ```
 
@@ -67,7 +73,29 @@ Swift source must not import Qt headers or receive `QObject`, `QString`, `QVaria
 
 ### 4.5 Data safety
 
-The native product remains `com.lloydME.Prism`, display name `Prism`, and data root `Prism`. Tests use a temporary data root. No verification command may discover, import, or modify the user's upstream `PrismLauncher` data.
+The native product remains `com.lloydME.Prism` with display name `Prism`. Display name is presentation only and must never determine a persistence path. The earlier `Prism` data-root decision is revoked because a generic product-name directory can collide with or inherit data from another Prism installation.
+
+Production defaults are bundle-scoped and exclusive:
+
+| State class | Required Native Prism namespace |
+| --- | --- |
+| Application Support, including instances, accounts, Java selection, settings, metadata, downloads, and managed assets | `~/Library/Application Support/com.lloydME.Prism` |
+| Caches | `~/Library/Caches/com.lloydME.Prism` |
+| Preferences and `UserDefaults` | `~/Library/Preferences/com.lloydME.Prism.plist` and the standard `com.lloydME.Prism` suite only |
+| Saved application state | `~/Library/Saved Application State/com.lloydME.Prism.savedState` |
+| Logs owned by Native Prism | `~/Library/Logs/com.lloydME.Prism` |
+| Keychain service or access-group identifiers, if later authorized | Names beginning with `com.lloydME.Prism`; never an upstream or generic Prism identifier |
+
+The following rules are mandatory:
+
+1. Resolve the default Application Support root from the macOS Application Support directory and append the exact bundle identifier `com.lloydME.Prism`. Do not append the display name, executable name, organization name, `Prism`, or `PrismLauncher`.
+2. Production facade construction must receive only this resolved bundle-scoped root. It must not derive a root from Qt `Application`, process arguments, environment variables, the current working directory, a sibling installation, or legacy launcher defaults.
+3. Never probe, enumerate, read, merge, migrate, or write `~/Library/Application Support/Prism`, `~/Library/Application Support/PrismLauncher`, any upstream organization/bundle directory, or a parent directory containing them.
+4. Do not implement automatic legacy discovery, compatibility fallback, account import, Java import, instance import, settings import, symlink traversal, alias resolution, or shared `UserDefaults` suites. Any future user-requested import must be a separate, explicit, previewable, copy-only workflow with new authorization and must never become a fallback path.
+5. Account lists and Java installations shown by Native Prism must come only from the Native Prism root or an explicitly injected test fixture. System-wide Java discovery may be added only as a deliberate scan of system Java installations; it must not read another launcher's saved Java choices, metadata, or settings.
+6. No production dependency may receive the user's home directory or the general `Application Support` directory when it only needs the Native Prism root.
+7. Tests must inject a synthetic home or temporary data root and assert canonical-path containment. Tests must never inspect the user's actual home, upstream support directories, real accounts, Keychain, or installed application.
+8. Existing tests that prove only `Prism != PrismLauncher` are insufficient and must be replaced or strengthened to assert the exact `com.lloydME.Prism` namespace and reject every forbidden alias and fallback.
 
 ### 4.6 UI verification
 
@@ -335,7 +363,7 @@ Work units:
 
 1. Add a shared `PrismNative` scheme if Xcode does not already expose a stable shared scheme.
 2. Add `PrismNativeTests` with test fixtures stored under an ignored temporary root.
-3. Test Bundle ID, display name, Application Support root, and explicit non-equality with upstream paths.
+3. Test Bundle ID, display name, the exact bundle-scoped Application Support root, canonical containment, and rejection of generic/upstream aliases and fallback paths.
 4. Add a bridge-header scan that rejects Qt and C++ types in public headers.
 5. Add test helpers for main-actor callbacks, cancellation, and temporary directories.
 6. Fill every migration inventory row in `PROGRESS.md` with a source owner and initial status.
@@ -675,11 +703,14 @@ Rules:
 Never access or mutate:
 
 - `/Applications/Prism Launcher.app`
+- `~/Library/Application Support/Prism`
 - `~/Library/Application Support/PrismLauncher`
+- Any upstream Prism Launcher bundle/organization support directory discovered from legacy code or installed metadata
+- `~/Library/Caches/Prism`, `~/Library/Caches/PrismLauncher`, upstream preference domains, upstream saved-state directories, and upstream log directories
 - User Keychain entries associated with Prism Launcher or Microsoft authentication
 - Real instance directories unless the user separately provides and authorizes a disposable copy
 
-Tests must inject a temporary data root. Destructive operations must assert that the resolved target is inside the fixture root before mutation.
+Tests must inject a temporary data root or synthetic home. Destructive operations must resolve symlinks and assert that the canonical target is inside the fixture root before mutation. A path-prefix string comparison without component-boundary and canonicalization checks is not sufficient.
 
 ### 12.2 Rollback model
 
@@ -718,7 +749,7 @@ The migration is complete only when all rows are evidenced in `PROGRESS.md`:
 
 | Area | Required evidence |
 | --- | --- |
-| Product identity | Bundle ID and data isolation tests pass |
+| Product identity | Bundle ID is `com.lloydME.Prism`; production Application Support resolves exactly to the bundle-scoped namespace; all generic/upstream aliases, fallbacks, imports, shared preferences, and shared Keychain identifiers are rejected by tests |
 | Build | Debug and Release native builds pass |
 | Native tests | All PrismNativeTests pass |
 | Backend tests | All directly relevant C++ tests pass |
@@ -750,6 +781,6 @@ This plan assumes the existing Prism business logic can be separated from `QAppl
 - Application signing, notarization, installation, distribution, release, push, or pull request creation.
 - Visual acceptance through launching the application or capturing screenshots.
 
-## 17. First ready work unit
+## 17. Next ready work unit
 
-The next agent must execute `M1-W1`: add a shared Xcode scheme and `PrismNativeTests`, then implement Bundle ID and data-root isolation contract tests using only a temporary fixture root. It must update `PROGRESS.md` and commit the work with detailed verification evidence before selecting another unit.
+Historical milestone ordering is temporarily overridden by the 2026-08-09 storage-isolation incident. The next agent must execute `S0-W1` from `PROGRESS.md` before resuming M9-W4, M10, or production-adapter work. It must correct production composition to use the exact bundle-scoped persistence namespace, add the required positive and negative isolation tests without reading real user data, update `PROGRESS.md`, and commit the work with detailed verification evidence before selecting another unit.

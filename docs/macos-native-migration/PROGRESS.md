@@ -6,11 +6,13 @@ Branch: `macos-native`
 
 Plan: `docs/macos-native-migration/PLAN.md`
 
-Current milestone: Milestone 9, Remaining utilities and rendering exceptions
+Current milestone: Safety remediation, storage namespace isolation
 
-Active work unit: M9-W4 (blocked)
+Active work unit: none
 
-Next ready work unit: none (M9-W4 blocked)
+Next ready work unit: `S0-W1`
+
+User-reported safety incident: Native Prism Settings displayed account and Java information belonging to the user's normal Prism Launcher installation. Do not inspect the user's real Application Support data to reproduce this. The report invalidates the previous generic `Prism` data-root assumption and blocks all remaining migration/cutover work until `S0-W1` is complete.
 
 ## Safety baseline
 
@@ -18,7 +20,8 @@ Next ready work unit: none (M9-W4 blocked)
 | --- | --- | --- |
 | Bundle ID is `com.lloydME.Prism` | complete | Commit `6de92da18`; built Info.plist checked with `plutil` |
 | Native product name is `Prism` | complete | Commit `6de92da18`; built Info.plist checked with `plutil` |
-| Default data identity differs from upstream `PrismLauncher` | complete | `Prism` application identity in `program_info/CMakeLists.txt` and native bridge; M1-W1 temporary-root contract test |
+| Production Application Support root is exactly `~/Library/Application Support/com.lloydME.Prism` | failed, release-blocking | User observed upstream accounts and Java information in Native Prism; the previous generic `Prism` identity and non-equality test are insufficient |
+| No legacy fallback, automatic import, parent scan, shared preferences, or shared Keychain service exists | unverified, release-blocking | Must be proven by `S0-W1` production-composition tests and static scans |
 | Native Xcode target exists | complete | Commit `5172b3a75` |
 | Objective-C++ public bridge exposes only Foundation types | complete | Commit `5172b3a75`; M1-W3 automated public-header scan and forbidden-token negative test |
 | Native tests target exists | complete | M1-W1; shared scheme and standalone `PrismNativeTests.xctest` target |
@@ -36,8 +39,34 @@ Next ready work unit: none (M9-W4 blocked)
 | 6. Instance detail and editing | complete | Instance management surfaces have native contracts |
 | 7. Settings, Java, and accounts | complete | Settings, fake-account workflows, offline identity, and secret-boundary evidence are covered |
 | 8. Creation, discovery, and installation | complete | All supported providers and import flows are covered |
-| 9. Utilities and rendering exceptions | active | Remaining dialogs are classified and migrated |
+| Safety remediation. Storage namespace isolation | active | Production storage is bundle-scoped and every upstream/generic persistence path is rejected |
+| 9. Utilities and rendering exceptions | blocked | Resume only after `S0-W1` is complete; existing M9-W4 blocker remains recorded |
 | 10. Native cutover | queued | Final acceptance matrix is complete |
+
+## S0-W1: Enforce bundle-scoped production storage isolation
+
+Status: ready
+
+Priority: release-blocking; execute before M9-W4, M10, or any production adapter work.
+
+Outcome: replace every production default or composition path derived from `Prism`, `PrismLauncher`, display name, executable name, Qt global state, environment fallback, or parent Application Support directory with the exclusive bundle-scoped root `~/Library/Application Support/com.lloydME.Prism`. Accounts, saved Java choices, instances, settings, metadata, downloads, caches, logs, preferences, saved state, and any later-authorized Keychain service must use their `com.lloydME.Prism` namespace and must not inherit upstream state.
+
+Required investigation: inspect production path construction and dependency composition without reading the user's actual support directories. Search CMake identity settings, `program_info`, native Swift and Objective-C++ bridge code, frontend facade construction, settings/account/Java adapters, `QStandardPaths`, `FileManager` Application Support calls, `UserDefaults` suites, environment/argument overrides, legacy migration/fallback code, symlink/alias handling, cache/log/saved-state paths, and Keychain service identifiers. Treat tests and fixture composition separately from production composition.
+
+Required implementation contracts:
+
+1. One production path resolver derives the Application Support root by appending the exact main-bundle identifier `com.lloydME.Prism` to the macOS Application Support directory.
+2. The resolved root is injected into the production facade and all persistent services; no downstream service may silently replace it or consult global legacy state.
+3. Generic `Prism`, upstream `PrismLauncher`, legacy organization/bundle aliases, parent-directory scans, automatic imports, and fallback roots are rejected.
+4. Account and saved-Java settings load only from the isolated root. System Java discovery, if enabled, must be distinguishable from saved launcher configuration and must not consult upstream metadata.
+5. Cache, preference, log, saved-state, and any Keychain identifiers use `com.lloydME.Prism`; no shared suite or service identifier is permitted.
+6. Canonical containment checks reject symlinks, aliases, `..`, prefix-collision paths, and descendants that escape the isolated or injected fixture root.
+
+Required non-launch evidence: Debug and Release builds; full native tests; directly relevant C++ tests; built Info.plist Bundle ID check; unit tests using a synthetic home that assert the exact bundle-scoped paths; negative tests for `Prism`, `PrismLauncher`, upstream aliases, parent Application Support, legacy fallback, environment/argument override, shared `UserDefaults`, shared Keychain service, symlink escape, `..`, and path-prefix collision; static scans proving production account and Java composition receives only the isolated root; `git diff --check`. Do not launch either application and do not access the real home support directories, real accounts, Keychain, or installed Prism Launcher.
+
+Completion requirement: all required evidence passes, this incident entry records the exact code paths corrected and verification results, the safety baseline becomes complete, and the work is committed with the detailed PLAN commit body. Only then may M9-W4 return to blocked/active status and later migration work resume.
+
+Commit: not created.
 
 ## Legacy feature inventory (M1-W2)
 
