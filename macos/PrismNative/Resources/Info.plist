@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleGetInfoString</key>
+	<string>Prism: A custom launcher for Minecraft that allows you to easily manage multiple installations of Minecraft at once.</string>
+	<key>CFBundleIconFile</key>
+	<string>Prism.icns</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleLongVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.games</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>A Minecraft mod wants to access your camera.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>Prism uses access to your Downloads folder to help you more quickly add mods that can't be automatically downloaded to your instance. You can change where Prism scans for downloaded mods in Settings or the prompt that appears.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2022-2026 Prism Launcher Contributors, © 2021-2022 PolyMC Contributors and © 2012-2021 MultiMC Contributors</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Minecraft uses the local network to find and connect to LAN servers.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>A Minecraft mod wants to access your microphone.</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>SUFeedURL</key>
+	<string>https://prismlauncher.org/feed/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>v55ZWWD6QlPoXGV6VLzOTZxZUggWeE51X8cRQyQh6vA=</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>zip</string>
+				<string>mrpack</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>Prism instance</string>
+			<key>CFBundleTypeOSTypes</key>
+			<array>
+				<string>TEXT</string>
+				<string>utxt</string>
+				<string>TUTX</string>
+				<string>****</string>
+			</array>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+		</dict>
+	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>Curseforge</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>curseforge</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>Prism</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>prismlauncher</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

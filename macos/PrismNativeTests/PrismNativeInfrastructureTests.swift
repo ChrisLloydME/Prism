@@ -139,6 +139,92 @@ final class PrismNativeInfrastructureTests: XCTestCase {
         XCTAssertEqual(callbackRecorder.values, ["cancel", "shutdown"])
     }
 
+    func testNativeTargetOwnsLegacyBundleMetadataAndIconWithoutSigningChanges() throws {
+        let macosRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let projectSource = try readSource(
+            at: macosRoot.appendingPathComponent("PrismNative.xcodeproj/project.pbxproj")
+        )
+        let nativeTargetSection = try sourceSection(
+            projectSource,
+            from: "A90000000000000000000003 /* Debug */",
+            through: "A90000000000000000000005 /* Debug */"
+        )
+
+        XCTAssertTrue(nativeTargetSection.contains("INFOPLIST_FILE = \"PrismNative/Resources/Info.plist\";"))
+        XCTAssertTrue(nativeTargetSection.contains("CODE_SIGN_ENTITLEMENTS = \"PrismNative/Resources/PrismNative.entitlements\";"))
+        XCTAssertTrue(nativeTargetSection.contains("MARKETING_VERSION = 12.0.0;"))
+        XCTAssertTrue(nativeTargetSection.contains("CURRENT_PROJECT_VERSION = 12.0.0;"))
+        XCTAssertFalse(nativeTargetSection.contains("GENERATE_INFOPLIST_FILE = YES;"))
+        XCTAssertFalse(nativeTargetSection.contains("ASSETCATALOG_COMPILER_APPICON_NAME"))
+
+        let infoURL = macosRoot.appendingPathComponent("PrismNative/Resources/Info.plist")
+        let info = try XCTUnwrap(
+            PropertyListSerialization.propertyList(
+                from: Data(contentsOf: infoURL),
+                options: [],
+                format: nil
+            ) as? [String: Any]
+        )
+        XCTAssertEqual(info["CFBundleIdentifier"] as? String, "$(PRODUCT_BUNDLE_IDENTIFIER)")
+        XCTAssertEqual(info["CFBundleDisplayName"] as? String, "$(PRODUCT_NAME)")
+        XCTAssertEqual(info["CFBundleShortVersionString"] as? String, "$(MARKETING_VERSION)")
+        XCTAssertEqual(info["CFBundleVersion"] as? String, "$(CURRENT_PROJECT_VERSION)")
+        XCTAssertEqual(info["CFBundleIconFile"] as? String, "Prism.icns")
+        XCTAssertEqual(info["SUFeedURL"] as? String, "https://prismlauncher.org/feed/appcast.xml")
+        XCTAssertEqual(
+            info["SUPublicEDKey"] as? String,
+            "v55ZWWD6QlPoXGV6VLzOTZxZUggWeE51X8cRQyQh6vA="
+        )
+
+        let documentTypes = try XCTUnwrap(info["CFBundleDocumentTypes"] as? [[String: Any]])
+        let documentExtensions = try XCTUnwrap(documentTypes.first?["CFBundleTypeExtensions"] as? [String])
+        XCTAssertEqual(documentExtensions, ["zip", "mrpack"])
+
+        let urlTypes = try XCTUnwrap(info["CFBundleURLTypes"] as? [[String: Any]])
+        let urlSchemes = urlTypes.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
+        XCTAssertEqual(Set(urlSchemes), Set(["curseforge", "prismlauncher"]))
+
+        let entitlementsURL = macosRoot.appendingPathComponent(
+            "PrismNative/Resources/PrismNative.entitlements"
+        )
+        let entitlements = try XCTUnwrap(
+            PropertyListSerialization.propertyList(
+                from: Data(contentsOf: entitlementsURL),
+                options: [],
+                format: nil
+            ) as? [String: Any]
+        )
+        XCTAssertEqual(
+            Set(entitlements.keys),
+            Set(["com.apple.security.device.audio-input", "com.apple.security.device.camera"])
+        )
+        XCTAssertFalse(entitlements.keys.contains("com.apple.security.cs.disable-library-validation"))
+
+        let cmakeSource = try readSource(
+            at: macosRoot.deletingLastPathComponent().appendingPathComponent("CMakeLists.txt")
+        )
+        XCTAssertTrue(cmakeSource.contains("set(Launcher_VERSION_MAJOR 12)"))
+        XCTAssertTrue(cmakeSource.contains("set(Launcher_VERSION_MINOR 0)"))
+        XCTAssertTrue(cmakeSource.contains("set(Launcher_VERSION_PATCH 0)"))
+
+        let iconURL = macosRoot.appendingPathComponent("PrismNative/Resources/Prism.icns")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: iconURL.path))
+        XCTAssertGreaterThan(try Data(contentsOf: iconURL).count, 0)
+
+        let nativeBundle = try XCTUnwrap(builtNativeBundle())
+        XCTAssertEqual(nativeBundle.object(forInfoDictionaryKey: "CFBundleIdentifier") as? String, "com.lloydME.Prism")
+        XCTAssertEqual(nativeBundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String, "12.0.0")
+        XCTAssertEqual(nativeBundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String, "12.0.0")
+        XCTAssertEqual(nativeBundle.object(forInfoDictionaryKey: "CFBundleIconFile") as? String, "Prism.icns")
+        XCTAssertEqual(
+            nativeBundle.object(forInfoDictionaryKey: "SUFeedURL") as? String,
+            "https://prismlauncher.org/feed/appcast.xml"
+        )
+        XCTAssertNotNil(nativeBundle.path(forResource: "Prism", ofType: "icns"))
+    }
+
     func testInstanceSummaryDTOCopiesFixtureValuesAndNormalizesOptionalMetadata() throws {
         let fixtureRoot = try PrismTemporaryFixtureRoot()
         let fixtureDirectory = try fixtureRoot.makeDirectory(relativePath: "instances/fixture-instance")
@@ -561,6 +647,14 @@ final class PrismNativeInfrastructureTests: XCTestCase {
 
     private func readSource(at url: URL) throws -> String {
         try String(contentsOf: url, encoding: .utf8)
+    }
+
+    private func builtNativeBundle() -> Bundle? {
+        let productsDirectory = Bundle(for: PrismNativeInfrastructureTests.self)
+            .bundleURL
+            .deletingLastPathComponent()
+        let appURL = productsDirectory.appendingPathComponent("Prism.app", isDirectory: true)
+        return Bundle(url: appURL)
     }
 
     private func sourceSection(_ source: String, from startMarker: String, through endMarker: String) throws -> String {

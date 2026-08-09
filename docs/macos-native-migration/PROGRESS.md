@@ -10,7 +10,7 @@ Current milestone: 10. Native cutover
 
 Active work unit: none
 
-Next ready work unit: M10-W2 (M10-W1 final parity audit is complete; only M10-W2 is ready)
+Next ready work unit: M10-W3 (M10-W2 packaging/resource migration is complete; only M10-W3 is ready)
 
 User-reported safety incident: Native Prism Settings displayed account and Java information belonging to the user's normal Prism Launcher installation. Do not inspect the user's real Application Support data to reproduce this. The report invalidates the previous generic `Prism` data-root assumption and blocks all remaining migration/cutover work until `S0-W1` is complete.
 
@@ -24,7 +24,7 @@ Build-storage constraint added 2026-08-09: all future work must reuse `.derivedd
 | Native product name is `Prism` | complete | Commit `6de92da18`; built Info.plist checked with `plutil` |
 | Production Application Support root is exactly `~/Library/Application Support/com.lloydME.Prism` | complete | `PRApplicationIdentity` appends only `com.lloydME.Prism`; production `PrismNativeRuntime` injects that identity into `PRPrismBridge`; synthetic exact-path and containment tests pass |
 | No legacy fallback, automatic import, parent scan, shared preferences, or shared Keychain service exists | complete for current native composition | Positive/negative identity tests, production-source assertions, and native forbidden persistence/path scans pass; no real support directory, UserDefaults suite, or Keychain service was accessed |
-| Generated build storage is bounded and incrementally reused | complete | Only `.deriveddata-prism-native` (657M) and `.deriveddata-prism-native-backend` (143M) remain; two final xcresult bundles are retained and all obsolete exact targets are deleted |
+| Generated build storage is bounded and incrementally reused | complete | Only `.deriveddata-prism-native` (658M) and `.deriveddata-prism-native-backend` (143M) remain; the two latest M10-W2 xcresult bundles are retained and all obsolete exact targets are deleted |
 | Native Xcode target exists | complete | Commit `5172b3a75` |
 | Objective-C++ public bridge exposes only Foundation types | complete | Commit `5172b3a75`; M1-W3 automated public-header scan and forbidden-token negative test |
 | Native tests target exists | complete | M1-W1; shared scheme and standalone `PrismNativeTests.xctest` target |
@@ -2216,19 +2216,42 @@ Next after completion: `M10-W2`, move packaging, resources, versioning, icons, e
 
 ### M10-W2: Native packaging, resources, versioning, icons, entitlements, and update metadata
 
-Status: ready
+Status: complete
 
-Scope: inspect and migrate only the macOS-native target’s packaging/resource/version/icon/entitlement/update metadata, preserving `com.lloydME.Prism` and leaving signing/notarization state untouched. Keep live feature-adapter gaps from M10-W1 explicit; do not remove Qt callers or change other platforms in this unit.
+Outcome: moved the static macOS bundle contract from the generated native target into explicit native-owned resources and target settings. The native app now builds with the current launcher version `12.0.0`, packages the existing Prism icon, carries the legacy document/URL/privacy/update metadata, and references a minimal native entitlements file without changing the Bundle ID, signing configuration, Qt target, other platforms, or live feature-adapter gaps.
+
+Working boundary: `macos/PrismNative/Resources/Info.plist` replaces the generated minimal Info.plist and keeps `com.lloydME.Prism` supplied by `PRODUCT_BUNDLE_IDENTIFIER`; `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` are both aligned to the root CMake version `12.0.0`. `Prism.icns` is a byte-for-byte copy of the repository’s existing `program_info/prismlauncher.icns` source asset. `PrismNative.entitlements` preserves only the existing camera and audio-input capabilities from `program_info/App.entitlements`; the ad-hoc `disable-library-validation` capability is deliberately excluded. The Xcode resources phase owns only the icon; Info.plist and entitlements are source/configuration inputs, not copied data resources.
+
+Packaging metadata preserved from `cmake/MacOSXBundleInfo.plist.in` includes the games category, minimum macOS 14.0, privacy usage descriptions, `zip`/`mrpack` document declarations, `curseforge`/`prismlauncher` URL schemes, and the existing Sparkle feed/public-key values. No Sparkle framework, updater runtime, third-party UI framework, signing, notarization, install, or update-network access was introduced. The static update keys are metadata for the future native updater contract; live updater behavior and URL/document event routing remain explicit native-composition work and are not claimed by this unit.
 
 Required evidence: target/resource ownership inspection, native Debug/Release builds, Bundle ID `plutil` checks, resource/version/icon/entitlement structural checks, relevant native tests, no-launch/no-signing verification, shared DerivedData inventory, and `git diff --check`.
 
+Changed files: `macos/PrismNative.xcodeproj/project.pbxproj`, `macos/PrismNative/Resources/Info.plist`, `macos/PrismNative/Resources/PrismNative.entitlements`, `macos/PrismNative/Resources/Prism.icns`, `macos/PrismNativeTests/PrismNativeInfrastructureTests.swift`, and this ledger. No launcher backend, CMake, Objective-C++, Swift feature model, retained Qt caller, or other-platform source changed.
+
+Verification:
+
+- `plutil -lint macos/PrismNative/Resources/Info.plist macos/PrismNative/Resources/PrismNative.entitlements` — passed. The structural XCTest `PrismNativeInfrastructureTests/testNativeTargetOwnsLegacyBundleMetadataAndIconWithoutSigningChanges` also passed 1/1 and checks explicit Info.plist/entitlements ownership, absence of generated/app-icon settings, version synchronization with root CMake, document/URL/update metadata, icon presence, and the built bundle.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build` — passed.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build` — passed.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test` — passed; `Test-PrismNative-2026.08.09_15-05-22-+0800.xcresult` reports 169 passed, 0 failed, 0 skipped.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath .deriveddata-prism-native CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test` — passed; `Test-PrismNative-2026.08.09_15-05-38-+0800.xcresult` reports 169 passed, 0 failed, 0 skipped.
+- `plutil -extract CFBundleIdentifier raw .deriveddata-prism-native/Build/Products/Debug/Prism.app/Contents/Info.plist` and the corresponding Release path — both returned `com.lloydME.Prism`; both configurations also returned `CFBundleShortVersionString=12.0.0` and `CFBundleVersion=12.0.0`.
+- `plutil -p macos/PrismNative/Resources/PrismNative.entitlements` — passed with exactly `com.apple.security.device.audio-input` and `com.apple.security.device.camera`; `com.apple.security.cs.disable-library-validation` is absent. Debug and Release bundles each contain `Contents/Resources/Prism.icns` at 194065 bytes, with `file` reporting universal `x86_64`/`arm64` executables and the source/resource icon SHA-256 matching `b6b756442cc549adde72ccc4e1e0cd0ac1583a683c33e97c51a4addd367865b6`.
+- `git diff --check` — passed. No application launch, screenshot, recording, visual snapshot, upstream application or Application Support access, real account, Keychain, credential, live network, signing, notarization, installation, publishing, push, or destructive user-data operation occurred.
+
+Storage: the shared roots remain `.deriveddata-prism-native` (658M) and `.deriveddata-prism-native-backend` (143M). The only retained test results are `.deriveddata-prism-native/Logs/Test/Test-PrismNative-2026.08.09_15-05-22-+0800.xcresult` and `.deriveddata-prism-native/Logs/Test/Test-PrismNative-2026.08.09_15-05-38-+0800.xcresult`. Exact obsolete generated result targets deleted after inspection were `Test-PrismNative-2026.08.09_15-03-16-+0800.xcresult`, `Test-PrismNative-2026.08.09_15-03-37-+0800.xcresult`, and `Test-PrismNative-2026.08.09_15-04-36-+0800.xcresult`; no task-owned `/private/tmp/prism-*` directory was created.
+
 HIG decision: none beyond preserving the already-approved native app/scene and system resource presentation; no control or renderer is introduced by this packaging unit.
+
+Architecture and risk: the explicit Info.plist, `.icns` resource, and entitlements file are Apple bundle inputs and do not cross the Swift/Objective-C++/C++ boundary. The target keeps `CODE_SIGN_STYLE = Automatic` and `ENABLE_HARDENED_RUNTIME = YES` as existing project settings, while all verification passes `CODE_SIGNING_ALLOWED=NO`; no signing state was changed or exercised. The native app still has the M10-W1 fixture/unavailable composition and retained Qt caller gaps, and the static Sparkle metadata must not be interpreted as a live update implementation.
+
+Commit: implementation commit to be recorded in the immediate ledger-finalization commit.
 
 Prerequisite: M10-W1 final parity audit is complete. Next after completion: M10-W3 clean-build verification under the shared storage policy.
 
 ### M10-W3: Clean Debug and Release cutover builds
 
-Status: queued
+Status: ready
 
 Scope: perform the PLAN §9 clean-build regression check for the finalized native target using only a documented temporary isolation if the shared path cannot provide the required clean evidence; remove obsolete generated output afterward.
 
@@ -2430,4 +2453,4 @@ No blocker authorizes upstream data, credentials, Keychain, live service, signin
 
 ## Resume instructions
 
-Read PLAN.md and PROGRESS.md, run `git status --short --branch -uall`, inspect the last five commits, then finish the active M9-W4 focused acceptance gate without activating M10. M9-W4's safe-state implementation is present in `818b18a1b`; the former full-suite/Xcode worker blocker has a passing shared-path recovery record. M6-W1 is complete in d3f319c494a61d5596434a6253a3ec8c495df3; M6-W2 is complete in 467bb275e04a087e00a4dd85365273bdcf130185; M6-W3 is complete in 789502d804528d39098fd21fd227d4572ae18040; M6-W4 is complete in 891138f6ea639c3af718d74e8f63f65e74650cf6; M6-W5 is complete in ebcccb3761bbfdbf66d042e75dae85ace9450823; M6-W6 is complete in ed31c77fbedcacfcd5e691d0f67ab08c25dff9e4; M6-W7 is complete in a0c6456c1; M7-W1 is complete in 6149bb3a2; M7-W2 is complete in 12c6ba49a; M7-W3 is complete in 76cfc19dd; M7-W4 is complete in 5a4cef365; M7-W5 is complete in 15d2863af; M7-W6 is complete in 4eac74821; M7-W7 is complete in 40c3ffd7f with its progress-ledger update in the following commit; M8-W1 is complete in ee0fd45e7 with its progress-ledger update in the following commit; M8-W2 is complete in 341a209af with its progress-ledger update in the following commit; M8-W3 is complete in d2250b3fd with its progress-ledger update in the following commit; M8-W4 is complete in 54feea9c4 with its progress-ledger update in the following commit; M8-W5 is complete in 53f08c808 with its progress-ledger update in 646590d83; M8-W6 is complete in 0918f41b1 with its progress-ledger update in the following commit; M8-W7 is complete in e94b3f35c with this progress-ledger update; M9-W1 is complete in 7fe9befb6 with its progress-ledger update in the following commit; M9-W2 is complete in 7515679e4 and this progress-ledger commit; M9-W3 is complete in 7b2b16f56 and this progress-ledger finalization; S0-W1 is complete in 5eea92583 with its ledger finalization in e3d4fac83. Preserve all existing fixture-root, Bundle ID, no-launch, no-secrets, and Objective-C++ boundary constraints; do not reopen completed M6, M7, M8-W1/M8-W2/M8-W3/M8-W4/M8-W5/M8-W6/M8-W7/M9-W1/M9-W2/M9-W3, or S0-W1 evidence.
+Read PLAN.md and PROGRESS.md, run `git status --short --branch -uall`, inspect the last five commits, then activate only the single `ready` work unit. M10-W2 is complete: its native-owned Info.plist, icon, entitlements, and static update metadata are implemented and the finalized shared-path Debug/Release build and 169/169 native-test evidence is recorded above. The only ready unit is M10-W3; perform its clean Debug/Release cutover verification under PLAN §9.1.1, update this ledger, and commit before considering M10-W4. Preserve all existing fixture-root, Bundle ID, no-launch, no-secrets, Objective-C++ boundary, and no-signing constraints. Do not reopen completed M6, M7, M8-W1/M8-W2/M8-W3/M8-W4/M8-W5/M8-W6/M8-W7/M9-W1/M9-W2/M9-W3, S0-W1, or M10-W1/M10-W2 evidence.
