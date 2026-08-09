@@ -2161,7 +2161,7 @@ HIG/API decision: use SwiftUI `Image(nsImage:)`, AppKit `NSImage`, Core Image `C
 
 Architecture and risk: Swift owns only the verification URL value, image/content view, accessibility metadata, and existing main-actor authentication presentation state. QR input is trimmed, UTF-8 bounded to 2,048 bytes, and rendered at a bounded 96–512 point size with a 220 point default; the test asserts non-empty pixels, bounds, and fallback inputs. `CIContext` produces an `NSImage` that SwiftUI presents as content; no C++/Qt/ownership value crosses the bridge. The retained authentication/account, screenshot upload, rich-text, theme-artwork, and legacy Qt caller blockers remain unchanged.
 
-Commit: `818b18a1b` (safe-state implementation); acceptance finalization is pending in this ledger commit.
+Commit: `818b18a1b` (safe-state implementation); acceptance finalized in `e876565c5`.
 
 Next after completion: M10 native cutover remains queued; no ready work unit is defined until its final composition scope and prerequisites are recorded.
 
@@ -2226,7 +2226,7 @@ Next after completion: M10 native cutover remains queued; no ready work unit is 
 | `7b2b16f56` | Completed M9-W3 source-backed retained-surface audit, explicit blocker/owner matrix, and M9-W4 rendering-candidate inventory without changing production composition | Legacy caller/class/rendering inventory; native-target forbidden legacy scan; Debug/Release builds and `PrismNativeTests` 163/163; Bundle ID `com.lloydME.Prism`; universal `x86_64 arm64` artifacts; Objective-C/Objective-C++ syntax; accessibility/keyboard/localization/boundary/no-drawing scans; `git diff --check` |
 | `818b18a1b` | Added the bounded native authentication QR content path, E2 exception record, R1-R4 disposition, and safe-state blocker evidence; M9-W4 is not complete | Debug build; direct M9-W4 XCTest 2/2; Debug Bundle ID `com.lloydME.Prism`; universal Debug app; Objective-C/Objective-C++ syntax; native boundary/content scans; full Debug 164/165 with the existing task-log failure; Release/Xcode worker recovery required; `git diff --check` |
 | `5eea92583` | S0-W1 bundle-scoped production storage isolation, exact bridge identity composition, containment guards, and bounded generated-build cleanup | Focused native tests 16/16; full Debug/Release XCTest 168/168; Debug/Release builds; C++ facade/public-header CTest 2/2; Bundle ID `com.lloydME.Prism`; Objective-C/Objective-C++ syntax; persistence/path and Swift boundary scans; final storage inventory; `git diff --check` |
-| pending | Finalized M9-W4 R1-R4 rendering disposition and E2 QR exception acceptance after the former Xcode/task-log blocker resolved | Shared-path M9-W4 focused XCTest 2/2; full Debug/Release XCTest 168/168; Debug/Release builds; Bundle ID `com.lloydME.Prism`; no-screenshot/non-launch rendering and accessibility evidence; `git diff --check` |
+| `e876565c5` | Finalized M9-W4 R1-R4 rendering disposition and E2 QR exception acceptance after the former Xcode/task-log blocker resolved | Shared-path M9-W4 focused XCTest 2/2; full Debug/Release XCTest 168/168; Debug/Release builds; Bundle ID `com.lloydME.Prism`; no-screenshot/non-launch rendering and accessibility evidence; `git diff --check` |
 
 ## Current architecture findings
 
