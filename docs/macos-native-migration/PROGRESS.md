@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: 10. Native cutover
 
-Active work unit: none
+Active work unit: M10-W3
 
-Next ready work unit: M10-W3 (M10-W2 packaging/resource migration is complete; only M10-W3 is ready)
+Next ready work unit: none (M10-W3 is complete; M10-W4 remains queued until the M10-W1 parity gaps are resolved)
 
 User-reported safety incident: Native Prism Settings displayed account and Java information belonging to the user's normal Prism Launcher installation. Do not inspect the user's real Application Support data to reproduce this. The report invalidates the previous generic `Prism` data-root assumption and blocks all remaining migration/cutover work until `S0-W1` is complete.
 
@@ -24,7 +24,7 @@ Build-storage constraint added 2026-08-09: all future work must reuse `.derivedd
 | Native product name is `Prism` | complete | Commit `6de92da18`; built Info.plist checked with `plutil` |
 | Production Application Support root is exactly `~/Library/Application Support/com.lloydME.Prism` | complete | `PRApplicationIdentity` appends only `com.lloydME.Prism`; production `PrismNativeRuntime` injects that identity into `PRPrismBridge`; synthetic exact-path and containment tests pass |
 | No legacy fallback, automatic import, parent scan, shared preferences, or shared Keychain service exists | complete for current native composition | Positive/negative identity tests, production-source assertions, and native forbidden persistence/path scans pass; no real support directory, UserDefaults suite, or Keychain service was accessed |
-| Generated build storage is bounded and incrementally reused | complete | Only `.deriveddata-prism-native` (658M) and `.deriveddata-prism-native-backend` (143M) remain; the two latest M10-W2 xcresult bundles are retained and all obsolete exact targets are deleted |
+| Generated build storage is bounded and incrementally reused | complete | Only `.deriveddata-prism-native` (644M) and `.deriveddata-prism-native-backend` (143M) remain; the two latest shared xcresult bundles are retained and the M10-W3 isolated clean tree is deleted |
 | Native Xcode target exists | complete | Commit `5172b3a75` |
 | Objective-C++ public bridge exposes only Foundation types | complete | Commit `5172b3a75`; M1-W3 automated public-header scan and forbidden-token negative test |
 | Native tests target exists | complete | M1-W1; shared scheme and standalone `PrismNativeTests.xctest` target |
@@ -2251,11 +2251,31 @@ Prerequisite: M10-W1 final parity audit is complete. Next after completion: M10-
 
 ### M10-W3: Clean Debug and Release cutover builds
 
-Status: ready
+Status: complete
 
-Scope: perform the PLAN §9 clean-build regression check for the finalized native target using only a documented temporary isolation if the shared path cannot provide the required clean evidence; remove obsolete generated output afterward.
+Outcome: proved that the finalized PrismNative target builds and tests from an empty, isolated DerivedData root in both Debug and Release configurations. The shared incremental roots were not cleaned or deleted, and the temporary tree was removed after its results and bundle metadata were inspected.
 
-Prerequisite: M10-W2 complete. Next after completion: M10-W4, conditional QWidget/QDialog dependency removal audit.
+Scope and files: this was a verification-only work unit; only this ledger changed. No Swift, Objective-C++, C++, CMake, Xcode project, Qt caller, backend, or other-platform behavior changed.
+
+Start storage inventory (2026-08-09): `.deriveddata-prism-native` was 658M and `.deriveddata-prism-native-backend` was 143M; no task-owned `/private/tmp/prism-*` directory existed. Clean-build isolation used the exact path `/private/tmp/prism-m10-w3-clean` because PLAN §9.1.1 explicitly permits a uniquely named temporary path for a clean-build regression, while routine verification must continue to use the shared repository-local root.
+
+Verification:
+
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath /private/tmp/prism-m10-w3-clean CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build` — passed from the clean isolated root.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath /private/tmp/prism-m10-w3-clean CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build` — passed from the clean isolated root.
+- The corresponding complete Debug and Release `xcodebuild ... test` actions on `/private/tmp/prism-m10-w3-clean` both passed. `xcrun xcresulttool get test-results summary` reported 169 passed, 0 failed, and 0 skipped for `Test-PrismNative-2026.08.09_15-14-04-+0800.xcresult` and `Test-PrismNative-2026.08.09_15-15-22-+0800.xcresult`.
+- `plutil -extract CFBundleIdentifier raw` on the isolated Debug and Release `Prism.app/Contents/Info.plist` paths returned `com.lloydME.Prism`; both also returned `CFBundleShortVersionString=12.0.0` and `CFBundleVersion=12.0.0`. Both clean products contained the 194065-byte `Prism.icns`; `file` reported universal `x86_64`/`arm64` executables.
+- `git diff --check` — passed. No application launch, screenshot, recording, visual snapshot, upstream data, real account, Keychain, credential, live network, signing, notarization, installation, publishing, push, or user-data mutation occurred.
+
+Storage cleanup: the isolated tree was 627M before deletion. After printing and resolving `/private/tmp/prism-m10-w3-clean`, that exact generated directory and its two temporary xcresult bundles were deleted. Final retained roots are `.deriveddata-prism-native` (644M) and `.deriveddata-prism-native-backend` (143M); the shared test log retains only the two latest M10-W2 full-suite result bundles, and no `/private/tmp/prism-*` directory remains.
+
+HIG decision: none; this unit only verifies Apple target packaging and test execution, and introduces no UI, control, renderer, or third-party dependency.
+
+Architecture and risk: clean-path evidence covers target compilation, test execution, bundle metadata, resource copying, and architecture, but does not resolve the M10-W1 fixture/unavailable production composition, live adapter, localization resource, updater-runtime, URL/document routing, or retained Qt caller gaps. M10-W4 cannot become ready until those explicit M10-W1 parity prerequisites are resolved.
+
+Commit: verification-only commit to be recorded in the immediate ledger-finalization commit.
+
+Prerequisite: M10-W2 complete. Next after completion: none currently eligible; M10-W4 remains queued behind the M10-W1 parity prerequisites and this clean-build evidence.
 
 ### M10-W4: Remove macOS QWidget/QDialog dependency after parity evidence
 
@@ -2454,4 +2474,4 @@ No blocker authorizes upstream data, credentials, Keychain, live service, signin
 
 ## Resume instructions
 
-Read PLAN.md and PROGRESS.md, run `git status --short --branch -uall`, inspect the last five commits, then activate only the single `ready` work unit. M10-W2 is complete: its native-owned Info.plist, icon, entitlements, and static update metadata are implemented and the finalized shared-path Debug/Release build and 169/169 native-test evidence is recorded above. The only ready unit is M10-W3; perform its clean Debug/Release cutover verification under PLAN §9.1.1, update this ledger, and commit before considering M10-W4. Preserve all existing fixture-root, Bundle ID, no-launch, no-secrets, Objective-C++ boundary, and no-signing constraints. Do not reopen completed M6, M7, M8-W1/M8-W2/M8-W3/M8-W4/M8-W5/M8-W6/M8-W7/M9-W1/M9-W2/M9-W3, S0-W1, or M10-W1/M10-W2 evidence.
+Read PLAN.md and PROGRESS.md, run `git status --short --branch -uall`, inspect the last five commits, then activate only a work unit whose predecessor is satisfied. M10-W2 and M10-W3 are complete: the native-owned bundle contract and the isolated clean Debug/Release 169/169 evidence are recorded above. No later work unit is currently ready because M10-W4 explicitly requires the unresolved M10-W1 production-composition, adapter, localization, and retained-caller parity prerequisites; do not activate it early or invent a completion claim. Resume when those prerequisites have a separately recorded, fixture-safe work unit and then re-audit the queue. Preserve all existing fixture-root, Bundle ID, no-launch, no-secrets, Objective-C++ boundary, and no-signing constraints. Do not reopen completed M6, M7, M8-W1/M8-W2/M8-W3/M8-W4/M8-W5/M8-W6/M8-W7/M9-W1/M9-W2/M9-W3, S0-W1, or M10-W1/M10-W2/M10-W3 evidence.
