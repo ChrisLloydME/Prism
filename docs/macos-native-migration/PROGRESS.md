@@ -10,7 +10,7 @@ Current milestone: 10. Native cutover
 
 Active work unit: none
 
-Next ready work unit: none (M10 cutover remains queued)
+Next ready work unit: M10-W2 (M10-W1 final parity audit is complete; only M10-W2 is ready)
 
 User-reported safety incident: Native Prism Settings displayed account and Java information belonging to the user's normal Prism Launcher installation. Do not inspect the user's real Application Support data to reproduce this. The report invalidates the previous generic `Prism` data-root assumption and blocks all remaining migration/cutover work until `S0-W1` is complete.
 
@@ -2163,7 +2163,100 @@ Architecture and risk: Swift owns only the verification URL value, image/content
 
 Commit: `818b18a1b` (safe-state implementation); acceptance finalized in `e876565c5`.
 
-Next after completion: M10 native cutover remains queued; no ready work unit is defined until its final composition scope and prerequisites are recorded.
+Next after completion: M10-W1 final parity audit is complete; M10-W2 is the only ready unit and M10 remains queued until its parity gaps are resolved.
+
+### M10-W1: Final parity audit against the migration inventory
+
+Status: complete
+
+Outcome: run the first Native cutover audit against the completed M1-M9 inventory, the current native composition, the QWidget-free facade, the Objective-C++ bridge, and the retained Qt caller matrix. The audit confirms that the native target has broad fixture-tested Foundation contracts and an isolated production identity, but it does not yet claim a shipped cutover: the app composition still constructs fixture/unavailable feature state, the facade CMake target still contains no live domain adapters, and the retained Qt callers remain in the macOS product source tree. M10 therefore remains queued after this audit, with packaging/resource migration recorded as the sole next `ready` unit.
+
+Scope: documentation and read-only source/build-graph audit only. The reviewed evidence covers the M1-W2 inventory, M9-W3 retained-surface matrix, S0-W1 storage baseline, `PrismNativeApp.swift`, `ContentView.swift`, the public bridge contract, `launcher/frontend/CMakeLists.txt`, the native Xcode target, and the PLAN §14 acceptance matrix. No Swift, Objective-C++, C++, Qt, packaging, resource, persistence, account, Java, filesystem, or other-platform behavior changed in this unit.
+
+Parity findings:
+
+- Product identity and isolation are evidenced: the native runtime constructs `PRApplicationIdentity`, the exact `com.lloydME.Prism` bundle-scoped paths are tested, and the current native target has no generic/upstream persistence fallback. This is a completed safety prerequisite, not proof of live feature parity.
+- Native structural independence is evidenced: the Swift app surface contains no Qt/C++ ownership types, the public bridge is Foundation-only, and `launcher/frontend/CMakeLists.txt` builds a QWidget-free static facade without `launcher/ui`. This proves the boundary, not that every backend operation is implemented.
+- Shell and feature contracts are present at fixture seams: command/state, instance detail, tasks/logs, settings, Java, account/authentication/offline identity, creation/import/copy/export, provider browse/install/recovery, utilities, and skin/QR content all have documented value contracts and non-launch tests. The default `PrismNativeApp` still creates models with fixture defaults or unavailable injected callbacks; it does not load live instance summaries, settings, Java installations, account persistence, task observers, provider services, utility feeds, or skin persistence through the bridge.
+- The retained-surface audit remains open for cutover: `MainWindow`, `InstanceWindow`, `ViewLogWindow`, `AccountListPage`, setup-wizard/auth callers, instance/provider pages, task/resource dialogs, and privileged/external side effects still retain Qt owners or separately authorized production-service blockers. M9-W3 names their owners and concrete resume conditions; no caller was removed in M10-W1.
+- The final acceptance matrix is therefore mixed: identity, boundary, HIG decisions, documented rendering exceptions, and fixture-level contracts are evidenced; production composition, live persistence round trips, complete localization resources, packaging/resource ownership, and “no core workflow requires QWidget or QDialog” are not yet evidenced and remain required M10 work.
+
+Final acceptance audit:
+
+| PLAN §14 area | Current evidence | Cutover status |
+| --- | --- | --- |
+| Product identity | S0-W1 exact bundle ID and bundle-scoped storage tests | evidenced |
+| Build / native tests | Shared Debug/Release builds and 168/168 native suite in S0-W1/M9-W4 | evidenced for current target |
+| Backend tests | Facade/public-header fixture CTest contracts | evidenced for current seams; live adapter parity open |
+| Application shell | Native NavigationSplitView, commands, search, selection, state tests | fixture-complete; production composition open |
+| Instances | Create/import/copy/edit/launch/stop/delete/export value contracts | fixture-complete; live source and caller cutover open |
+| Accounts | Sanitized snapshots, fake authentication, offline identity, secret audit | fixture-complete; live persistence/auth wiring intentionally open |
+| Settings | Non-secret settings matrix and fixture round trips | fixture-complete; live persistence adapter open |
+| Resources | Components, resources, worlds, servers, screenshots, logs, providers | fixture-complete; live adapters and retained Qt pages open |
+| Tasks | Progress, cancellation, retry, shutdown, bounded logs | fixture-complete; live `LaunchController`/process ownership open |
+| Accessibility / keyboard | Structural and ViewModel/command tests across native surfaces | evidenced for current surfaces |
+| Localization | Stable localization-key shape checks and long-string tests | resource completeness not yet evidenced |
+| HIG / custom rendering | Apple API records plus approved E1 SceneKit and E2 Core Image exceptions | evidenced |
+| Legacy UI | M9-W3 retained caller matrix still contains Qt hosts and dialogs | not complete |
+| Documentation / repository state | This audit and prior commit index; clean worktree before this unit | audit evidenced; final index remains later |
+
+Required prerequisites for the remaining cutover: define and implement bundle-rooted, fixture-verifiable native composition/adapters for the currently disconnected facade ports; connect the native scenes without moving C++/Qt ownership into Swift; add localization resource coverage; migrate packaging/resources/version/icons/entitlements/update metadata; and only then re-audit each retained Qt caller before QWidget/QDialog removal. Any authentication, privileged PATH, upload, or production-provider behavior still requires the separate authorization and fake-provider boundaries already recorded in M9-W3/M7-W7.
+
+Files changed: `docs/macos-native-migration/PROGRESS.md` only. No application launch, screenshot, recording, visual snapshot, upstream application or Application Support access, real account, Keychain, credential, production service, signing, installation, publishing, push, or destructive operation occurred.
+
+HIG decision: no UI changed. The audit preserves the existing SwiftUI/AppKit system-control policy and the approved E1 SceneKit and E2 Core Image domain-content records; it approves no new custom rendering, third-party UI framework, or system-control drawing.
+
+Verification and storage: `rg` source-composition, native-boundary, retained-caller, localization-resource, and forbidden-persistence scans passed with the findings above; the shared Debug and Release Xcode build/test actions passed with 168/168 in `Test-PrismNative-2026.08.09_14-50-41-+0800.xcresult` and `Test-PrismNative-2026.08.09_14-51-08-+0800.xcresult`; the compatible shared facade CMake build and CTest passed; both built Info.plists report `com.lloydME.Prism`; Objective-C/Objective-C++ syntax checks and `git diff --check` passed. No new per-unit DerivedData directory was created. The retained generated roots are `.deriveddata-prism-native` and `.deriveddata-prism-native-backend`; their final sizes are 657M and 143M. The two result bundles above are the current retained Debug/Release evidence and supersede the older S0-W1 result paths in the historical inventory.
+
+Risk and limits: this audit is not permission to remove Qt callers or claim feature-complete production behavior. The largest remaining risk is the gap between the extensive fixture contracts and the absent live adapter/composition layer; the next unit may address packaging/resource ownership only within the native target and must not hide that gap. M10-W3 through M10-W6 remain queued until their stated predecessors and parity evidence are complete.
+
+Commit: pending; this entry is finalized by the commit for M10-W1.
+
+Next after completion: `M10-W2`, move packaging, resources, versioning, icons, entitlements, and update metadata to the native target without changing the Bundle ID.
+
+### M10-W2: Native packaging, resources, versioning, icons, entitlements, and update metadata
+
+Status: ready
+
+Scope: inspect and migrate only the macOS-native target’s packaging/resource/version/icon/entitlement/update metadata, preserving `com.lloydME.Prism` and leaving signing/notarization state untouched. Keep live feature-adapter gaps from M10-W1 explicit; do not remove Qt callers or change other platforms in this unit.
+
+Required evidence: target/resource ownership inspection, native Debug/Release builds, Bundle ID `plutil` checks, resource/version/icon/entitlement structural checks, relevant native tests, no-launch/no-signing verification, shared DerivedData inventory, and `git diff --check`.
+
+HIG decision: none beyond preserving the already-approved native app/scene and system resource presentation; no control or renderer is introduced by this packaging unit.
+
+Prerequisite: M10-W1 final parity audit is complete. Next after completion: M10-W3 clean-build verification under the shared storage policy.
+
+### M10-W3: Clean Debug and Release cutover builds
+
+Status: queued
+
+Scope: perform the PLAN §9 clean-build regression check for the finalized native target using only a documented temporary isolation if the shared path cannot provide the required clean evidence; remove obsolete generated output afterward.
+
+Prerequisite: M10-W2 complete. Next after completion: M10-W4, conditional QWidget/QDialog dependency removal audit.
+
+### M10-W4: Remove macOS QWidget/QDialog dependency after parity evidence
+
+Status: queued
+
+Scope: remove only macOS-native target dependencies on QWidget/QDialog after the final parity audit and packaging/build evidence pass. Shared backend Qt code may remain when required by other platforms or retained backend reuse; no source deletion is allowed without call-path and build evidence.
+
+Prerequisite: M10-W1 parity gaps resolved, M10-W2 and M10-W3 complete. Next after completion: M10-W5 safe obsolete-UI retirement audit.
+
+### M10-W5: Retire safely excluded macOS-only Qt UI sources
+
+Status: queued
+
+Scope: delete or exclude only sources proven macOS-only and unused by retained backend reuse; otherwise leave them intact and record why. No destructive deletion is allowed without exact target/call-path checks and user-state safety evidence.
+
+Prerequisite: M10-W4 complete. Next after completion: M10-W6 final acceptance index and limitations report.
+
+### M10-W6: Final acceptance index and limitations report
+
+Status: queued
+
+Scope: reconcile every PLAN §14 row, final commit index, remaining non-blocking limitations, generated-output inventory, and clean-worktree evidence. Do not mark the migration complete while any required row or retained workflow remains unresolved.
+
+Prerequisite: M10-W5 complete. Next after completion: none; only then can the migration goal be audited for completion.
 
 ## Completed commit index
 
