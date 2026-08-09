@@ -14,6 +14,8 @@ Next ready work unit: `S0-W1`
 
 User-reported safety incident: Native Prism Settings displayed account and Java information belonging to the user's normal Prism Launcher installation. Do not inspect the user's real Application Support data to reproduce this. The report invalidates the previous generic `Prism` data-root assumption and blocks all remaining migration/cutover work until `S0-W1` is complete.
 
+Build-storage constraint added 2026-08-09: all future work must reuse `.deriveddata-prism-native` for incremental Xcode Debug, Release, focused-test, and full-test actions, and reuse `.deriveddata-prism-native-backend` when its CMake configuration is compatible. Per-milestone and per-test DerivedData directories are prohibited unless a documented cache, toolchain, clean-build, or concurrency reason requires temporary isolation. Every temporary isolated build directory must be deleted after evidence is recorded; each work unit must record retained paths and `du -sh` sizes. Historical entries below preserve commands that created many work-unit-specific directories, but they are evidence, not precedent.
+
 ## Safety baseline
 
 | Contract | Status | Evidence |
@@ -22,6 +24,7 @@ User-reported safety incident: Native Prism Settings displayed account and Java 
 | Native product name is `Prism` | complete | Commit `6de92da18`; built Info.plist checked with `plutil` |
 | Production Application Support root is exactly `~/Library/Application Support/com.lloydME.Prism` | failed, release-blocking | User observed upstream accounts and Java information in Native Prism; the previous generic `Prism` identity and non-equality test are insufficient |
 | No legacy fallback, automatic import, parent scan, shared preferences, or shared Keychain service exists | unverified, release-blocking | Must be proven by `S0-W1` production-composition tests and static scans |
+| Generated build storage is bounded and incrementally reused | policy active, cleanup inventory pending | Future units use the two shared repository-local build roots; `S0-W1` must inventory existing generated directories without deleting anything not proven task-owned and obsolete |
 | Native Xcode target exists | complete | Commit `5172b3a75` |
 | Objective-C++ public bridge exposes only Foundation types | complete | Commit `5172b3a75`; M1-W3 automated public-header scan and forbidden-token negative test |
 | Native tests target exists | complete | M1-W1; shared scheme and standalone `PrismNativeTests.xctest` target |
@@ -53,6 +56,8 @@ Outcome: replace every production default or composition path derived from `Pris
 
 Required investigation: inspect production path construction and dependency composition without reading the user's actual support directories. Search CMake identity settings, `program_info`, native Swift and Objective-C++ bridge code, frontend facade construction, settings/account/Java adapters, `QStandardPaths`, `FileManager` Application Support calls, `UserDefaults` suites, environment/argument overrides, legacy migration/fallback code, symlink/alias handling, cache/log/saved-state paths, and Keychain service identifiers. Treat tests and fixture composition separately from production composition.
 
+Build-storage requirement: reuse `.deriveddata-prism-native` and `.deriveddata-prism-native-backend` incrementally. At the beginning of the unit, inventory repository-local `.deriveddata-*` and task-owned `/private/tmp/prism-*` directories with sizes. Do not delete an existing directory until its generated nature, exact path, ownership, and obsolescence are established. Before completion, remove obsolete isolated build directories safely and record what was retained, what was deleted, and final sizes. Do not create an `S0-W1`-specific DerivedData directory unless PLAN §9.1.1 permits and documents the reason.
+
 Required implementation contracts:
 
 1. One production path resolver derives the Application Support root by appending the exact main-bundle identifier `com.lloydME.Prism` to the macOS Application Support directory.
@@ -62,7 +67,7 @@ Required implementation contracts:
 5. Cache, preference, log, saved-state, and any Keychain identifiers use `com.lloydME.Prism`; no shared suite or service identifier is permitted.
 6. Canonical containment checks reject symlinks, aliases, `..`, prefix-collision paths, and descendants that escape the isolated or injected fixture root.
 
-Required non-launch evidence: Debug and Release builds; full native tests; directly relevant C++ tests; built Info.plist Bundle ID check; unit tests using a synthetic home that assert the exact bundle-scoped paths; negative tests for `Prism`, `PrismLauncher`, upstream aliases, parent Application Support, legacy fallback, environment/argument override, shared `UserDefaults`, shared Keychain service, symlink escape, `..`, and path-prefix collision; static scans proving production account and Java composition receives only the isolated root; `git diff --check`. Do not launch either application and do not access the real home support directories, real accounts, Keychain, or installed Prism Launcher.
+Required non-launch evidence: incremental Debug and Release builds from the shared DerivedData; full native tests; directly relevant C++ tests from the compatible shared backend build; built Info.plist Bundle ID check; unit tests using a synthetic home that assert the exact bundle-scoped paths; negative tests for `Prism`, `PrismLauncher`, upstream aliases, parent Application Support, legacy fallback, environment/argument override, shared `UserDefaults`, shared Keychain service, symlink escape, `..`, and path-prefix collision; static scans proving production account and Java composition receives only the isolated root; generated-directory inventory and final sizes; `git diff --check`. Do not launch either application and do not access the real home support directories, real accounts, Keychain, or installed Prism Launcher.
 
 Completion requirement: all required evidence passes, this incident entry records the exact code paths corrected and verification results, the safety baseline becomes complete, and the work is committed with the detailed PLAN commit body. Only then may M9-W4 return to blocked/active status and later migration work resume.
 

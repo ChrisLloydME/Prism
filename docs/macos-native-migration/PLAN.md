@@ -43,10 +43,10 @@ If the worktree contains unrelated changes, preserve them and commit only files 
 
 ```text
 /goal Complete the PrismNative Xcode target on the macos-native branch as a feature-complete, Apple-native, macOS-only Prism Launcher frontend. Preserve the existing launcher behavior and data formats, reuse the existing C++ core through a testable QWidget-free backend facade, and expose that facade to Swift only through an Objective-C++ bridge using Foundation value types, commands, state, and events.
-验证：At the start of every turn read PLAN.md, PROGRESS.md, git status, and recent commit bodies. Maintain the migration inventory and evidence ledger in PROGRESS.md. Build Debug and Release configurations with xcodebuild, run PrismNativeTests, run the smallest relevant CMake build and C++ tests for backend changes, run git diff --check, and inspect the built Info.plist with plutil to prove that CFBundleIdentifier remains com.lloydME.Prism. Verify UI structure with native API inspection, ViewModel and command tests, accessibility metadata checks, menu and shortcut tests, localization checks, and Apple HIG conformance records. Never launch the application, capture screenshots, record the screen, or use visual snapshot tests as completion evidence.
-约束：Keep the bundle identifier fixed at com.lloydME.Prism. The production Application Support root must be exactly the bundle-scoped `~/Library/Application Support/com.lloydME.Prism` namespace, and every other persistent macOS namespace must use `com.lloydME.Prism`; never use the generic `Prism` or upstream `PrismLauncher` identity. Native Prism must not discover, inherit, import, fall back to, read, or write any upstream account, Java, instance, settings, cache, log, preference, saved-state, or Keychain data. Prefer Apple-provided SwiftUI and AppKit controls and behavior. Do not custom-draw a system control. Swift must not import Qt or expose C++ ownership. Objective-C++ exclusively owns C++ and Qt lifetime, threading, cancellation, and type conversion. Do not rewrite stable launcher business logic without a regression test. Do not add a third-party UI framework. Do not weaken accessibility, keyboard operation, localization, cancellation, error recovery, or data compatibility.
+验证：At the start of every turn read PLAN.md, PROGRESS.md, git status, and recent commit bodies. Maintain the migration inventory and evidence ledger in PROGRESS.md. Build Debug and Release configurations with xcodebuild, run PrismNativeTests, run the smallest relevant CMake build and C++ tests for backend changes, run git diff --check, and inspect the built Info.plist with plutil to prove that CFBundleIdentifier remains com.lloydME.Prism. Reuse the repository-local `.deriveddata-prism-native` directory for incremental Debug, Release, and test actions unless a documented clean-build or cache-isolation reason requires a temporary directory; remove every such temporary directory when it is no longer needed. Verify UI structure with native API inspection, ViewModel and command tests, accessibility metadata checks, menu and shortcut tests, localization checks, and Apple HIG conformance records. Never launch the application, capture screenshots, record the screen, or use visual snapshot tests as completion evidence.
+约束：Keep the bundle identifier fixed at com.lloydME.Prism. The production Application Support root must be exactly the bundle-scoped `~/Library/Application Support/com.lloydME.Prism` namespace, and every other persistent macOS namespace must use `com.lloydME.Prism`; never use the generic `Prism` or upstream `PrismLauncher` identity. Native Prism must not discover, inherit, import, fall back to, read, or write any upstream account, Java, instance, settings, cache, log, preference, saved-state, or Keychain data. Do not create a new DerivedData directory for each milestone, work unit, configuration, retry, or test selection. Prefer incremental compilation in the shared repository-local DerivedData and keep no abandoned generated build directory. Prefer Apple-provided SwiftUI and AppKit controls and behavior. Do not custom-draw a system control. Swift must not import Qt or expose C++ ownership. Objective-C++ exclusively owns C++ and Qt lifetime, threading, cancellation, and type conversion. Do not rewrite stable launcher business logic without a regression test. Do not add a third-party UI framework. Do not weaken accessibility, keyboard operation, localization, cancellation, error recovery, or data compatibility.
 边界：Write only under macos, docs/macos-native-migration, directly required launcher backend and build configuration files, and directly related tests. Do not read or modify the installed upstream application, the upstream Application Support directory, real accounts, Keychain items, production API data, signing settings, notarization state, or unrelated platform code. Keep caches, generated output, and fixture data in ignored or temporary directories. Do not push, publish, install, sign, notarize, or open a pull request without separate user authorization.
-迭代策略：Implement one work unit at a time. Each unit must have a narrow outcome, tests, documentation update, and independent commit. Before every commit update PROGRESS.md with status, files, commands, results, HIG decisions, risks, and next step. Use a Conventional Commit subject and a detailed body that records behavior, architecture, exact verification, known limits, and follow-up. Never commit failing checks or stale progress. After the same failure twice, stop retrying and obtain new evidence from logs, callers, tests, official Apple documentation, or the legacy implementation. After interruption or context compaction, resume only from PLAN.md, PROGRESS.md, git status, and committed evidence.
+迭代策略：Implement one work unit at a time. Each unit must have a narrow outcome, tests, documentation update, and independent commit. Reuse incremental Xcode and CMake build directories across units. A fresh isolated build is allowed only for cache corruption, architecture/toolchain incompatibility, a clean-build regression check, or a shared directory actively owned by another process; record the reason before creating it and delete the isolated output after its evidence is captured. Before every commit update PROGRESS.md with status, files, commands, results, HIG decisions, build-cache paths and cleanup, risks, and next step. Use a Conventional Commit subject and a detailed body that records behavior, architecture, exact verification, known limits, and follow-up. Never commit failing checks or stale progress. After the same failure twice, stop retrying and obtain new evidence from logs, callers, tests, official Apple documentation, or the legacy implementation. After interruption or context compaction, resume only from PLAN.md, PROGRESS.md, git status, and committed evidence.
 完成条件：Every in-scope Qt UI workflow in the migration inventory has a native implementation, a documented facade and bridge contract, automated non-launch verification, and a completed progress entry. PrismNative completes all core launcher workflows without QWidget or QDialog. Debug and Release builds pass, all native and directly relevant C++ tests pass, Bundle ID and bundle-scoped storage isolation contracts pass, and production composition has no generic `Prism`, upstream `PrismLauncher`, legacy fallback, automatic import, shared preferences, or shared Keychain path. No forbidden runtime visual verification was used, every custom-rendering exception is justified, the progress ledger contains a final commit index and remaining non-blocking limitations, and the worktree is clean.
 暂停条件：Pause before accessing upstream user data, real accounts, Keychain, credentials, signing, notarization, publishing, pushing, or destructive operations. Pause if a workflow appears to require a third-party UI framework, substantial custom drawing, an irreversible data-format change, an authentication behavior change, or a product decision not settled by this plan. If the same blocker survives three rounds using distinct new evidence, record the blocker and exact recovery requirement in PROGRESS.md, then stop.
 ```
@@ -577,7 +577,7 @@ xcodebuild \
   -scheme PrismNative \
   -configuration Release \
   -destination 'platform=macOS,arch=arm64' \
-  -derivedDataPath .deriveddata-prism-native-release \
+  -derivedDataPath .deriveddata-prism-native \
   CODE_SIGNING_ALLOWED=NO \
   build
 
@@ -588,6 +588,20 @@ plutil -extract CFBundleIdentifier raw \
 After `PrismNativeTests` exists, run its test action with an explicit macOS destination and a repository-local derived-data path. Record the exact command in `PROGRESS.md` because Xcode scheme layout can change.
 
 For backend changes, discover and run the smallest relevant existing CMake target and CTest selection. If the configured build directory is unavailable, configure according to `macos/README.md` and record the chosen build directory. Do not silently invent a global test command.
+
+### 9.1.1 DerivedData and generated-build storage policy
+
+Generated build output is disposable but can consume substantial disk space. Agents must manage it as a bounded shared resource:
+
+1. Use `.deriveddata-prism-native` as the single default Xcode DerivedData directory for Debug builds, Release builds, focused tests, and full tests. Xcode keeps configurations under separate product subdirectories and can incrementally rebuild them in the same DerivedData root.
+2. Reuse `.deriveddata-prism-native-backend` as the default repository-local CMake frontend build directory when its toolchain and architecture configuration match the required check. Reconfigure or incrementally build it instead of creating a directory named after the current milestone.
+3. Do not create paths such as `.deriveddata-m7-w3-*`, `.deriveddata-prism-native-m9-w4-*`, or `/private/tmp/prism-<work-unit>-*` merely to obtain a fresh build or separate test result. Configuration, destination, and `-only-testing` arguments are not by themselves reasons for another DerivedData root.
+4. A temporary isolated build directory is allowed only for suspected cache corruption; incompatible architecture, SDK, deployment target, or toolchain state; a clean-build regression that must be demonstrated; or a shared directory actively owned by another running process. Before creation, record its exact path and reason in `PROGRESS.md`.
+5. Prefer a uniquely named directory under `/private/tmp` for permitted isolation. Never use the user's global Xcode DerivedData directory for this project. Never run `xcodebuild clean` or delete the shared incremental cache as routine verification.
+6. After results are recorded, delete every temporary isolated DerivedData or CMake directory created by the work unit. Retain at most the two newest relevant `.xcresult` bundles inside the shared DerivedData; remove older result bundles when they are no longer needed for committed evidence.
+7. At the start and end of each work unit, list repository-local and task-created temporary build directories and record their sizes with `du -sh`. The end state must contain only the shared active Xcode directory, the shared active backend directory, and any explicitly documented directory still required by a running process or unresolved blocker.
+8. Before deletion, resolve and print the exact target. Delete only a confirmed generated directory inside the repository whose basename starts with `.deriveddata-`, or a task-owned path under `/private/tmp` whose basename starts with `prism-`. Never use an unresolved variable, broad glob, home directory, repository root, or global Xcode path as a deletion target.
+9. A work unit is not complete while its unnecessary DerivedData, CMake build trees, result bundles, or temporary compilation directories remain. Record retained paths, deleted paths, and final sizes in `PROGRESS.md`.
 
 ### 9.2 Non-launch UI evidence
 
@@ -663,9 +677,10 @@ Before committing:
 3. Run `git diff --cached --check`.
 4. Run relevant builds and tests.
 5. Update `PROGRESS.md` with exact evidence and next step.
-6. Review the staged diff.
-7. Commit with the detailed format.
-8. Re-read `git status` and commit log.
+6. Remove obsolete task-created DerivedData and generated build directories, then record retained paths and sizes.
+7. Review the staged diff.
+8. Commit with the detailed format.
+9. Re-read `git status` and commit log.
 
 Do not amend or rewrite a commit unless the user explicitly asks. Do not push unless the user explicitly asks.
 
@@ -680,6 +695,7 @@ Every work unit entry records:
 - Outcome.
 - Files changed.
 - Tests and exact commands.
+- Reused build-cache paths, any justified isolated path, cleanup performed, and final retained sizes.
 - Result summary.
 - HIG or official API decision.
 - Commit hash after commit.
