@@ -50,6 +50,8 @@ typedef void (^PRTaskCancellationCompletionHandler)(PRTaskCancellationResult * _
                                                      PRBridgeError * _Nullable error);
 typedef void (^PRInstanceSummariesCompletionHandler)(NSArray<PRInstanceSummary *> *summaries,
                                                       PRBridgeError * _Nullable error);
+typedef void (^PRMetadataInstanceCompletionHandler)(PRInstanceSummary * _Nullable summary,
+                                                     PRBridgeError * _Nullable error);
 typedef void (^PRInstanceChangesCompletionHandler)(NSArray<PRInstanceChange *> *changes,
                                                     PRBridgeError * _Nullable error);
 typedef void (^PRInstanceDetailsCompletionHandler)(PRInstanceDetails * _Nullable details,
@@ -166,6 +168,10 @@ typedef void (^PROfflineLaunchIdentityUpdateCompletionHandler)(PROfflineLaunchId
 /// actor and the returned token cancels delivery if it is released or cancelled
 /// before the backend result is delivered.
 - (nullable PRBridgeObservationToken *)loadInstanceSummariesWithCompletion:(PRInstanceSummariesCompletionHandler)completion;
+- (nullable PRBridgeObservationToken *)createMetadataOnlyInstanceWithIdentifier:(NSString *)identifier
+                                                                             name:(NSString *)name
+                                                                           iconKey:(NSString *)iconKey
+                                                                       completion:(PRMetadataInstanceCompletionHandler)completion;
 - (nullable PRBridgeObservationToken *)loadInstanceChangesWithCompletion:(PRInstanceChangesCompletionHandler)completion;
 
 /// Loads immutable metadata and notes for one stable instance identifier.
@@ -236,10 +242,11 @@ typedef void (^PROfflineLaunchIdentityUpdateCompletionHandler)(PROfflineLaunchId
 - (nullable PRBridgeObservationToken *)cancelTaskWithIdentifier:(NSString *)identifier
                                                         completion:(PRTaskCancellationCompletionHandler)completion;
 
-/// Sends a fixture-controlled command for one stable instance identifier. The
+/// Sends a production adapter command for one stable instance identifier. The
 /// completion runs on the main actor with a Foundation result for success,
 /// unknown-instance, or explicit backend rejection; invalid input and
-/// lifecycle failures use PRBridgeError.
+/// lifecycle failures use PRBridgeError. A later work unit supplies the
+/// process-launch port; this contract never starts a process by itself.
 - (nullable PRBridgeObservationToken *)launchInstanceWithIdentifier:(NSString *)identifier
                                                            completion:(PRInstanceCommandCompletionHandler)completion;
 - (nullable PRBridgeObservationToken *)stopInstanceWithIdentifier:(NSString *)identifier

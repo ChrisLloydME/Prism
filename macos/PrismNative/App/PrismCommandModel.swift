@@ -258,6 +258,7 @@ final class PrismCommandModel: ObservableObject {
     @Published private(set) var runningInstanceID: String?
     @Published private(set) var canUndoDeletion = false
     private(set) var lastInvokedCommand: PrismCommandID?
+    private let bridge: PRPrismBridge?
 
     static let toolbarCommandIDs: [PrismCommandID] = [
         .newInstance,
@@ -279,8 +280,10 @@ final class PrismCommandModel: ObservableObject {
 
     init(
         onCommand: ((PrismCommandID) -> Void)? = nil,
-        onInstanceCommand: ((PrismInstanceCommandIntent) -> Void)? = nil
+        onInstanceCommand: ((PrismInstanceCommandIntent) -> Void)? = nil,
+        bridge: PRPrismBridge? = nil
     ) {
+        self.bridge = bridge
         self.onCommand = onCommand
         self.onInstanceCommand = onInstanceCommand
     }
@@ -332,8 +335,19 @@ final class PrismCommandModel: ObservableObject {
         }
 
         lastInvokedCommand = command
-        if let intent = instanceCommandIntent(for: command), let onInstanceCommand {
-            onInstanceCommand(intent)
+        if let intent = instanceCommandIntent(for: command) {
+            if let onInstanceCommand {
+                onInstanceCommand(intent)
+            } else if let bridge {
+                switch intent.action {
+                case .launch:
+                    _ = bridge.launchInstance(withIdentifier: intent.identifier, completion: { _, _ in })
+                case .stop:
+                    _ = bridge.stopInstance(withIdentifier: intent.identifier, completion: { _, _ in })
+                }
+            } else {
+                onCommand?(command)
+            }
         } else {
             onCommand?(command)
         }

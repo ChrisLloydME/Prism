@@ -139,6 +139,70 @@ final class PrismNativeInfrastructureTests: XCTestCase {
         XCTAssertEqual(callbackRecorder.values, ["cancel", "shutdown"])
     }
 
+    func testProductionBridgeCreatesLoadsObservesAndReconstructsMetadataOnlyInstance() throws {
+        let fixtureRoot = try PrismTemporaryFixtureRoot()
+        let bridge: PRPrismBridge = try XCTUnwrap(
+            PRPrismBridge(dataRootURL: fixtureRoot.url, cancellationHandler: nil, shutdownHandler: nil)
+        )
+        let changeExpectation = expectation(description: "production instance change")
+        let createExpectation = expectation(description: "metadata instance creation")
+        let loadExpectation = expectation(description: "metadata instance load")
+        var observedIdentifier: String?
+        var createdSummary: PRInstanceSummary?
+        var loadedSummaries: [PRInstanceSummary] = []
+        var createToken: PRBridgeObservationToken?
+        var loadToken: PRBridgeObservationToken?
+
+        let observation = bridge.observeInstanceChanges { change in
+            if change.kind == .added, change.identifier == "native.bridge" {
+                observedIdentifier = change.identifier
+                changeExpectation.fulfill()
+            }
+        }
+        XCTAssertNotNil(observation)
+
+        createToken = bridge.createMetadataOnlyInstance(
+            withIdentifier: "native.bridge",
+            name: "Native Bridge",
+            iconKey: "default"
+        ) { summary, error in
+            XCTAssertNil(error)
+            createdSummary = summary
+            createExpectation.fulfill()
+        }
+        wait(for: [createExpectation, changeExpectation], timeout: 3)
+        XCTAssertNotNil(createToken)
+        XCTAssertEqual(createdSummary?.identifier, "native.bridge")
+        XCTAssertEqual(observedIdentifier, "native.bridge")
+
+        loadToken = bridge.loadInstanceSummaries { summaries, error in
+            XCTAssertNil(error)
+            loadedSummaries = summaries
+            loadExpectation.fulfill()
+        }
+        wait(for: [loadExpectation], timeout: 3)
+        XCTAssertEqual(loadedSummaries.map(\.identifier), ["native.bridge"])
+        XCTAssertNotNil(loadToken)
+        XCTAssertTrue(bridge.shutdown())
+        XCTAssertTrue(observation?.isCancelled == true)
+
+        let reconstructed: PRPrismBridge = try XCTUnwrap(
+            PRPrismBridge(dataRootURL: fixtureRoot.url, cancellationHandler: nil, shutdownHandler: nil)
+        )
+        let reconstructionExpectation = expectation(description: "reconstructed metadata instance load")
+        var reconstructedSummaries: [PRInstanceSummary] = []
+        var reconstructionToken: PRBridgeObservationToken?
+        reconstructionToken = reconstructed.loadInstanceSummaries { summaries, error in
+            XCTAssertNil(error)
+            reconstructedSummaries = summaries
+            reconstructionExpectation.fulfill()
+        }
+        wait(for: [reconstructionExpectation], timeout: 3)
+        XCTAssertEqual(reconstructedSummaries.map(\.name), ["Native Bridge"])
+        XCTAssertNotNil(reconstructionToken)
+        XCTAssertTrue(reconstructed.shutdown())
+    }
+
     func testNativeTargetOwnsLegacyBundleMetadataAndIconWithoutSigningChanges() throws {
         let macosRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

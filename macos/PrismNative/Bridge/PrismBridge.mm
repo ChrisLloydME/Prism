@@ -1,6 +1,7 @@
 #import "PrismBridge.h"
 
 #include "FrontendFacade.h"
+#include "ProductionInstanceRuntime.h"
 
 #include <chrono>
 #include <cmath>
@@ -653,20 +654,9 @@ bool isKnownInstanceChangeKind(PRInstanceChangeKind kind)
     return false;
 }
 
-FrontendRuntimeDependencies defaultRuntimeDependencies()
+FrontendRuntimeDependencies defaultRuntimeDependencies(const std::filesystem::path& dataRoot)
 {
-    FrontendRuntimeDependencies dependencies;
-    dependencies.dispatch = [](FrontendRuntimeDependencies::Work work) {
-        if (work) {
-            work();
-        }
-    };
-    dependencies.now = [] {
-        return std::chrono::system_clock::now();
-    };
-    dependencies.cancelPendingWork = [] {};
-    dependencies.shutdown = [] {};
-    return dependencies;
+    return productionInstanceRuntimeDependencies(dataRoot);
 }
 
 std::filesystem::path dataRootPathForURL(NSURL *dataRootURL)
@@ -7384,10 +7374,19 @@ resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentif
                   cancellationHandler:(PRBridgeLifecycleHandler)cancellationHandler
                      shutdownHandler:(PRBridgeLifecycleHandler)shutdownHandler
 {
-    return [self initWithDataRootURL:dataRootURL
-                   cancellationHandler:cancellationHandler
-                      shutdownHandler:shutdownHandler
-            frontendRuntimeDependencies:defaultRuntimeDependencies()];
+    NSURL *normalizedURL = normalizedDataRootURL(dataRootURL);
+    if (!normalizedURL) {
+        return nil;
+    }
+
+    try {
+        return [self initWithDataRootURL:normalizedURL
+                       cancellationHandler:cancellationHandler
+                          shutdownHandler:shutdownHandler
+                frontendRuntimeDependencies:defaultRuntimeDependencies(dataRootPathForURL(normalizedURL))];
+    } catch (...) {
+        return nil;
+    }
 }
 
 - (instancetype)initWithDataRootURL:(NSURL *)dataRootURL
@@ -7452,6 +7451,21 @@ resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentif
         _lifecycle = std::make_unique<NativeFacadeLifecycle>();
         _facade = std::move(facade);
         _backendQueue = dispatch_queue_create("com.lloydME.PrismNative.frontend", DISPATCH_QUEUE_SERIAL);
+
+        __weak PRPrismBridge *weakBridge = self;
+        try {
+            _facade->startInstanceObservation([weakBridge](const FrontendInstanceChange& change) {
+                PRPrismBridge *bridge = weakBridge;
+                if (!bridge) {
+                    return;
+                }
+                try {
+                    [bridge publishInstanceChange:changeFromFacadeChange(change)];
+                } catch (...) {
+                }
+            });
+        } catch (...) {
+        }
     }
     return self;
 }
@@ -7613,6 +7627,107 @@ resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentif
 
         if (!state.isCancelled) {
             [state deliverOnMainActor:[[PRBridgeArrayResult alloc] initWithValues:summaries error:error]];
+        }
+    });
+
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
+- (PRBridgeObservationToken *)createMetadataOnlyInstanceWithIdentifier:(NSString *)identifier
+                                                                     name:(NSString *)name
+                                                                   iconKey:(NSString *)iconKey
+                                                               completion:(PRMetadataInstanceCompletionHandler)completion
+{
+    if (!completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeArrayResult *result = (PRBridgeArrayResult *)value;
+        PRInstanceSummary *summary = result.values.firstObject;
+        [weakRequest cancel];
+        completion(summary, result.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeSnapshotRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.snapshotRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        PRInstanceSummary *summary = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    FrontendMetadataInstanceRequest requestValue{
+                        stableIdentifierFromFoundation(identifier),
+                        utf8TextFromFoundation(name),
+                        utf8TextFromFoundation(iconKey),
+                    };
+                    const auto result = bridge->_facade->createMetadataInstance(requestValue);
+                    switch (result.outcome) {
+                        case FrontendMetadataInstanceOutcome::Succeeded:
+                            summary = result.instance.has_value() ? summaryFromFacadeSnapshot(*result.instance) : nil;
+                            break;
+                        case FrontendMetadataInstanceOutcome::InvalidInput:
+                            error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                                       diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+                                                   substitutionValues:@{}];
+                            break;
+                        case FrontendMetadataInstanceOutcome::Failed:
+                            error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                                       diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+                                                   substitutionValues:@{}];
+                            break;
+                    }
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnosticText ?: @"Invalid metadata instance request"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnosticText ?: @"Facade operation cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnosticText = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnosticText ?: @"Metadata instance unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown metadata instance failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            NSArray *values = summary ? @[ summary ] : @[];
+            [state deliverOnMainActor:[[PRBridgeArrayResult alloc] initWithValues:values error:error]];
         }
     });
 

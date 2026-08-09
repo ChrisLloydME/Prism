@@ -248,6 +248,38 @@ final class PrismShellTests: XCTestCase {
         XCTAssertEqual(model.detailState, .empty)
     }
 
+    func testShellModelLoadsProductionBridgeSnapshotsAndAppliesChanges() throws {
+        let fixtureRoot = try PrismTemporaryFixtureRoot()
+        let bridge: PRPrismBridge = try XCTUnwrap(
+            PRPrismBridge(dataRootURL: fixtureRoot.url, cancellationHandler: nil, shutdownHandler: nil)
+        )
+        let model = PrismShellModel(bridge: bridge)
+        let createExpectation = expectation(description: "production shell instance creation")
+
+        var createToken: PRBridgeObservationToken?
+        createToken = bridge.createMetadataOnlyInstance(
+            withIdentifier: "native.shell",
+            name: "Native Shell",
+            iconKey: "default"
+        ) { summary, error in
+            XCTAssertNil(error)
+            XCTAssertEqual(summary?.identifier, "native.shell")
+            createExpectation.fulfill()
+        }
+        wait(for: [createExpectation], timeout: 3)
+        XCTAssertNotNil(createToken)
+
+        let deadline = Date().addingTimeInterval(3)
+        while model.instances.first?.id != "native.shell" && Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        }
+
+        XCTAssertEqual(model.instances.map(\.id), ["native.shell"])
+        XCTAssertEqual(model.instances.first?.name, "Native Shell")
+        XCTAssertEqual(model.detailState, .content)
+        XCTAssertTrue(bridge.shutdown())
+    }
+
     func testShellModelTracksSidebarSelectionWithoutChangingDetailState() {
         let model = PrismShellModel()
 

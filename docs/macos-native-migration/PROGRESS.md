@@ -10,7 +10,7 @@ Current milestone: 11. Production backend adapters and complete launcher composi
 
 Active work unit: none
 
-Next ready work unit: `M11-W1 Production composition foundation`
+Next ready work unit: M11-W2 Production global and instance settings persistence
 
 Goal correction added 2026-08-09: this project must deliver a complete Minecraft launcher, not only native surfaces and fixture contracts. Historical M4-M9 `complete` labels mean surface/contract completion unless a later M11 unit proves production adapter and default-composition wiring. M10-W1 identified this gap; M10-W2 packaging and M10-W3 clean builds are complete infrastructure, not launcher parity. Qt retirement is moved to M12 and is forbidden until M11-W10 proves production parity.
 
@@ -26,7 +26,7 @@ Build-storage constraint added 2026-08-09: all future work must reuse `.derivedd
 | Native product name is `Prism` | complete | Commit `6de92da18`; built Info.plist checked with `plutil` |
 | Production Application Support root is exactly `~/Library/Application Support/com.lloydME.Prism` | complete | `PRApplicationIdentity` appends only `com.lloydME.Prism`; production `PrismNativeRuntime` injects that identity into `PRPrismBridge`; synthetic exact-path and containment tests pass |
 | No legacy fallback, automatic import, parent scan, shared preferences, or shared Keychain service exists | complete for current native composition | Positive/negative identity tests, production-source assertions, and native forbidden persistence/path scans pass; no real support directory, UserDefaults suite, or Keychain service was accessed |
-| Generated build storage is bounded and incrementally reused | complete | Only `.deriveddata-prism-native` (642M) and `.deriveddata-prism-native-backend` (143M) remain; the two latest shared xcresult bundles are retained and the M10-W3 isolated clean tree is deleted |
+| Generated build storage is bounded and incrementally reused | complete | Shared incremental roots `.deriveddata-prism-native` (634M) and `.deriveddata-prism-native-backend` (98M) are retained; the pre-existing full-root Qt cache `build-native` (2.4G) is documented and reused only for the legacy target check; the two latest shared xcresult bundles are retained and no task-owned `/private/tmp/prism-*` directory remains |
 | Native Xcode target exists | complete | Commit `5172b3a75` |
 | Objective-C++ public bridge exposes only Foundation types | complete | Commit `5172b3a75`; M1-W3 automated public-header scan and forbidden-token negative test |
 | Native tests target exists | complete | M1-W1; shared scheme and standalone `PrismNativeTests.xctest` target |
@@ -2311,34 +2311,39 @@ Historical M4-M9 work established native surfaces and contracts. It did not comp
 
 ### M11-W1: Production composition foundation
 
+Status: complete
+
+Outcome: completed the first production vertical slice without `launcher/ui`. `PrismNativeApp` now composes a `PRApplicationIdentity`-rooted production runtime, `PRPrismBridge`, `FrontendFacade`, and `PrismShellModel`; the shell receives persistent instance summaries and changes, and a metadata-only instance record can be created and reconstructed under a synthetic isolated root. Test-only fixture rows remain in test composition; `fixture.instance`, empty production shell defaults, and missing production bridge injection were removed from the app composition.
+
+Investigation and domain ownership: `Application` remains a `QApplication` owner with global Qt state, `InstanceList` remains a `QAbstractListModel` with watcher/task ownership, and the legacy `launcher/ui` path was not pulled across the native boundary. The smallest safe slice uses the existing Prism `INIFile` persistence implementation through a QtCore-only private source split. `launcher/CMakeLists.txt` keeps `Launcher_logic` and the Qt Widgets executable independent from `Launcher_frontend`; the native target links only the QWidget-free frontend archive. No Swift source imports Qt, C++, or a pointer-bearing facade type.
+
+Files changed: `launcher/frontend/CMakeLists.txt`, `FrontendFacade.h`, `FrontendFacade.cpp`, `ProductionInstanceRuntime.h`, `ProductionInstanceRuntime.cpp`, and `FrontendFacadeProductionInstanceTest.cpp`; `launcher/settings/INIFile.cpp` was made usable in the QtCore-only target without duplicating the INI format; `macos/PrismNative/Bridge/PrismBridge.h` and `.mm`; `PrismNativeApp.swift`, `ContentView.swift`, `PrismShellModel.swift`, and `PrismCommandModel.swift`; the native Xcode project architecture/link settings; and the related identity, infrastructure, and shell tests.
+
+Architecture and safety: `ProductionInstanceRuntime` accepts only the explicit absolute `PRApplicationIdentity.applicationSupportDirectory`, owns `<root>/instances`, reads direct child `instance.cfg` records using Prism's existing `INIFile`, rejects traversal and symlinked instance/config paths, writes the requested metadata, and reads it back before confirming success. The runtime owns the observation worker, pending changes, cancellation, and deterministic join/shutdown; external handlers run outside its mutex. Objective-C++ owns the runtime and converts snapshots/events to Foundation values delivered on the main actor. Swift owns only rows, selection, loading/empty/content/failed state, retry, and command presentation. The default production bridge now starts/stops the instance observer and has no fixture or sample dataset. All tests use disposable synthetic roots; no upstream support directory, account, Java state, Keychain item, or live service was read.
+
+HIG decision: no new custom control or rendering was added. The existing SwiftUI `NavigationSplitView`, `List`, searchable shell, system commands, toolbar actions, and accessibility metadata remain the native presentation surface, with state injected at the feature boundary. This follows Apple's sidebar, list, menu, and command guidance recorded in PLAN §6; no third-party UI framework or HIG exception is needed. No app launch, screenshot, recording, or visual snapshot was used.
+
+Verification:
+
+- `cmake -S launcher/frontend -B .deriveddata-prism-native-backend -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DCMAKE_OSX_ARCHITECTURES=arm64`, `cmake --build .deriveddata-prism-native-backend -j2`, and `ctest --test-dir .deriveddata-prism-native-backend --output-on-failure` — passed, 6/6 CTest; the same shared path was reconfigured and built as Release — passed, 6/6 CTest.
+- `xcodebuild -quiet -project macos/PrismNative.xcodeproj -scheme PrismNative -configuration Debug -derivedDataPath .deriveddata-prism-native -destination 'platform=macOS,arch=arm64' CODE_SIGNING_ALLOWED=NO build` and `test` — passed; final Debug result bundle `Test-PrismNative-2026.08.09_17-56-08-+0800.xcresult`, 171/171 passed, 0 failed, 0 skipped. Release build and `test` with the same shared path — passed; final Release result bundle `Test-PrismNative-2026.08.09_17-56-47-+0800.xcresult`, 171/171 passed, 0 failed, 0 skipped.
+- `plutil -lint macos/PrismNative/Resources/Info.plist macos/PrismNative/Resources/PrismNative.entitlements` — both OK. `plutil -extract CFBundleIdentifier raw` on the built Debug and Release Info.plists — both returned `com.lloydME.Prism`.
+- Existing Qt composition was checked without launching it: `cmake -S . -B build-native -DVCPKG_MANIFEST_INSTALL=OFF` passed and reported `Prism -> Launcher_logic; no frontend link`; `cmake --build build-native --config Debug --target Launcher_logic` passed all 414/414 steps; `cmake --build build-native --config Debug --target Prism` passed 4/4 and linked the legacy Qt executable. A stale-target attempt that would have regenerated the vcpkg manifest was interrupted when it tried to access the user-level vcpkg registry; the successful check used only the already-installed local dependencies and did not access production data or services.
+- The C++ public-header CTest and native source/identity tests passed the QWidget/QDialog boundary, Objective-C++ ownership, exact bundle-root, no-fixture-production-composition, accessibility, localization, command/menu/shortcut, cancellation, retry, and recovery checks. `git diff --check` passed. No signing, installation, publishing, push, or Qt UI removal occurred.
+
+Build storage and cleanup: the prior shared-ledger snapshot was `.deriveddata-prism-native` 642M and `.deriveddata-prism-native-backend` 143M, with no task-owned `/private/tmp/prism-*` directory. Final shared sizes after this unit are `.deriveddata-prism-native` 634M and `.deriveddata-prism-native-backend` 98M. Only the two final relevant shared XCTest bundles above remain in the shared test log; the exact older bundles `Test-PrismNative-2026.08.09_17-36-39-+0800.xcresult`, `Test-PrismNative-2026.08.09_17-38-24-+0800.xcresult`, `Test-PrismNative-2026.08.09_17-45-47-+0800.xcresult`, and `Test-PrismNative-2026.08.09_17-46-39-+0800.xcresult` were removed. The pre-existing full-root Qt cache `build-native` is 2.4G and was retained as the existing legacy-target verification cache; no new isolated build directory or `/private/tmp/prism-*` path was created.
+
+Risks and limits: this unit proves only the instance-library persistence/observation seam and a non-secret metadata-only creation record. The record is not yet a launch-capable Minecraft `BaseInstance`; settings, Java, accounts/authentication, launch/process/tasks/logs, detail/resource files, creation/import/export, providers, utilities, and update services still require their ordered M11 adapters. Those later production ports remain explicit rather than silently fixture-backed. The existing Qt `Application`/`InstanceList` owners remain retained until M11-W10 parity and M12 retirement gates; no other-platform behavior changed.
+
+Commit: pending implementation commit; this entry will be finalized with the implementation hash in the immediate progress-ledger commit.
+
+Next ready work unit: M11-W2 Production global and instance settings persistence.
+
+### M11-W2: Production global and instance settings persistence
+
 Status: ready
 
-Outcome: implement the first complete production vertical slice without `launcher/ui`: a bundle-rooted production runtime owns one QWidget-free facade and Objective-C++ bridge; the native shell receives real instance snapshots and changes; a metadata-only disposable instance record can be created through existing Prism domain behavior under a synthetic isolated root; destroying and reconstructing the runtime reloads that record. Remove `fixture.instance`, empty production shell defaults, and missing bridge injection from `PrismNativeApp` while keeping all test fixtures test-only.
-
-Required investigation: trace current instance persistence and observation ownership through `Application`, `InstanceList`, `InstanceTask`, settings/path services, `launcher/CMakeLists.txt`, `launcher/frontend`, `PRPrismBridge`, `PrismNativeRuntime`, `PrismShellModel`, and command routing. Identify the minimum domain library/source split needed by a non-QWidget composition. Characterize any `QApplication`, global `APPLICATION`, Qt model, thread, watcher, or UI dependency before changing it. Do not duplicate instance JSON/config formats in Swift.
-
-Required architecture:
-
-1. Add a production runtime/dependency owner below Objective-C++ that initializes existing domain services only from the explicit `PRApplicationIdentity.applicationSupportDirectory` root and shuts them down deterministically.
-2. The facade remains QWidget-free and exposes only existing immutable instance DTO/change contracts. Objective-C++ alone owns C++/QtCore objects and converts to Foundation values; Swift owns presentation state only.
-3. `PrismNativeApp` injects the production bridge into `PrismShellModel` and related command state. Production source must contain no hard-coded fixture identifier, sample instance, fixture callback, or test-only dataset.
-4. The vertical slice must exercise existing Prism instance persistence/domain code. A separate JSON implementation created only for Native Prism does not satisfy this unit.
-5. Filesystem watchers, dispatch queues, cancellation tokens, and callbacks must stop on bridge/runtime shutdown and must not deliver stale events after reconstruction.
-6. All roots and mutations must pass the existing `com.lloydME.Prism` canonical containment contract. Never inspect or import real upstream data.
-
-Required evidence:
-
-- Production-composition source test proves `PrismNativeApp` passes its bridge/runtime to the shell and contains no `fixture.instance`, sample rows, no-op shell loader, or unconditional unavailable instance loader.
-- C++ production-adapter test creates a disposable isolated root, creates one metadata-only instance through existing domain behavior, lists it, observes its change, destroys all owners, reconstructs them, and lists the same persisted instance again.
-- Bridge integration test receives those production-adapter snapshots/events as Foundation values on the main actor and proves cancellation/shutdown suppression.
-- Swift model/command tests consume bridge-delivered rows, selection, changes, empty/error/retry states, and reconstruction without constructing fixture rows in production composition.
-- Existing Qt launcher remains buildable; the native facade/public headers remain free of QWidget/QDialog; directly relevant C++ tests, full native tests, Debug/Release builds, Bundle ID/path checks, localization/accessibility/command scans, and `git diff --check` pass.
-- Use shared incremental DerivedData/CMake roots, record starting/final sizes, and remove any justified temporary isolation output.
-- Do not launch either app or Minecraft, take screenshots, access real accounts/Keychain/upstream data, use live network, sign, install, publish, push, or remove Qt UI.
-
-Completion requirement: the default native shell is production-wired for persistent instance listing/observation and the first safe creation seam; reconstruction evidence passes; no fixture/empty/no-op default remains for this slice; `PROGRESS.md` records exact domain owners, source split, commands, results, risks, cleanup, commit, and makes only M11-W2 ready.
-
-Commit: not created.
+Prerequisite: M11-W1 is complete. This unit must connect the native Settings scene and instance settings form to bundle-rooted production persistence, with round-trip, validation, cancellation, and recovery evidence; it must not inspect or import upstream settings.
 
 Queued sequence after M11-W1:
 

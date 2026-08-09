@@ -2798,6 +2798,7 @@ bool FrontendFacade::shutdown() noexcept
     }
 
     m_lifecycleState = FrontendLifecycleState::ShuttingDown;
+    stopInstanceObservation();
     try {
         if (m_runtimeDependencies.cancelPendingWork) {
             m_runtimeDependencies.cancelPendingWork();
@@ -2827,6 +2828,46 @@ std::vector<FrontendInstanceSnapshot> FrontendFacade::instanceSnapshots() const
     auto snapshots = m_runtimeDependencies.loadInstanceSnapshots(m_dataRoot);
     validateInstanceSnapshots(snapshots);
     return snapshots;
+}
+
+FrontendMetadataInstanceResult FrontendFacade::createMetadataInstance(
+    const FrontendMetadataInstanceRequest& request) const
+{
+    ensureRunning(m_lifecycleState);
+    if (!m_runtimeDependencies.createMetadataInstance) {
+        return { FrontendMetadataInstanceOutcome::Failed, std::nullopt, "Metadata instance creation is unavailable" };
+    }
+
+    auto result = m_runtimeDependencies.createMetadataInstance(m_dataRoot, request);
+    if (result.outcome == FrontendMetadataInstanceOutcome::Succeeded) {
+        if (!result.instance.has_value() || result.instance->id != request.id || result.instance->name != request.name
+            || result.instance->iconKey != request.iconKey) {
+            throw std::invalid_argument("Successful metadata instance creation must confirm the requested metadata");
+        }
+    } else if (result.instance.has_value()) {
+        throw std::invalid_argument("Failed metadata instance creation cannot return an instance");
+    }
+    return result;
+}
+
+bool FrontendFacade::startInstanceObservation(FrontendRuntimeDependencies::InstanceChangeHandler handler) const
+{
+    ensureRunning(m_lifecycleState);
+    if (!m_runtimeDependencies.startInstanceObservation) {
+        return false;
+    }
+    return m_runtimeDependencies.startInstanceObservation(std::move(handler));
+}
+
+void FrontendFacade::stopInstanceObservation() const noexcept
+{
+    if (!m_runtimeDependencies.stopInstanceObservation) {
+        return;
+    }
+    try {
+        m_runtimeDependencies.stopInstanceObservation();
+    } catch (...) {
+    }
 }
 
 std::optional<FrontendInstanceDetailsSnapshot> FrontendFacade::instanceDetails(const std::string& instanceIdentifier) const

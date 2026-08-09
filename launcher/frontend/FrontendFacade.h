@@ -243,6 +243,23 @@ struct FrontendInstanceDetailMutationResult final {
 
 enum class FrontendInstanceChangeKind : std::uint8_t { Added, Updated, Removed };
 
+enum class FrontendMetadataInstanceOutcome : std::uint8_t { Succeeded, InvalidInput, Failed };
+
+/// The first production composition seam. It writes only non-secret instance
+/// metadata; version resolution, accounts, launch settings, and external
+/// effects remain owned by their later adapters.
+struct FrontendMetadataInstanceRequest final {
+    std::string id;
+    std::string name;
+    std::string iconKey = "default";
+};
+
+struct FrontendMetadataInstanceResult final {
+    FrontendMetadataInstanceOutcome outcome = FrontendMetadataInstanceOutcome::Failed;
+    std::optional<FrontendInstanceSnapshot> instance;
+    std::string diagnosticText;
+};
+
 enum class FrontendLifecycleState : std::uint8_t { Running, ShuttingDown, Stopped };
 
 enum class FrontendInstanceCommandResult : std::uint8_t { Succeeded, UnknownInstance, Rejected };
@@ -1008,6 +1025,11 @@ struct FrontendRuntimeDependencies final {
     using InstanceDetailMutator = std::function<FrontendInstanceDetailMutationResult(
         const std::filesystem::path&, const std::string&, const FrontendInstanceDetailMutationRequest&)>;
     using InstanceChangeLoader = std::function<std::vector<FrontendInstanceChange>(const std::filesystem::path&)>;
+    using MetadataInstanceCreator = std::function<FrontendMetadataInstanceResult(
+        const std::filesystem::path&, const FrontendMetadataInstanceRequest&)>;
+    using InstanceChangeHandler = std::function<void(const FrontendInstanceChange&)>;
+    using InstanceObservationStarter = std::function<bool(InstanceChangeHandler)>;
+    using InstanceObservationStopper = std::function<void()>;
     using InstanceCommand = std::function<FrontendInstanceCommandResult(const std::filesystem::path&, const std::string&)>;
     using InstanceNotesUpdater = std::function<FrontendInstanceNotesUpdateResult(
         const std::filesystem::path&, const std::string&, const std::string&)>;
@@ -1101,6 +1123,9 @@ struct FrontendRuntimeDependencies final {
     InstanceLogLoader loadInstanceLog;
     InstanceDetailMutator mutateInstanceDetail;
     InstanceChangeLoader loadInstanceChanges;
+    MetadataInstanceCreator createMetadataInstance;
+    InstanceObservationStarter startInstanceObservation;
+    InstanceObservationStopper stopInstanceObservation;
     InstanceCommand launchInstance;
     InstanceCommand stopInstance;
     InstanceNotesUpdater updateInstanceNotes;
@@ -1153,6 +1178,9 @@ class FrontendFacade final {
     FrontendLifecycleState lifecycleState() const noexcept { return m_lifecycleState; }
     bool shutdown() noexcept;
     std::vector<FrontendInstanceSnapshot> instanceSnapshots() const;
+    FrontendMetadataInstanceResult createMetadataInstance(const FrontendMetadataInstanceRequest& request) const;
+    bool startInstanceObservation(FrontendRuntimeDependencies::InstanceChangeHandler handler) const;
+    void stopInstanceObservation() const noexcept;
     std::optional<FrontendInstanceDetailsSnapshot> instanceDetails(const std::string& instanceIdentifier) const;
     std::optional<std::vector<FrontendInstanceComponentSnapshot>> instanceComponents(
         const std::string& instanceIdentifier) const;

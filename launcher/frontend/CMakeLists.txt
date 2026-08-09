@@ -3,15 +3,21 @@ cmake_minimum_required(VERSION 3.25)
 project(Launcher_frontend LANGUAGES CXX)
 include(CTest)
 
-# The native frontend boundary is deliberately free of Qt and launcher/ui
-# dependencies until a later work unit adds tested domain adapters.
+find_package(Qt6 REQUIRED COMPONENTS Core)
+
+# The native frontend boundary uses only QtCore persistence primitives. Qt
+# Widgets, QDialog, QApplication, and launcher/ui remain outside this target.
 set(LAUNCHER_FRONTEND_PUBLIC_HEADERS
     FrontendFacade.h
+    ProductionInstanceRuntime.h
 )
 
 add_library(Launcher_frontend STATIC
     FrontendFacade.cpp
+    ProductionInstanceRuntime.cpp
+    ../settings/INIFile.cpp
     ${LAUNCHER_FRONTEND_PUBLIC_HEADERS}
+    ../settings/INIFile.h
 )
 
 target_include_directories(Launcher_frontend
@@ -20,6 +26,8 @@ target_include_directories(Launcher_frontend
 )
 
 target_compile_features(Launcher_frontend PRIVATE cxx_std_20)
+target_include_directories(Launcher_frontend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_link_libraries(Launcher_frontend PUBLIC Qt6::Core)
 
 if(BUILD_TESTING)
     add_executable(Launcher_frontend_contract_test
@@ -56,4 +64,11 @@ if(BUILD_TESTING)
     target_compile_features(Launcher_frontend_public_header_test PRIVATE cxx_std_20)
     target_include_directories(Launcher_frontend_public_header_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME FrontendFacadePublicHeaders COMMAND Launcher_frontend_public_header_test)
+
+    add_executable(Launcher_frontend_production_instance_test
+        FrontendFacadeProductionInstanceTest.cpp
+    )
+    target_compile_features(Launcher_frontend_production_instance_test PRIVATE cxx_std_20)
+    target_link_libraries(Launcher_frontend_production_instance_test PRIVATE Launcher_frontend)
+    add_test(NAME FrontendFacadeProductionInstance COMMAND Launcher_frontend_production_instance_test)
 endif()

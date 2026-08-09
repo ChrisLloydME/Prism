@@ -3,7 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ContentView: View {
-    @StateObject private var shellModel = PrismShellModel()
+    @StateObject private var shellModel: PrismShellModel
     @StateObject private var instanceDetailsModel = PrismInstanceDetailsModel()
     @StateObject private var instanceSettingsModel = PrismInstanceSettingsModel()
     @StateObject private var instanceComponentsModel = PrismInstanceComponentsModel()
@@ -16,7 +16,12 @@ struct ContentView: View {
     @ObservedObject private var commandModel: PrismCommandModel
     @ObservedObject private var taskModel: PrismTaskPresentationModel
 
-    init(commandModel: PrismCommandModel, taskModel: PrismTaskPresentationModel) {
+    init(
+        commandModel: PrismCommandModel,
+        taskModel: PrismTaskPresentationModel,
+        bridge: PRPrismBridge? = nil
+    ) {
+        _shellModel = StateObject(wrappedValue: PrismShellModel(bridge: bridge))
         _commandModel = ObservedObject(wrappedValue: commandModel)
         _taskModel = ObservedObject(wrappedValue: taskModel)
     }

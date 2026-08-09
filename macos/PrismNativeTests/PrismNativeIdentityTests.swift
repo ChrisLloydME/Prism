@@ -134,9 +134,29 @@ final class PrismNativeIdentityTests: XCTestCase {
             contentsOf: root.appendingPathComponent("PrismNative/Bridge/PrismBridge.mm"),
             encoding: .utf8
         )
+        let appContentSource = try String(
+            contentsOf: root.appendingPathComponent("PrismNative/App/ContentView.swift"),
+            encoding: .utf8
+        )
+        let shellSource = try String(
+            contentsOf: root.appendingPathComponent("PrismNative/App/PrismShellModel.swift"),
+            encoding: .utf8
+        )
+        let commandSource = try String(
+            contentsOf: root.appendingPathComponent("PrismNative/App/PrismCommandModel.swift"),
+            encoding: .utf8
+        )
 
         XCTAssertTrue(appSource.contains("PRApplicationIdentity()"))
         XCTAssertTrue(appSource.contains("applicationIdentity: identity"))
+        XCTAssertTrue(appSource.contains("PrismCommandModel(bridge: runtime.bridge)"))
+        XCTAssertTrue(appSource.contains("bridge: nativeRuntime.bridge"))
+        XCTAssertFalse(appSource.contains("fixture.instance"))
+        XCTAssertTrue(appContentSource.contains("PrismShellModel(bridge: bridge)"))
+        XCTAssertTrue(shellSource.contains("observeInstanceChanges"))
+        XCTAssertTrue(shellSource.contains("loadInstanceSummaries"))
+        XCTAssertTrue(commandSource.contains("bridge.launchInstance"))
+        XCTAssertTrue(commandSource.contains("bridge.stopInstance"))
         let forbiddenPersistenceTokens = [
             "PrismLauncher",
             "Application Support/Prism",

@@ -2321,10 +2321,23 @@ final class PrismShellModel: ObservableObject {
     @Published private(set) var searchText = ""
     @Published private(set) var grouping: PrismInstanceGrouping = .none
     @Published private(set) var sortOrder: PrismInstanceSortOrder = .nameAscending
+    private let bridge: PRPrismBridge?
     private let onRetry: (() -> Void)?
+    private var changeObservation: PRBridgeObservationToken?
+    private var snapshotRequest: PRBridgeObservationToken?
 
-    init(onRetry: (() -> Void)? = nil) {
+    init(bridge: PRPrismBridge? = nil, onRetry: (() -> Void)? = nil) {
+        self.bridge = bridge
         self.onRetry = onRetry
+        guard let bridge else {
+            return
+        }
+
+        detailState = .loading
+        changeObservation = bridge.observeInstanceChanges { [weak self] change in
+            self?.apply(change)
+        }
+        loadSnapshots()
     }
 
     var recoveryAction: PrismShellRecoveryAction? {
@@ -2382,6 +2395,11 @@ final class PrismShellModel: ObservableObject {
         guard isRetryAvailable else {
             return
         }
+        if bridge != nil {
+            detailState = .loading
+            loadSnapshots()
+            return
+        }
         onRetry?()
     }
 
@@ -2426,6 +2444,49 @@ final class PrismShellModel: ObservableObject {
 
     func setSortOrder(_ sortOrder: PrismInstanceSortOrder) {
         self.sortOrder = sortOrder
+    }
+
+    private func apply(summaries: [PRInstanceSummary], error: PRBridgeError?) {
+        guard error == nil else {
+            detailState = .failed(.instanceLoad)
+            return
+        }
+
+        setInstances(summaries.compactMap(Self.row(from:)))
+        detailState = instances.isEmpty ? .empty : .content
+    }
+
+    private func loadSnapshots() {
+        guard let bridge else {
+            return
+        }
+        snapshotRequest = bridge.loadInstanceSummaries { [weak self] summaries, error in
+            self?.snapshotRequest = nil
+            self?.apply(summaries: summaries, error: error)
+        }
+    }
+
+    private func apply(_ change: PRInstanceChange) {
+        var updatedInstances = instances
+        switch change.kind {
+        case .added, .updated:
+            guard let summary = change.summary, let row = Self.row(from: summary) else {
+                return
+            }
+            updatedInstances.removeAll { $0.id == row.id }
+            updatedInstances.append(row)
+        case .removed:
+            updatedInstances.removeAll { $0.id == change.identifier }
+        @unknown default:
+            return
+        }
+
+        setInstances(updatedInstances)
+        detailState = instances.isEmpty ? .empty : .content
+    }
+
+    private static func row(from summary: PRInstanceSummary) -> PrismInstanceRow? {
+        PrismInstanceRow(id: summary.identifier, name: summary.name, group: summary.groupID)
     }
 
     private func matchesSearch(_ instance: PrismInstanceRow) -> Bool {

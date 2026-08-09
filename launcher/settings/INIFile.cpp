@@ -37,16 +37,17 @@
 #include "settings/INIFile.h"
 
 #include <AssertHelpers.h>
-#include <FileSystem.h>
 
 #include <QDebug>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QStringList>
 #include <QTemporaryFile>
 #include <QTextStream>
 
 #include <QSettings>
-#include "Json.h"
 
 INIFile::INIFile() {}
 
@@ -164,10 +165,14 @@ QVariant migrateQByteArrayToBase64(QString key, QVariant value)
         return QString::fromUtf8(value.toByteArray());
     }
     if (key == "linkedInstances") {
-        return Json::fromStringList(value.toStringList());
+        QJsonArray array;
+        for (const auto& item : value.toStringList()) {
+            array.append(item);
+        }
+        return QString::fromUtf8(QJsonDocument(array).toJson(QJsonDocument::Compact));
     }
     if (key == "Env") {
-        return Json::fromMap(value.toMap());
+        return QString::fromUtf8(QJsonDocument(QJsonObject::fromVariantMap(value.toMap())).toJson(QJsonDocument::Compact));
     }
     return value;
 }

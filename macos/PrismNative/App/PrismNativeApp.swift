@@ -24,8 +24,8 @@ final class PrismNativeRuntime: ObservableObject {
 
 @main
 struct PrismNativeApp: App {
-    @StateObject private var nativeRuntime = PrismNativeRuntime()
-    @StateObject private var commandModel = PrismCommandModel()
+    @StateObject private var nativeRuntime: PrismNativeRuntime
+    @StateObject private var commandModel: PrismCommandModel
     @StateObject private var taskModel = PrismTaskPresentationModel()
     @StateObject private var globalSettingsModel = PrismGlobalSettingsModel()
     @StateObject private var javaDiscoveryModel = PrismJavaDiscoveryModel()
@@ -34,15 +34,21 @@ struct PrismNativeApp: App {
     @StateObject private var offlineIdentityModel = PrismOfflineLaunchIdentityModel()
     @StateObject private var skinModel = PrismSkinManagementModel()
     @StateObject private var shortcutModel = PrismShortcutCreationModel(
-        instanceIdentifier: "fixture.instance",
-        instanceName: "Fixture Instance",
-        worlds: [PrismShortcutWorld(id: "fixture.world", displayName: "Fixture World")],
-        profiles: [PrismShortcutProfile(id: "fixture.profile", displayName: "Fixture Profile")]
+        instanceIdentifier: "",
+        instanceName: "",
+        worlds: [],
+        profiles: []
     )
+
+    init() {
+        let runtime = PrismNativeRuntime()
+        _nativeRuntime = StateObject(wrappedValue: runtime)
+        _commandModel = StateObject(wrappedValue: PrismCommandModel(bridge: runtime.bridge))
+    }
 
     var body: some Scene {
         WindowGroup {
-            ContentView(commandModel: commandModel, taskModel: taskModel)
+            ContentView(commandModel: commandModel, taskModel: taskModel, bridge: nativeRuntime.bridge)
         }
         .defaultSize(width: 1040, height: 680)
         .commands {
