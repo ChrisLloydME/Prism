@@ -2335,7 +2335,7 @@ Build storage and cleanup: the prior shared-ledger snapshot was `.deriveddata-pr
 
 Risks and limits: this unit proves only the instance-library persistence/observation seam and a non-secret metadata-only creation record. The record is not yet a launch-capable Minecraft `BaseInstance`; settings, Java, accounts/authentication, launch/process/tasks/logs, detail/resource files, creation/import/export, providers, utilities, and update services still require their ordered M11 adapters. Those later production ports remain explicit rather than silently fixture-backed. The existing Qt `Application`/`InstanceList` owners remain retained until M11-W10 parity and M12 retirement gates; no other-platform behavior changed.
 
-Commit: pending implementation commit; this entry will be finalized with the implementation hash in the immediate progress-ledger commit.
+Commit: `b2cb8b3b8` (implementation); this entry is finalized in the immediate progress-ledger commit.
 
 Next ready work unit: M11-W2 Production global and instance settings persistence.
 
@@ -2423,6 +2423,7 @@ Queued sequence after M11-W1:
 | `a6c1d5614` | Recorded the M10-W1 final parity audit, mixed acceptance status, explicit cutover prerequisites, and the sole next ready M10-W2 unit | Shared facade CMake/CTest 5/5; shared Debug/Release builds; full native XCTest 168/168 in both configurations; Bundle ID `com.lloydME.Prism`; ObjC/ObjC++ syntax; composition/retained-caller/localization/persistence scans; storage inventory; `git diff --check` |
 | `b359becb1` | Migrated the native macOS bundle metadata, version, icon, entitlements, document/URL declarations, and static update metadata into PrismNative | Shared-path Debug/Release builds; focused packaging XCTest 1/1; full Debug/Release XCTest 169/169; Bundle ID/version/icon/entitlement/plist checks; no-signing/no-launch evidence; storage inventory; `git diff --check` |
 | `bf4ddec93` | Proved clean isolated Debug/Release builds and full native tests for the finalized target, then removed the temporary DerivedData tree | `/private/tmp/prism-m10-w3-clean` Debug/Release builds; clean Debug/Release XCTest 169/169; Bundle ID/version/icon/universal-architecture checks; exact temporary cleanup; `git diff --check` |
+| `b2cb8b3b8` | Wired the production bundle-rooted instance runtime, facade ports, Objective-C++ bridge, and Swift shell/command composition with persistent metadata reconstruction and observation | Shared arm64 CMake Debug/Release CTest 6/6; existing Qt `Launcher_logic` 414/414 and `Prism` target; shared arm64 native Debug/Release XCTest 171/171; Bundle ID `com.lloydME.Prism`; Objective-C/Objective-C++ syntax; public-header, production-composition, accessibility, localization, command, cancellation, and storage scans; `git diff --check` |
 
 ## Current architecture findings
 
