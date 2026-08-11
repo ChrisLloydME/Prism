@@ -77,10 +77,12 @@ final class PrismProviderBrowsingTests: XCTestCase {
         XCTAssertEqual(versionRequest.packIdentifier, "pack.fixture")
         XCTAssertEqual(versionRequest.gameVersions, ["1.21.1"])
         XCTAssertEqual(versionRequest.loaders, ["fabric"])
+        XCTAssertEqual(versionRequest.releaseTypes.map(\.intValue), [1, 2])
 
         let version = try XCTUnwrap(
             PRProviderVersion(
                 provider: .curseForge,
+                installKind: .curseForgeFlame,
                 identifier: "version.fixture",
                 packIdentifier: "pack.fixture",
                 name: "1.0.0 Fabric",
@@ -156,7 +158,11 @@ final class PrismProviderBrowsingTests: XCTestCase {
             )
         )
         XCTAssertTrue(model.apply(result: emptyResult, generation: browseGenerations[0]))
-        if case .empty = model.browseState {} else { XCTFail("Expected empty browse state") }
+        if case .empty(let nextOffset) = model.browseState {
+            XCTAssertNil(nextOffset)
+        } else {
+            XCTFail("Expected empty browse state")
+        }
 
         XCTAssertTrue(model.startBrowse())
         let failure = try XCTUnwrap(
@@ -224,6 +230,168 @@ final class PrismProviderBrowsingTests: XCTestCase {
         XCTAssertFalse(model.apply(result: versionFailure, generation: versionGenerations.last))
     }
 
+    func testCoordinatorMapsSelectedProviderVersionIntoInstallationDraft() throws {
+        let coordinator = PrismProviderCoordinator(bridge: nil)
+        let browserModel = PrismProviderBrowserModel()
+        let installationModel = PrismProviderInstallationModel(icons: ["default"])
+        coordinator.bind(browserModel: browserModel, installationModel: installationModel)
+
+        let expectedKinds: [(PrismProvider, PRProviderInstallKind, PrismProviderInstallKind)] = [
+            (.modrinth, .modrinth, .modrinth),
+            (.curseForge, .curseForgeFlame, .curseForgeFlame),
+            (.ftb, .FTB, .ftb),
+            (.atLauncher, .atLauncher, .atLauncher),
+            (.technic, .technicZip, .technicZip),
+            (.technic, .technicSolder, .technicSolder),
+            (.legacyFTB, .legacyFTB, .legacyFTB),
+        ]
+        for (provider, bridgeInstallKind, expectedKind) in expectedKinds {
+            let packID = "\(provider.rawValue).pack"
+            let versionID = "\(provider.rawValue).version"
+            let pack = try XCTUnwrap(PrismProviderPackRow(bridgePack: try XCTUnwrap(PRProviderPack(
+                provider: provider.bridgeValue,
+                identifier: packID,
+                name: "\(provider.displayName) Pack",
+                slug: nil,
+                summary: nil,
+                author: nil,
+                categories: [],
+                versionsAvailable: true,
+                supportsVersionSelection: true
+            ))))
+            let version = try XCTUnwrap(PrismProviderVersionRow(bridgeVersion: try XCTUnwrap(PRProviderVersion(
+                provider: provider.bridgeValue,
+                installKind: bridgeInstallKind,
+                identifier: versionID,
+                packIdentifier: packID,
+                name: "Version 1",
+                version: "1.0",
+                gameVersions: ["1.21.1"],
+                loaders: [],
+                releaseType: .release,
+                publishedUnixSeconds: 1,
+                recommended: true
+            ))))
+
+            XCTAssertTrue(coordinator.prepareInstallation(pack: pack, version: version))
+            XCTAssertEqual(coordinator.presentedInstallation, .selectedPack)
+            XCTAssertEqual(installationModel.draft.kind, expectedKind)
+            XCTAssertEqual(installationModel.draft.packIdentifier, packID)
+            XCTAssertEqual(installationModel.draft.versionIdentifier, versionID)
+            XCTAssertEqual(installationModel.draft.name, "\(provider.displayName) Pack")
+            XCTAssertTrue(installationModel.canInstall)
+            coordinator.dismissInstallation()
+            XCTAssertNil(coordinator.presentedInstallation)
+        }
+
+        XCTAssertNil(PRProviderVersion(
+            provider: .technic,
+            installKind: .modrinth,
+            identifier: "invalid.version",
+            packIdentifier: "invalid.pack",
+            name: "Invalid Version",
+            version: "1.0",
+            gameVersions: [],
+            loaders: [],
+            releaseType: .release,
+            publishedUnixSeconds: 1,
+            recommended: false
+        ))
+    }
+
+    func testEmptyFilteredPageRetainsServerPagination() throws {
+        var requests: [PRProviderBrowseRequest] = []
+        let model = PrismProviderBrowserModel(onBrowse: { request, _ in requests.append(request) })
+
+        XCTAssertTrue(model.startBrowse())
+        let emptyPage = try XCTUnwrap(PRProviderBrowsePage(
+            provider: .modrinth,
+            offset: 0,
+            pageSize: 20,
+            nextOffset: NSNumber(value: 20),
+            packs: []
+        ))
+        let result = try XCTUnwrap(PRProviderBrowseResult(
+            page: emptyPage,
+            outcome: .succeeded,
+            localizationKey: "providers.browse.completed",
+            diagnosticText: nil,
+            retryable: false
+        ))
+        XCTAssertTrue(model.apply(result: result, generation: 1))
+        XCTAssertEqual(model.nextOffset, 20)
+        XCTAssertTrue(model.loadMore())
+        XCTAssertEqual(requests.map(\.offset), [0, 20])
+    }
+
+    func testProviderChangeCancelsWorkAndRejectsThePreviousProviderResult() throws {
+        var generations: [Int] = []
+        var cancellations = 0
+        let model = PrismProviderBrowserModel(
+            onBrowse: { _, generation in generations.append(generation) },
+            onCancel: { cancellations += 1 }
+        )
+        XCTAssertTrue(model.startBrowse())
+        model.setProvider(.curseForge)
+        XCTAssertEqual(model.provider, .curseForge)
+        XCTAssertEqual(model.browseState, .idle)
+        XCTAssertEqual(cancellations, 1)
+
+        let stalePage = try XCTUnwrap(PRProviderBrowsePage(
+            provider: .modrinth,
+            offset: 0,
+            pageSize: 20,
+            nextOffset: nil,
+            packs: []
+        ))
+        let staleResult = try XCTUnwrap(PRProviderBrowseResult(
+            page: stalePage,
+            outcome: .succeeded,
+            localizationKey: "providers.browse.completed",
+            diagnosticText: nil,
+            retryable: false
+        ))
+        XCTAssertFalse(model.apply(result: staleResult, generation: generations[0]))
+        XCTAssertEqual(model.browseState, .idle)
+    }
+
+    func testProductionCompositionRoutesDiscoverSelectionThroughBridgeOwnedCoordinator() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let browserSource = try String(
+            contentsOf: root.appendingPathComponent("PrismNative/App/PrismProviderBrowsing.swift"),
+            encoding: .utf8
+        )
+        let contentSource = try String(
+            contentsOf: root.appendingPathComponent("PrismNative/App/ContentView.swift"),
+            encoding: .utf8
+        )
+
+        for requiredToken in [
+            "final class PrismProviderCoordinator",
+            "bridge.browseProvider(",
+            "bridge.loadProviderVersions(",
+            "bridge.installProviderPack(",
+            "cancelBrowsing()",
+            "cancelInstallation()",
+            "Install Selected Version…",
+        ] {
+            XCTAssertTrue(browserSource.contains(requiredToken), "Missing production provider wiring: \(requiredToken)")
+        }
+        for requiredToken in [
+            "PrismProviderCoordinator(bridge: bridge)",
+            "providerCoordinator.bind(",
+            "shellModel.selectedSidebarItem == .discover",
+            "PrismProviderBrowserView(model: providerBrowserModel)",
+            "$providerCoordinator.presentedInstallation",
+            "PrismProviderInstallationView(",
+            ".interactiveDismissDisabled(providerInstallationModel.isInstalling)",
+        ] {
+            XCTAssertTrue(contentSource.contains(requiredToken), "Missing provider composition: \(requiredToken)")
+        }
+    }
+
     func testProviderSurfaceUsesSystemControlsAndKeepsBoundaryClean() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -233,9 +401,11 @@ final class PrismProviderBrowsingTests: XCTestCase {
 
         for requiredToken in [
             "PrismProviderBrowserModel",
+            "PrismProviderCoordinator",
             "Form {",
             "Section(\"Filters\")",
-            "Picker(\"Provider\"",
+            "\"Provider\",",
+            "selection: Binding(get: { model.provider }, set: { model.setProvider($0) })",
             "TextField(\"Search provider packs\"",
             "Toggle(\"Open source only\"",
             "List(model.rows)",
@@ -244,6 +414,7 @@ final class PrismProviderBrowsingTests: XCTestCase {
             ".keyboardShortcut(.defaultAction)",
             ".keyboardShortcut(.cancelAction)",
             ".accessibilityIdentifier(\"provider-browse.",
+            ".accessibilityHint",
             ".formStyle(.grouped)"
         ] {
             XCTAssertTrue(source.contains(requiredToken), "Missing native provider API: \(requiredToken)")

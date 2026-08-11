@@ -42,6 +42,21 @@ enum PrismProviderInstallKind: String, CaseIterable, Hashable, Identifiable, Sen
         case .customArchive: return .customArchive
         }
     }
+
+    init?(bridgeValue: PRProviderInstallKind) {
+        switch bridgeValue {
+        case .modrinth: self = .modrinth
+        case .curseForgeFlame: self = .curseForgeFlame
+        case .FTB: self = .ftb
+        case .legacyFTB: self = .legacyFTB
+        case .ftbImport: self = .ftbImport
+        case .atLauncher: self = .atLauncher
+        case .technicZip: self = .technicZip
+        case .technicSolder: self = .technicSolder
+        case .customArchive: self = .customArchive
+        @unknown default: return nil
+        }
+    }
 }
 
 enum PrismProviderInstallRollbackOutcome: String, Equatable, Sendable {
@@ -266,6 +281,7 @@ final class PrismProviderInstallationModel: ObservableObject {
     private var generation = 0
     private var filePanelGeneration = 0
     private var pendingRecoveryDecision: PrismProviderInstallRecoveryDecision?
+    private var retainedOptionalFileIdentifiers: [String] = []
 
     init(
         kinds: [PrismProviderInstallKind] = PrismProviderInstallKind.allCases,
@@ -325,6 +341,7 @@ final class PrismProviderInstallationModel: ObservableObject {
     func setKind(_ kind: PrismProviderInstallKind) {
         guard kinds.contains(kind) else { return }
         filePanelGeneration += 1
+        retainedOptionalFileIdentifiers = []
         draft.kind = kind
         if kind != .customArchive && kind != .ftbImport {
             draft.sourceURL = nil
@@ -366,6 +383,29 @@ final class PrismProviderInstallationModel: ObservableObject {
         draft.iconKey = iconKey
     }
 
+    @discardableResult
+    func prepare(
+        kind: PrismProviderInstallKind,
+        packIdentifier: String,
+        versionIdentifier: String,
+        name: String
+    ) -> Bool {
+        guard !isInstalling, kinds.contains(kind) else { return false }
+        let prepared = PrismProviderInstallationDraft(
+            kind: kind,
+            packIdentifier: packIdentifier,
+            versionIdentifier: versionIdentifier,
+            sourceURL: nil,
+            name: name,
+            groupID: "",
+            iconKey: icons[0]
+        ).normalized
+        guard prepared.validationMessage == nil else { return false }
+        reset()
+        draft = prepared
+        return true
+    }
+
     func makeBridgeRequest() -> PRProviderInstallRequest? {
         let normalized = draft.normalized
         guard normalized.validationMessage == nil else { return nil }
@@ -388,6 +428,9 @@ final class PrismProviderInstallationModel: ObservableObject {
     @discardableResult
     func startInstall() -> Bool {
         guard let request = makeBridgeRequest(), !isInstalling else { return false }
+        if pendingRecoveryDecision == nil {
+            retainedOptionalFileIdentifiers = []
+        }
         pendingRecoveryDecision = nil
         filePanelGeneration += 1
         generation += 1
@@ -402,6 +445,7 @@ final class PrismProviderInstallationModel: ObservableObject {
     func cancel() -> Bool {
         guard isInstalling else { return false }
         pendingRecoveryDecision = nil
+        retainedOptionalFileIdentifiers = []
         filePanelGeneration += 1
         generation += 1
         onCancel?()
@@ -412,6 +456,7 @@ final class PrismProviderInstallationModel: ObservableObject {
     @discardableResult
     func retry() -> Bool {
         guard let failure, failure.isRetryAvailable else { return false }
+        retainedOptionalFileIdentifiers = []
         if let prompt = failure.recoveryPrompt {
             pendingRecoveryDecision = PrismProviderInstallRecoveryDecision(
                 kind: prompt.kind,
@@ -445,10 +490,13 @@ final class PrismProviderInstallationModel: ObservableObject {
         guard let prompt = recoveryPrompt, prompt.kind.isFileSelection else { return false }
         let selectedIdentifiers = prompt.kind == .optionalFiles
             ? prompt.files.filter(\.selected).map(\.id)
-            : []
+            : retainedOptionalFileIdentifiers
         let resolvedIdentifiers = prompt.kind == .blockedFiles
             ? prompt.files.filter(\.selected).map(\.id)
             : []
+        if prompt.kind == .optionalFiles {
+            retainedOptionalFileIdentifiers = selectedIdentifiers
+        }
         pendingRecoveryDecision = PrismProviderInstallRecoveryDecision(
             kind: prompt.kind,
             action: .continue,
@@ -463,6 +511,7 @@ final class PrismProviderInstallationModel: ObservableObject {
     func cancelRecovery() -> Bool {
         guard recoveryPrompt != nil else { return false }
         pendingRecoveryDecision = nil
+        retainedOptionalFileIdentifiers = []
         filePanelGeneration += 1
         generation += 1
         state = .cancelled
@@ -528,8 +577,12 @@ final class PrismProviderInstallationModel: ObservableObject {
                 )
                 return false
             }
+            retainedOptionalFileIdentifiers = []
             state = .succeeded(instance)
         case .failed, .rejected:
+            if recoveryPrompt?.kind != .blockedFiles {
+                retainedOptionalFileIdentifiers = []
+            }
             state = .failed(
                 PrismProviderInstallationFailure(
                     localizationKey: localizationKey,
@@ -540,6 +593,7 @@ final class PrismProviderInstallationModel: ObservableObject {
                 )
             )
         case .cancelled:
+            retainedOptionalFileIdentifiers = []
             state = .cancelled
         }
         return true
@@ -553,6 +607,7 @@ final class PrismProviderInstallationModel: ObservableObject {
         }
         let localizationKey = error.localizationKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !localizationKey.isEmpty else { return false }
+        retainedOptionalFileIdentifiers = []
         state = .failed(
             PrismProviderInstallationFailure(
                 localizationKey: localizationKey,
@@ -568,6 +623,7 @@ final class PrismProviderInstallationModel: ObservableObject {
         filePanelGeneration += 1
         generation += 1
         pendingRecoveryDecision = nil
+        retainedOptionalFileIdentifiers = []
         state = .editing
     }
 

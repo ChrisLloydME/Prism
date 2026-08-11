@@ -380,6 +380,130 @@ final class PrismNativeInfrastructureTests: XCTestCase {
         XCTAssertNotNil(nativeBundle.path(forResource: "Prism", ofType: "icns"))
     }
 
+    func testNativeBuildOwnsQtStartupOrderingAndAClosedRuntimeBundle() throws {
+        let macosRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let repositoryRoot = macosRoot.deletingLastPathComponent()
+        let projectSource = try readSource(
+            at: macosRoot.appendingPathComponent("PrismNative.xcodeproj/project.pbxproj")
+        )
+        let bridgeSource = try readSource(
+            at: macosRoot.appendingPathComponent("PrismNative/Bridge/PrismBridge.mm")
+        )
+        let acquisitionSource = try readSource(
+            at: repositoryRoot.appendingPathComponent("launcher/frontend/ProductionInstanceAcquisitionRuntime.cpp")
+        )
+        let providerSource = try readSource(
+            at: repositoryRoot.appendingPathComponent("launcher/frontend/ProductionProviderRuntime.cpp")
+        )
+        let deployURL = macosRoot.appendingPathComponent("scripts/deploy-qt-runtime.sh")
+        let verifyURL = macosRoot.appendingPathComponent("scripts/verify-qt-runtime.sh")
+        let deploySource = try readSource(at: deployURL)
+
+        XCTAssertTrue(projectSource.contains("Deploy Qt Runtime"))
+        XCTAssertTrue(projectSource.contains("scripts/deploy-qt-runtime.sh"))
+        XCTAssertTrue(projectSource.contains("@executable_path/../Frameworks"))
+        XCTAssertTrue(projectSource.contains("ENABLE_HARDENED_RUNTIME = YES;"))
+        XCTAssertFalse(projectSource.contains("com.apple.security.cs.disable-library-validation"))
+        XCTAssertTrue(deploySource.contains("macdeployqt"))
+        XCTAssertTrue(deploySource.contains("-no-codesign"))
+        XCTAssertTrue(deploySource.contains("CODE_SIGNING_ALLOWED"))
+        XCTAssertTrue(deploySource.contains("signing_identity=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\""))
+        XCTAssertTrue(deploySource.contains("\"-codesign=${signing_identity}\""))
+        XCTAssertFalse(deploySource.contains("/usr/bin/codesign"))
+
+        XCTAssertTrue(bridgeSource.contains("[NSThread isMainThread]"))
+        XCTAssertTrue(bridgeSource.contains("new QCoreApplication"))
+        XCTAssertTrue(bridgeSource.contains("QtCore is process-scoped"))
+        XCTAssertFalse(acquisitionSource.contains("make_unique<QCoreApplication>"))
+        XCTAssertFalse(providerSource.contains("make_unique<QCoreApplication>"))
+
+        let nativeBundle = try XCTUnwrap(builtNativeBundle())
+        let verification = Process()
+        verification.executableURL = verifyURL
+        verification.arguments = [nativeBundle.bundleURL.path]
+        let output = Pipe()
+        verification.standardOutput = output
+        verification.standardError = output
+        try verification.run()
+        verification.waitUntilExit()
+        let diagnostic = String(
+            data: output.fileHandleForReading.readDataToEndOfFile(),
+            encoding: .utf8
+        ) ?? ""
+        XCTAssertEqual(verification.terminationStatus, 0, diagnostic)
+    }
+
+    func testQtRuntimeDeploymentPropagatesXcodeAdHocSigningWithoutLaunchingApp() throws {
+        let macosRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let deployURL = macosRoot.appendingPathComponent("scripts/deploy-qt-runtime.sh")
+        let fixtureRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PrismNativeQtDeployment-\(UUID().uuidString)", isDirectory: true)
+        let buildDirectory = fixtureRoot.appendingPathComponent("Build", isDirectory: true)
+        let applicationURL = buildDirectory.appendingPathComponent("Prism.app", isDirectory: true)
+        let executableDirectory = applicationURL.appendingPathComponent("Contents/MacOS", isDirectory: true)
+        let fakeDeployURL = fixtureRoot.appendingPathComponent("fake-macdeployqt.sh")
+        let argumentLogURL = fixtureRoot.appendingPathComponent("arguments.txt")
+        defer { try? FileManager.default.removeItem(at: fixtureRoot) }
+
+        try FileManager.default.createDirectory(at: executableDirectory, withIntermediateDirectories: true)
+        try "".write(
+            to: executableDirectory.appendingPathComponent("Prism"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let fakeDeploySource = """
+        #!/bin/sh
+        set -eu
+        printf '%s\\n' "$@" > "${PRISM_ARGUMENT_LOG:?}"
+        mkdir -p "$1/Contents/Frameworks/QtCore.framework/Versions/A"
+        mkdir -p "$1/Contents/Frameworks/QtNetwork.framework/Versions/A"
+        : > "$1/Contents/Frameworks/QtCore.framework/Versions/A/QtCore"
+        : > "$1/Contents/Frameworks/QtNetwork.framework/Versions/A/QtNetwork"
+        """
+        try fakeDeploySource.write(to: fakeDeployURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fakeDeployURL.path)
+
+        func runDeployment(codeSigningAllowed: String) throws -> [String] {
+            let process = Process()
+            process.executableURL = deployURL
+            process.environment = [
+                "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin",
+                "TARGET_BUILD_DIR": buildDirectory.path,
+                "WRAPPER_NAME": "Prism.app",
+                "PLATFORM_NAME": "macosx",
+                "PRISM_MACDEPLOYQT": fakeDeployURL.path,
+                "PRISM_ARGUMENT_LOG": argumentLogURL.path,
+                "CODE_SIGNING_ALLOWED": codeSigningAllowed,
+                "EXPANDED_CODE_SIGN_IDENTITY": "-",
+            ]
+            let output = Pipe()
+            process.standardOutput = output
+            process.standardError = output
+            try process.run()
+            process.waitUntilExit()
+            let diagnostic = String(
+                data: output.fileHandleForReading.readDataToEndOfFile(),
+                encoding: .utf8
+            ) ?? ""
+            XCTAssertEqual(process.terminationStatus, 0, diagnostic)
+            return try String(contentsOf: argumentLogURL, encoding: .utf8)
+                .split(whereSeparator: \.isNewline)
+                .map(String.init)
+        }
+
+        let signedArguments = try runDeployment(codeSigningAllowed: "YES")
+        XCTAssertTrue(signedArguments.contains("-codesign=-"))
+        XCTAssertFalse(signedArguments.contains("-no-codesign"))
+
+        let unsignedArguments = try runDeployment(codeSigningAllowed: "NO")
+        XCTAssertTrue(unsignedArguments.contains("-no-codesign"))
+        XCTAssertFalse(unsignedArguments.contains("-codesign=-"))
+    }
+
     func testInstanceSummaryDTOCopiesFixtureValuesAndNormalizesOptionalMetadata() throws {
         let fixtureRoot = try PrismTemporaryFixtureRoot()
         let fixtureDirectory = try fixtureRoot.makeDirectory(relativePath: "instances/fixture-instance")

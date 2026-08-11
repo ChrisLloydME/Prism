@@ -790,6 +790,22 @@ enum class FrontendProviderSort : std::uint8_t {
 enum class FrontendProviderReleaseType : std::uint8_t { Unknown, Release, Beta, Alpha };
 enum class FrontendProviderSide : std::uint8_t { Any, Client, Server, Universal };
 
+/// Provider-specific installation task families retained by the legacy
+/// backend. The distinction is intentional: CurseForge is installed through
+/// the Flame manifest/task path, Technic has separate single-archive and
+/// Solder task paths, and local custom archives use the existing import task.
+enum class FrontendProviderInstallKind : std::uint8_t {
+    Modrinth,
+    CurseForgeFlame,
+    FTB,
+    LegacyFTB,
+    FTBImport,
+    ATLauncher,
+    TechnicZip,
+    TechnicSolder,
+    CustomArchive,
+};
+
 /// Explicit provider browse input. Query, filter labels, and pagination are
 /// sanitized value data; provider URLs, client identifiers, credentials,
 /// network jobs, caches, and installation ownership remain adapter-private.
@@ -853,10 +869,12 @@ struct FrontendProviderVersionRequest final {
     std::string packIdentifier;
     std::vector<std::string> gameVersions;
     std::vector<std::string> loaders;
+    std::vector<FrontendProviderReleaseType> releaseTypes;
 };
 
 struct FrontendProviderVersionSnapshot final {
     FrontendProviderKind provider = FrontendProviderKind::Modrinth;
+    FrontendProviderInstallKind installKind = FrontendProviderInstallKind::Modrinth;
     std::string id;
     std::string packIdentifier;
     std::string name;
@@ -882,22 +900,6 @@ struct FrontendProviderVersionResult final {
     std::string localizationKey;
     std::string diagnosticText;
     bool retryable = false;
-};
-
-/// Provider-specific installation task families retained by the legacy
-/// backend. The distinction is intentional: CurseForge is installed through
-/// the Flame manifest/task path, Technic has separate single-archive and
-/// Solder task paths, and local custom archives use the existing import task.
-enum class FrontendProviderInstallKind : std::uint8_t {
-    Modrinth,
-    CurseForgeFlame,
-    FTB,
-    LegacyFTB,
-    FTBImport,
-    ATLauncher,
-    TechnicZip,
-    TechnicSolder,
-    CustomArchive,
 };
 
 enum class FrontendProviderInstallOutcome : std::uint8_t { Succeeded, Failed, Cancelled, Rejected };
@@ -939,7 +941,9 @@ struct FrontendProviderInstallRecoveryPrompt final {
 
 /// A user-confirmed recovery decision supplied on the next install attempt.
 /// The adapter is responsible for resolving selected IDs to manifests,
-/// staging files, and any provider-owned local source paths.
+/// staging files, and any provider-owned local source paths. A blocked-file
+/// decision may repeat the previously confirmed optional IDs so a two-stage
+/// optional-then-blocked recovery does not silently discard that choice.
 struct FrontendProviderInstallRecoveryDecision final {
     FrontendProviderInstallRecoveryKind kind = FrontendProviderInstallRecoveryKind::ProviderError;
     FrontendProviderInstallRecoveryAction action = FrontendProviderInstallRecoveryAction::Cancel;
@@ -964,7 +968,7 @@ struct FrontendProviderInstallRequest final {
     std::optional<FrontendProviderInstallRecoveryDecision> recoveryDecision;
 };
 
-/// Confirmed result for one fixture-controlled provider installation. A
+/// Confirmed result for one provider installation. A
 /// successful result carries only committed instance metadata. Failed or
 /// cancelled work carries no instance and reports whether the staging/commit
 /// adapter applied or failed to apply its rollback policy.

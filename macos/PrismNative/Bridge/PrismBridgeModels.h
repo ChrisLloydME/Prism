@@ -470,14 +470,28 @@ typedef NS_ENUM(NSInteger, PRProviderBrowseOutcome) {
 - (nullable instancetype)initWithProvider:(PRProviderKind)provider
                               packIdentifier:(NSString *)packIdentifier
                                 gameVersions:(NSArray<NSString *> *)gameVersions
-                                    loaders:(NSArray<NSString *> *)loaders NS_DESIGNATED_INITIALIZER;
+                                    loaders:(NSArray<NSString *> *)loaders
+                               releaseTypes:(NSArray<NSNumber *> *)releaseTypes NS_DESIGNATED_INITIALIZER;
 
 @property(nonatomic, assign, readonly) PRProviderKind provider;
 @property(nonatomic, copy, readonly) NSString *packIdentifier;
 @property(nonatomic, copy, readonly) NSArray<NSString *> *gameVersions;
 @property(nonatomic, copy, readonly) NSArray<NSString *> *loaders;
+@property(nonatomic, copy, readonly) NSArray<NSNumber *> *releaseTypes;
 
 @end
+
+typedef NS_ENUM(NSInteger, PRProviderInstallKind) {
+    PRProviderInstallKindModrinth = 0,
+    PRProviderInstallKindCurseForgeFlame,
+    PRProviderInstallKindFTB,
+    PRProviderInstallKindLegacyFTB,
+    PRProviderInstallKindFTBImport,
+    PRProviderInstallKindATLauncher,
+    PRProviderInstallKindTechnicZip,
+    PRProviderInstallKindTechnicSolder,
+    PRProviderInstallKindCustomArchive,
+};
 
 /// Immutable version-selection row. Download URLs, archives, and changelog
 /// payloads are deliberately deferred to the installation work units.
@@ -485,6 +499,7 @@ typedef NS_ENUM(NSInteger, PRProviderBrowseOutcome) {
 
 - (instancetype)init NS_UNAVAILABLE;
 - (nullable instancetype)initWithProvider:(PRProviderKind)provider
+                              installKind:(PRProviderInstallKind)installKind
                                identifier:(NSString *)identifier
                            packIdentifier:(NSString *)packIdentifier
                                      name:(NSString *)name
@@ -496,6 +511,7 @@ typedef NS_ENUM(NSInteger, PRProviderBrowseOutcome) {
                               recommended:(BOOL)recommended NS_DESIGNATED_INITIALIZER;
 
 @property(nonatomic, assign, readonly) PRProviderKind provider;
+@property(nonatomic, assign, readonly) PRProviderInstallKind installKind;
 @property(nonatomic, copy, readonly) NSString *identifier;
 @property(nonatomic, copy, readonly) NSString *packIdentifier;
 @property(nonatomic, copy, readonly) NSString *name;
@@ -536,18 +552,6 @@ typedef NS_ENUM(NSInteger, PRProviderVersionOutcome) {
 @property(nonatomic, assign, readonly) BOOL retryable;
 
 @end
-
-typedef NS_ENUM(NSInteger, PRProviderInstallKind) {
-    PRProviderInstallKindModrinth = 0,
-    PRProviderInstallKindCurseForgeFlame,
-    PRProviderInstallKindFTB,
-    PRProviderInstallKindLegacyFTB,
-    PRProviderInstallKindFTBImport,
-    PRProviderInstallKindATLauncher,
-    PRProviderInstallKindTechnicZip,
-    PRProviderInstallKindTechnicSolder,
-    PRProviderInstallKindCustomArchive,
-};
 
 typedef NS_ENUM(NSInteger, PRProviderInstallOutcome) {
     PRProviderInstallOutcomeSucceeded = 0,

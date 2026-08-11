@@ -19,6 +19,9 @@ struct ContentView: View {
     @StateObject private var acquisitionCoordinator: PrismInstanceAcquisitionCoordinator
     @StateObject private var vanillaCreationModel: PrismVanillaCreationModel
     @StateObject private var instanceImportModel: PrismInstanceImportModel
+    @StateObject private var providerCoordinator: PrismProviderCoordinator
+    @StateObject private var providerBrowserModel: PrismProviderBrowserModel
+    @StateObject private var providerInstallationModel: PrismProviderInstallationModel
     @ObservedObject private var logModel: PrismTaskLogPresentationModel
     @ObservedObject private var commandModel: PrismCommandModel
     @ObservedObject private var taskModel: PrismTaskPresentationModel
@@ -150,6 +153,27 @@ struct ContentView: View {
                 acquisitionCoordinator?.cancelImport()
             }
         )
+        let providerCoordinator = PrismProviderCoordinator(bridge: bridge)
+        let providerBrowserModel = PrismProviderBrowserModel(
+            onBrowse: { [weak providerCoordinator] request, generation in
+                providerCoordinator?.browse(request: request, generation: generation)
+            },
+            onLoadVersions: { [weak providerCoordinator] request, generation in
+                providerCoordinator?.loadVersions(request: request, generation: generation)
+            },
+            onCancel: { [weak providerCoordinator] in
+                providerCoordinator?.cancelBrowsing()
+            }
+        )
+        let providerInstallationModel = PrismProviderInstallationModel(
+            icons: ["default"],
+            onInstall: { [weak providerCoordinator] request, generation in
+                providerCoordinator?.install(request: request, generation: generation)
+            },
+            onCancel: { [weak providerCoordinator] in
+                providerCoordinator?.cancelInstallation()
+            }
+        )
         commandModel.onDeleteRequest = { [weak deleteModel] identifier in
             _ = deleteModel?.request(identifier: identifier)
         }
@@ -157,6 +181,10 @@ struct ContentView: View {
             acquisitionCoordinator?.handle(command: command)
         }
         acquisitionCoordinator.bind(creationModel: creationModel, importModel: importModel)
+        providerCoordinator.bind(
+            browserModel: providerBrowserModel,
+            installationModel: providerInstallationModel
+        )
         detailCoordinator.bind(
             detailsModel: detailsModel,
             componentsModel: componentsModel,
@@ -186,6 +214,9 @@ struct ContentView: View {
         _acquisitionCoordinator = StateObject(wrappedValue: acquisitionCoordinator)
         _vanillaCreationModel = StateObject(wrappedValue: creationModel)
         _instanceImportModel = StateObject(wrappedValue: importModel)
+        _providerCoordinator = StateObject(wrappedValue: providerCoordinator)
+        _providerBrowserModel = StateObject(wrappedValue: providerBrowserModel)
+        _providerInstallationModel = StateObject(wrappedValue: providerInstallationModel)
         _commandModel = ObservedObject(wrappedValue: commandModel)
         _taskModel = ObservedObject(wrappedValue: taskModel)
         _logModel = ObservedObject(wrappedValue: logModel ?? PrismTaskLogPresentationModel(bridge: bridge))
@@ -215,87 +246,95 @@ struct ContentView: View {
             .navigationTitle("Prism")
             .accessibilityIdentifier("prism.instance-library.sidebar")
         } detail: {
-            VStack(alignment: .leading, spacing: 12) {
-                if let task = taskModel.task {
-                    PrismTaskProgressView(
-                        task: task,
-                        cancellationEnabled: taskModel.isCancellationAvailable,
-                        onCancel: { _ = taskModel.cancel() }
-                    )
+            if shellModel.selectedSidebarItem == .discover {
+                PrismProviderBrowserView(model: providerBrowserModel) { pack, version in
+                    _ = providerCoordinator.prepareInstallation(pack: pack, version: version)
                 }
-                if let failure = taskModel.failure {
-                    PrismTaskFailureView(
-                        failure: failure,
-                        onRetry: { _ = taskModel.retry() }
-                    )
-                }
-                if let log = logModel.log {
-                    PrismTaskLogView(log: log)
-                }
-                if let logFailure = logModel.failure {
-                    PrismTaskLogFailureView(failure: logFailure, onRetry: { _ = logModel.retry() })
-                }
-                if instanceDetailsModel.showsDetail {
-                    PrismInstanceDetailsView(
-                        model: instanceDetailsModel,
-                        settingsModel: instanceSettingsModel,
-                        componentsModel: instanceComponentsModel,
-                        resourcesModel: instanceResourcesModel,
-                        worldsModel: worldsModel,
-                        serversModel: serversModel,
-                        screenshotsModel: screenshotsModel,
-                        logsModel: instanceLogsModel,
-                        copyModel: instanceCopyModel,
-                        exportModel: instanceExportModel,
-                        deleteModel: instanceDeleteModel
-                    )
-                } else {
-                    PrismShellDetailView(
-                        state: shellModel.detailState,
-                        onRetry: { shellModel.retry() }
-                    )
-                }
-                if instanceDeleteModel.isDeleting {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Deleting Instance")
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    if let task = taskModel.task {
+                        PrismTaskProgressView(
+                            task: task,
+                            cancellationEnabled: taskModel.isCancellationAvailable,
+                            onCancel: { _ = taskModel.cancel() }
+                        )
                     }
-                    .accessibilityLabel(Text("Deleting Instance"))
-                    .accessibilityIdentifier("prism.instance-delete.progress")
-                }
-                if let failure = instanceDeleteModel.failure {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Label("Unable to Delete Instance", systemImage: "exclamationmark.triangle")
-                        if failure.retryable {
-                            Button("Retry") { _ = instanceDeleteModel.retry() }
-                                .keyboardShortcut(.defaultAction)
+                    if let failure = taskModel.failure {
+                        PrismTaskFailureView(
+                            failure: failure,
+                            onRetry: { _ = taskModel.retry() }
+                        )
+                    }
+                    if let log = logModel.log {
+                        PrismTaskLogView(log: log)
+                    }
+                    if let logFailure = logModel.failure {
+                        PrismTaskLogFailureView(failure: logFailure, onRetry: { _ = logModel.retry() })
+                    }
+                    if instanceDetailsModel.showsDetail {
+                        PrismInstanceDetailsView(
+                            model: instanceDetailsModel,
+                            settingsModel: instanceSettingsModel,
+                            componentsModel: instanceComponentsModel,
+                            resourcesModel: instanceResourcesModel,
+                            worldsModel: worldsModel,
+                            serversModel: serversModel,
+                            screenshotsModel: screenshotsModel,
+                            logsModel: instanceLogsModel,
+                            copyModel: instanceCopyModel,
+                            exportModel: instanceExportModel,
+                            deleteModel: instanceDeleteModel
+                        )
+                    } else {
+                        PrismShellDetailView(
+                            state: shellModel.detailState,
+                            onRetry: { shellModel.retry() }
+                        )
+                    }
+                    if instanceDeleteModel.isDeleting {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Deleting Instance")
                         }
-                        Button("Dismiss", role: .cancel) { instanceDeleteModel.reset() }
+                        .accessibilityLabel(Text("Deleting Instance"))
+                        .accessibilityIdentifier("prism.instance-delete.progress")
                     }
-                    .accessibilityValue(Text(failure.diagnosticText ?? failure.localizationKey))
-                    .accessibilityIdentifier("prism.instance-delete.failure")
+                    if let failure = instanceDeleteModel.failure {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Label("Unable to Delete Instance", systemImage: "exclamationmark.triangle")
+                            if failure.retryable {
+                                Button("Retry") { _ = instanceDeleteModel.retry() }
+                                    .keyboardShortcut(.defaultAction)
+                            }
+                            Button("Dismiss", role: .cancel) { instanceDeleteModel.reset() }
+                        }
+                        .accessibilityValue(Text(failure.diagnosticText ?? failure.localizationKey))
+                        .accessibilityIdentifier("prism.instance-delete.failure")
+                    }
                 }
-            }
-            .contextMenu {
-                PrismInstanceContextMenu(model: commandModel)
+                .searchable(
+                    text: Binding<String>(
+                        get: { shellModel.searchText },
+                        set: { shellModel.setSearchText($0) }
+                    ),
+                    prompt: Text("Search Instances")
+                )
+                .contextMenu {
+                    PrismInstanceContextMenu(model: commandModel)
+                }
             }
         }
-        .searchable(
-            text: Binding<String>(
-                get: { shellModel.searchText },
-                set: { shellModel.setSearchText($0) }
-            ),
-            prompt: Text("Search Instances")
-        )
         .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                PrismCommandButton(model: commandModel, command: .newInstance)
-                PrismCommandButton(model: commandModel, command: .importInstance)
-            }
-            ToolbarItemGroup(placement: .automatic) {
-                PrismCommandButton(model: commandModel, command: .launchSelected)
-                PrismCommandButton(model: commandModel, command: .stopSelected)
+            if shellModel.selectedSidebarItem != .discover {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    PrismCommandButton(model: commandModel, command: .newInstance)
+                    PrismCommandButton(model: commandModel, command: .importInstance)
+                }
+                ToolbarItemGroup(placement: .automatic) {
+                    PrismCommandButton(model: commandModel, command: .launchSelected)
+                    PrismCommandButton(model: commandModel, command: .stopSelected)
+                }
             }
         }
         .onAppear {
@@ -338,6 +377,16 @@ struct ContentView: View {
                     onFinished: { acquisitionCoordinator.dismiss() }
                 )
             }
+        }
+        .sheet(
+            item: $providerCoordinator.presentedInstallation,
+            onDismiss: { providerCoordinator.dismissInstallation() }
+        ) { _ in
+            PrismProviderInstallationView(
+                model: providerInstallationModel,
+                onFinished: { providerCoordinator.dismissInstallation() }
+            )
+            .interactiveDismissDisabled(providerInstallationModel.isInstalling)
         }
     }
 }

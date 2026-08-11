@@ -1388,13 +1388,37 @@ void validateProviderVersionRequest(const FrontendProviderVersionRequest& reques
     }
     validateProviderStringFilters(request.gameVersions, "version game filters");
     validateProviderStringFilters(request.loaders, "version loader filters");
+    validateProviderReleaseFilters(request.releaseTypes);
+}
+
+bool providerInstallKindMatchesProvider(
+    FrontendProviderInstallKind installKind,
+    FrontendProviderKind provider) noexcept
+{
+    switch (provider) {
+        case FrontendProviderKind::Modrinth:
+            return installKind == FrontendProviderInstallKind::Modrinth;
+        case FrontendProviderKind::CurseForge:
+            return installKind == FrontendProviderInstallKind::CurseForgeFlame;
+        case FrontendProviderKind::FTB:
+            return installKind == FrontendProviderInstallKind::FTB;
+        case FrontendProviderKind::ATLauncher:
+            return installKind == FrontendProviderInstallKind::ATLauncher;
+        case FrontendProviderKind::Technic:
+            return installKind == FrontendProviderInstallKind::TechnicZip
+                || installKind == FrontendProviderInstallKind::TechnicSolder;
+        case FrontendProviderKind::LegacyFTB:
+            return installKind == FrontendProviderInstallKind::LegacyFTB;
+    }
+    return false;
 }
 
 void validateProviderVersionSnapshot(
     const FrontendProviderVersionSnapshot& version,
     const FrontendProviderVersionRequest& request)
 {
-    if (!isKnownProviderKind(version.provider) || version.provider != request.provider || !version.hasStableIdentifier()
+    if (!isKnownProviderKind(version.provider) || version.provider != request.provider
+        || !providerInstallKindMatchesProvider(version.installKind, version.provider) || !version.hasStableIdentifier()
         || version.packIdentifier != request.packIdentifier || version.name.empty() || version.version.empty()
         || !isKnownProviderReleaseType(version.releaseType)) {
         throw std::invalid_argument("Provider versions require matching provider data and stable metadata");
@@ -1563,10 +1587,8 @@ void validateProviderInstallRecoveryDecision(const FrontendProviderInstallRecove
     if (isFilePrompt) {
         if (decision.action != FrontendProviderInstallRecoveryAction::Continue
             || (decision.kind == FrontendProviderInstallRecoveryKind::OptionalFiles
-                && !decision.resolvedBlockedFileIdentifiers.empty())
-            || (decision.kind == FrontendProviderInstallRecoveryKind::BlockedFiles
-                && !decision.selectedFileIdentifiers.empty())) {
-            throw std::invalid_argument("File recovery decisions must continue with the matching selection list");
+                && !decision.resolvedBlockedFileIdentifiers.empty())) {
+            throw std::invalid_argument("File recovery decisions must continue with valid selection lists");
         }
     } else {
         if (decision.action == FrontendProviderInstallRecoveryAction::Continue

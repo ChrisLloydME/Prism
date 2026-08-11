@@ -524,12 +524,8 @@ std::optional<ProductionInstanceAcquisitionRuntime::DownloadBytes> defaultDownlo
         return std::nullopt;
     }
 
-    int argc = 1;
-    char applicationName[] = "PrismNativeNetwork";
-    char* argv[] = { applicationName, nullptr };
-    std::unique_ptr<QCoreApplication> scopedApplication;
     if (!QCoreApplication::instance()) {
-        scopedApplication = std::make_unique<QCoreApplication>(argc, argv);
+        return std::nullopt;
     }
 
     QNetworkAccessManager manager;

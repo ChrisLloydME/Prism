@@ -216,6 +216,7 @@ struct PrismProviderPackRow: Identifiable, Equatable, Sendable {
 struct PrismProviderVersionRow: Identifiable, Equatable, Sendable {
     let id: String
     let provider: PrismProvider
+    let installKind: PrismProviderInstallKind
     let packIdentifier: String
     let name: String
     let version: String
@@ -227,6 +228,7 @@ struct PrismProviderVersionRow: Identifiable, Equatable, Sendable {
 
     init?(bridgeVersion: PRProviderVersion) {
         guard let provider = PrismProvider(bridgeValue: bridgeVersion.provider),
+              let installKind = PrismProviderInstallKind(bridgeValue: bridgeVersion.installKind),
               let releaseType = PrismProviderReleaseType(bridgeValue: bridgeVersion.releaseType) else {
             return nil
         }
@@ -238,6 +240,7 @@ struct PrismProviderVersionRow: Identifiable, Equatable, Sendable {
 
         self.id = identifier
         self.provider = provider
+        self.installKind = installKind
         self.packIdentifier = packIdentifier
         self.name = name
         self.version = version
@@ -262,7 +265,7 @@ enum PrismProviderBrowseState: Equatable, Sendable {
     case loading
     case loadingMore(rows: [PrismProviderPackRow], nextOffset: Int?)
     case loaded(rows: [PrismProviderPackRow], nextOffset: Int?)
-    case empty
+    case empty(nextOffset: Int?)
     case cancelled
     case failed(PrismProviderFailure)
 }
@@ -274,6 +277,150 @@ enum PrismProviderVersionState: Equatable, Sendable {
     case empty
     case cancelled
     case failed(PrismProviderFailure)
+}
+
+enum PrismProviderInstallationPresentation: String, Identifiable, Sendable {
+    case selectedPack
+
+    var id: String { rawValue }
+}
+
+/// Routes the production provider workflow through the Foundation bridge.
+/// Swift owns only presentation state and cancellation tokens; provider
+/// protocols, downloads, staging, cache, recovery, and commits remain in the
+/// production facade adapter.
+@MainActor
+final class PrismProviderCoordinator: ObservableObject {
+    @Published var presentedInstallation: PrismProviderInstallationPresentation?
+
+    private weak var bridge: PRPrismBridge?
+    private weak var browserModel: PrismProviderBrowserModel?
+    private weak var installationModel: PrismProviderInstallationModel?
+    private var browseRequest: PRBridgeObservationToken?
+    private var versionRequest: PRBridgeObservationToken?
+    private var installRequest: PRBridgeObservationToken?
+
+    init(bridge: PRPrismBridge?) {
+        self.bridge = bridge
+    }
+
+    func bind(
+        browserModel: PrismProviderBrowserModel,
+        installationModel: PrismProviderInstallationModel
+    ) {
+        self.browserModel = browserModel
+        self.installationModel = installationModel
+    }
+
+    func browse(request: PRProviderBrowseRequest, generation: Int) {
+        guard let bridge, let model = browserModel else { return }
+        browseRequest?.cancel()
+        browseRequest = bridge.browseProvider(
+            with: request,
+            progress: { [weak model] status in
+                Task { @MainActor [weak model] in
+                    _ = model?.apply(progress: status, generation: generation)
+                }
+            },
+            completion: { [weak self, weak model] result, error in
+                Task { @MainActor [weak self, weak model] in
+                    guard let self, let model else { return }
+                    self.browseRequest = nil
+                    if let error {
+                        _ = model.apply(error: error, generation: generation)
+                    } else if let result {
+                        _ = model.apply(result: result, generation: generation)
+                    }
+                }
+            }
+        )
+    }
+
+    func loadVersions(request: PRProviderVersionRequest, generation: Int) {
+        guard let bridge, let model = browserModel else { return }
+        versionRequest?.cancel()
+        versionRequest = bridge.loadProviderVersions(
+            with: request,
+            progress: { [weak model] status in
+                Task { @MainActor [weak model] in
+                    _ = model?.apply(progress: status, generation: generation, toVersions: true)
+                }
+            },
+            completion: { [weak self, weak model] result, error in
+                Task { @MainActor [weak self, weak model] in
+                    guard let self, let model else { return }
+                    self.versionRequest = nil
+                    if let error {
+                        _ = model.apply(error: error, generation: generation, toVersions: true)
+                    } else if let result {
+                        _ = model.apply(result: result, generation: generation)
+                    }
+                }
+            }
+        )
+    }
+
+    func install(request: PRProviderInstallRequest, generation: Int) {
+        guard let bridge, let model = installationModel else { return }
+        installRequest?.cancel()
+        installRequest = bridge.installProviderPack(
+            with: request,
+            progress: { [weak model] status in
+                Task { @MainActor [weak model] in
+                    _ = model?.apply(progress: status, generation: generation)
+                }
+            },
+            completion: { [weak self, weak model] result, error in
+                Task { @MainActor [weak self, weak model] in
+                    guard let self, let model else { return }
+                    self.installRequest = nil
+                    if let error {
+                        _ = model.apply(error: error, generation: generation)
+                    } else if let result {
+                        _ = model.apply(result: result, generation: generation)
+                    }
+                }
+            }
+        )
+    }
+
+    func cancelBrowsing() {
+        browseRequest?.cancel()
+        browseRequest = nil
+        versionRequest?.cancel()
+        versionRequest = nil
+    }
+
+    func cancelInstallation() {
+        installRequest?.cancel()
+        installRequest = nil
+    }
+
+    @discardableResult
+    func prepareInstallation(pack: PrismProviderPackRow, version: PrismProviderVersionRow) -> Bool {
+        guard pack.provider == version.provider,
+              pack.id == version.packIdentifier,
+              let model = installationModel else {
+            return false
+        }
+        cancelInstallation()
+        guard model.prepare(
+            kind: version.installKind,
+            packIdentifier: pack.id,
+            versionIdentifier: version.id,
+            name: pack.name
+        ) else {
+            return false
+        }
+        presentedInstallation = .selectedPack
+        return true
+    }
+
+    func dismissInstallation() {
+        cancelInstallation()
+        installationModel?.reset()
+        presentedInstallation = nil
+    }
 }
 
 @MainActor
@@ -329,7 +476,7 @@ final class PrismProviderBrowserModel: ObservableObject {
 
     var nextOffset: Int? {
         switch browseState {
-        case .loadingMore(_, let nextOffset), .loaded(_, let nextOffset): return nextOffset
+        case .loadingMore(_, let nextOffset), .loaded(_, let nextOffset), .empty(let nextOffset): return nextOffset
         default: return nil
         }
     }
@@ -359,6 +506,20 @@ final class PrismProviderBrowserModel: ObservableObject {
     var isLoadingVersions: Bool {
         if case .loading = versionState { return true }
         return false
+    }
+
+    func setProvider(_ provider: PrismProvider) {
+        guard providers.contains(provider), self.provider != provider else { return }
+        if isBrowsing || isLoadingVersions {
+            onCancel?()
+        }
+        browseGeneration += 1
+        versionGeneration += 1
+        self.provider = provider
+        browseProgress = nil
+        versionProgress = nil
+        browseState = .idle
+        resetSelection()
     }
 
     @discardableResult
@@ -419,7 +580,8 @@ final class PrismProviderBrowserModel: ObservableObject {
                 provider: provider.bridgeValue,
                 packIdentifier: pack.id,
                 gameVersions: normalizedFilter.gameVersions,
-                loaders: normalizedFilter.loaders
+                loaders: normalizedFilter.loaders,
+                releaseTypes: normalizedFilter.releaseTypes.map(\.bridgeNumber)
         ) else {
             versionState = .failed(PrismProviderFailure(
                 localizationKey: "providers.versions.invalidRequest", diagnosticText: nil, retryable: true))
@@ -495,7 +657,9 @@ final class PrismProviderBrowserModel: ObservableObject {
                     localizationKey: "providers.browse.duplicateResult", diagnosticText: nil, retryable: true))
                 return false
             }
-            browseState = mergedRows.isEmpty ? .empty : .loaded(rows: mergedRows, nextOffset: page.nextOffset?.intValue)
+            browseState = mergedRows.isEmpty
+                ? .empty(nextOffset: page.nextOffset?.intValue)
+                : .loaded(rows: mergedRows, nextOffset: page.nextOffset?.intValue)
         case .failed, .rejected:
             let key = bridgeResult.localizationKey.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !key.isEmpty else { return false }
@@ -646,6 +810,15 @@ enum PrismProviderVersionOutcome: Equatable, Sendable {
 @MainActor
 struct PrismProviderBrowserView: View {
     @ObservedObject var model: PrismProviderBrowserModel
+    let onInstallSelection: ((PrismProviderPackRow, PrismProviderVersionRow) -> Void)?
+
+    init(
+        model: PrismProviderBrowserModel,
+        onInstallSelection: ((PrismProviderPackRow, PrismProviderVersionRow) -> Void)? = nil
+    ) {
+        self.model = model
+        self.onInstallSelection = onInstallSelection
+    }
 
     private var gameVersionsText: Binding<String> {
         Binding(
@@ -672,7 +845,10 @@ struct PrismProviderBrowserView: View {
         VStack(spacing: 0) {
             Form {
                 Section("Provider") {
-                    Picker("Provider", selection: $model.provider) {
+                    Picker(
+                        "Provider",
+                        selection: Binding(get: { model.provider }, set: { model.setProvider($0) })
+                    ) {
                         ForEach(model.providers) { provider in
                             Text(provider.displayName).tag(provider)
                         }
@@ -784,8 +960,17 @@ struct PrismProviderBrowserView: View {
                     .accessibilityIdentifier("provider-browse.load-more")
                     .padding(.bottom, 8)
             }
-        case .empty:
-            ContentUnavailableView("No Provider Packs", systemImage: "shippingbox", description: Text("No packs match the current search and filters."))
+        case .empty(let nextOffset):
+            ContentUnavailableView {
+                Label("No Provider Packs", systemImage: "shippingbox")
+            } description: {
+                Text("No packs on this page match the current search and filters.")
+            } actions: {
+                if nextOffset != nil {
+                    Button("Load More") { _ = model.loadMore() }
+                        .accessibilityIdentifier("provider-browse.empty-load-more")
+                }
+            }
         case .cancelled:
             ContentUnavailableView("Search Cancelled", systemImage: "pause.circle", description: Text("The provider search was cancelled."))
         case .failed(let failure):
@@ -841,6 +1026,17 @@ struct PrismProviderBrowserView: View {
                         .accessibilityIdentifier("provider-browse.version-\(version.id)")
                     }
                     .frame(minHeight: 110)
+                    if let version = model.selectedVersion, let onInstallSelection {
+                        HStack {
+                            Spacer()
+                            Button("Install Selected Version…") {
+                                onInstallSelection(pack, version)
+                            }
+                            .accessibilityLabel(Text("Install \(pack.name) \(version.version)"))
+                            .accessibilityHint(Text("Open the provider installation form for the selected version."))
+                            .accessibilityIdentifier("provider-browse.install-selected")
+                        }
+                    }
                 case .empty:
                     ContentUnavailableView("No Versions", systemImage: "list.bullet", description: Text("This pack has no compatible versions."))
                 case .cancelled:

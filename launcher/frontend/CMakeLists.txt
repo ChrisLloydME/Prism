@@ -33,6 +33,7 @@ endif()
 set(LAUNCHER_FRONTEND_PUBLIC_HEADERS
     FrontendFacade.h
     ProductionInstanceRuntime.h
+    ProductionProviderRuntime.h
     ProductionInstanceAcquisitionRuntime.h
     ProductionSettingsRuntime.h
     ProductionJavaRuntime.h
@@ -44,6 +45,7 @@ set(LAUNCHER_FRONTEND_PUBLIC_HEADERS
 add_library(Launcher_frontend STATIC
     FrontendFacade.cpp
     ProductionInstanceRuntime.cpp
+    ProductionProviderRuntime.cpp
     ProductionInstanceAcquisitionRuntime.cpp
     ProductionSettingsRuntime.cpp
     ProductionJavaRuntime.cpp
@@ -73,6 +75,10 @@ add_library(Launcher_frontend STATIC
     ../minecraft/ParseUtils.cpp
     ../minecraft/Rule.cpp
     ../minecraft/VersionFile.cpp
+    ../modplatform/atlauncher/ATLPackIndex.cpp
+    ../modplatform/atlauncher/ATLPackManifest.cpp
+    ../modplatform/ftb/FTBPackManifest.cpp
+    ../modplatform/technic/SolderPackManifest.cpp
     ../settings/INIFile.cpp
     ${LAUNCHER_FRONTEND_PUBLIC_HEADERS}
     ../settings/INIFile.h
@@ -153,6 +159,14 @@ if(BUILD_TESTING)
     target_include_directories(Launcher_frontend_production_instance_acquisition_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
     target_link_libraries(Launcher_frontend_production_instance_acquisition_test PRIVATE Launcher_frontend)
     add_test(NAME FrontendFacadeProductionInstanceAcquisition COMMAND Launcher_frontend_production_instance_acquisition_test)
+
+    add_executable(Launcher_frontend_production_provider_test
+        FrontendFacadeProductionProviderTest.cpp
+    )
+    target_compile_features(Launcher_frontend_production_provider_test PRIVATE cxx_std_20)
+    target_include_directories(Launcher_frontend_production_provider_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+    target_link_libraries(Launcher_frontend_production_provider_test PRIVATE Launcher_frontend)
+    add_test(NAME FrontendFacadeProductionProvider COMMAND Launcher_frontend_production_provider_test)
 
     add_executable(Launcher_frontend_production_settings_test
         FrontendFacadeProductionSettingsTest.cpp

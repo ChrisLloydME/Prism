@@ -269,7 +269,13 @@ final class PrismProviderInstallationTests: XCTestCase {
                 selected: true
             )]
         ))))
-        XCTAssertTrue(model.cancelRecovery())
+        XCTAssertTrue(model.continueRecovery())
+        let blockedRequest = try XCTUnwrap(receivedRequests.last)
+        XCTAssertEqual(blockedRequest.recoveryDecision?.kind, .blockedFiles)
+        XCTAssertEqual(blockedRequest.recoveryDecision?.action, .continue)
+        XCTAssertEqual(blockedRequest.recoveryDecision?.selectedFileIdentifiers, ["optional-a", "optional-b"])
+        XCTAssertEqual(blockedRequest.recoveryDecision?.resolvedBlockedFileIdentifiers, ["blocked-a"])
+        XCTAssertTrue(model.cancel())
         XCTAssertEqual(model.state, .cancelled)
 
         for kind in [

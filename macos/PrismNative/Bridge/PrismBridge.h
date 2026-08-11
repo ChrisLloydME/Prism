@@ -297,22 +297,22 @@ typedef void (^PROfflineLaunchIdentityUpdateCompletionHandler)(PROfflineLaunchId
                                                           progress:(nullable PRInstanceExportProgressHandler)progress
                                                         completion:(PRInstanceExportCompletionHandler)completion;
 
-/// Runs a fixture-controlled provider browse request. Search, filters, and
-/// pagination remain immutable value data; provider services, credentials,
-/// caches, downloads, and installation mutations stay adapter-owned.
+/// Runs the production provider browse adapter. Search, filters, and
+/// pagination remain immutable value data; provider services, cache, and
+/// controlled transport stay adapter-owned.
 - (nullable PRBridgeObservationToken *)browseProviderWithRequest:(PRProviderBrowseRequest *)request
                                                           progress:(nullable PRProviderBrowseProgressHandler)progress
                                                         completion:(PRProviderBrowseCompletionHandler)completion;
 
-/// Loads fixture-controlled versions for one selected provider pack. The
-/// returned values support native selection only; install/download semantics
-/// remain later work units.
+/// Loads production versions for one selected provider pack. The returned
+/// values support native selection only; transport and parsing stay in the
+/// production adapter.
 - (nullable PRBridgeObservationToken *)loadProviderVersionsWithRequest:(PRProviderVersionRequest *)request
                                                                progress:(nullable PRProviderVersionProgressHandler)progress
                                                              completion:(PRProviderVersionCompletionHandler)completion;
 
-/// Runs a fixture-controlled provider installation contract. The adapter
-/// owns each legacy provider task, staging root, optional/blocked-file
+/// Runs the production provider installation contract. The adapter owns each
+/// provider protocol, staging root, optional/blocked-file
 /// decisions, cancellation, rollback, and final commit; Swift receives only
 /// Foundation values and task progress.
 - (nullable PRBridgeObservationToken *)installProviderPackWithRequest:(PRProviderInstallRequest *)request

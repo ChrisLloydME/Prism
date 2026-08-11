@@ -4,6 +4,7 @@
 #include "ProductionInstanceAcquisitionRuntime.h"
 #include "ProductionAccountRuntime.h"
 #include "ProductionInstanceDetailRuntime.h"
+#include "ProductionProviderRuntime.h"
 #include "ProductionJavaRuntime.h"
 #include "ProductionLaunchRuntime.h"
 #include "ProductionSettingsRuntime.h"
@@ -313,6 +314,7 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
     auto javaRuntime = makeProductionJavaRuntime(normalizedDataRoot);
     auto accountRuntime = makeProductionAccountRuntime(normalizedDataRoot);
     auto acquisitionRuntime = makeProductionInstanceAcquisitionRuntime(normalizedDataRoot);
+    auto providerRuntime = makeProductionProviderRuntime(normalizedDataRoot);
     auto detailRuntime = makeProductionInstanceDetailRuntime(normalizedDataRoot);
     auto launchRuntime = makeProductionLaunchRuntime(
         normalizedDataRoot,
@@ -327,16 +329,25 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
         }
     };
     dependencies.now = [] { return std::chrono::system_clock::now(); };
-    dependencies.cancelPendingWork = [runtime, launchRuntime] {
+    dependencies.cancelPendingWork = [runtime, launchRuntime, providerRuntime] {
         runtime->stopInstanceObservation();
         launchRuntime->cancelPendingWork();
+        providerRuntime->shutdown();
     };
-    dependencies.shutdown = [runtime, settingsRuntime, javaRuntime, accountRuntime, acquisitionRuntime, detailRuntime, launchRuntime] {
+    dependencies.shutdown = [runtime,
+                             settingsRuntime,
+                             javaRuntime,
+                             accountRuntime,
+                             acquisitionRuntime,
+                             providerRuntime,
+                             detailRuntime,
+                             launchRuntime] {
         runtime->shutdown();
         settingsRuntime->shutdown();
         javaRuntime->shutdown();
         accountRuntime->shutdown();
         acquisitionRuntime->shutdown();
+        providerRuntime->shutdown();
         static_cast<void>(detailRuntime);
         launchRuntime->shutdown();
     };
@@ -433,6 +444,27 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
                                       const FrontendRuntimeDependencies::InstanceImportProgressHandler& progress,
                                       const FrontendRuntimeDependencies::InstanceImportCancellationCheck& cancellation) {
         return acquisitionRuntime->importInstance(request, progress, cancellation);
+    };
+    dependencies.browseProvider = [providerRuntime](
+                                      const std::filesystem::path&,
+                                      const FrontendProviderBrowseRequest& request,
+                                      const FrontendRuntimeDependencies::ProviderBrowseProgressHandler& progress,
+                                      const FrontendRuntimeDependencies::ProviderBrowseCancellationCheck& cancellation) {
+        return providerRuntime->browse(request, progress, cancellation);
+    };
+    dependencies.loadProviderVersions = [providerRuntime](
+                                            const std::filesystem::path&,
+                                            const FrontendProviderVersionRequest& request,
+                                            const FrontendRuntimeDependencies::ProviderVersionProgressHandler& progress,
+                                            const FrontendRuntimeDependencies::ProviderVersionCancellationCheck& cancellation) {
+        return providerRuntime->versions(request, progress, cancellation);
+    };
+    dependencies.installProviderPack = [providerRuntime](
+                                            const std::filesystem::path&,
+                                            const FrontendProviderInstallRequest& request,
+                                            const FrontendRuntimeDependencies::ProviderInstallProgressHandler& progress,
+                                            const FrontendRuntimeDependencies::ProviderInstallCancellationCheck& cancellation) {
+        return providerRuntime->install(request, progress, cancellation);
     };
     dependencies.loadInstanceSettings = [settingsRuntime](
                                             const std::filesystem::path&,

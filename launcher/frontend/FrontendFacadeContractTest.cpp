@@ -1604,6 +1604,7 @@ int main()
         }
         FrontendProviderVersionSnapshot version;
         version.provider = request.provider;
+        version.installKind = FrontendProviderInstallKind::Modrinth;
         version.id = "version.fixture.sky.1";
         version.packIdentifier = request.packIdentifier;
         version.name = "1.0.0 Fabric";
@@ -1658,6 +1659,7 @@ int main()
         && cancelledProviderBrowse.outcome == FrontendProviderBrowseOutcome::Cancelled
         && providerVersionsResult.outcome == FrontendProviderVersionOutcome::Succeeded
         && providerVersionsResult.versions.size() == 1
+        && providerVersionsResult.versions.front().installKind == FrontendProviderInstallKind::Modrinth
         && providerVersionsResult.versions.front().recommended
         && cancelledProviderVersions.outcome == FrontendProviderVersionOutcome::Cancelled
         && providerBrowseCalls == 4 && providerVersionCalls == 2 && providerBrowseProgressEvents == 12
@@ -1700,10 +1702,34 @@ int main()
             return FrontendProviderBrowseResult{
                 FrontendProviderBrowseOutcome::Succeeded, page, "providers.browse.completed", "", false };
         };
+        invalidDependencies.loadProviderVersions = [](
+                                                       const std::filesystem::path&,
+                                                       const FrontendProviderVersionRequest& request,
+                                                       const FrontendRuntimeDependencies::ProviderVersionProgressHandler&,
+                                                       const FrontendRuntimeDependencies::ProviderVersionCancellationCheck&) {
+            FrontendProviderVersionSnapshot version;
+            version.provider = request.provider;
+            version.installKind = FrontendProviderInstallKind::TechnicSolder;
+            version.id = "invalid-install-kind";
+            version.packIdentifier = request.packIdentifier;
+            version.name = "Invalid Install Kind";
+            version.version = "1.0";
+            version.releaseType = FrontendProviderReleaseType::Release;
+            return FrontendProviderVersionResult{ FrontendProviderVersionOutcome::Succeeded,
+                                                  request.provider,
+                                                  request.packIdentifier,
+                                                  { version },
+                                                  "providers.versions.completed",
+                                                  "",
+                                                  false };
+        };
         FrontendFacade invalidFacade(fixtureRoot, std::move(invalidDependencies));
         return throwsInvalidArgument([&invalidFacade, &providerBrowseRequest] {
-            (void) invalidFacade.browseProvider(providerBrowseRequest);
-        });
+                   (void) invalidFacade.browseProvider(providerBrowseRequest);
+               })
+            && throwsInvalidArgument([&invalidFacade, &providerVersionRequest] {
+                   (void) invalidFacade.providerVersions(providerVersionRequest);
+               });
     }();
     const bool rejectedPostShutdownProviderWork = providerFacade.shutdown()
         && throwsLogicError([&providerFacade, &providerBrowseRequest] {

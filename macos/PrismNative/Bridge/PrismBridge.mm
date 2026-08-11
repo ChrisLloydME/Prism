@@ -3,6 +3,8 @@
 #include "FrontendFacade.h"
 #include "ProductionInstanceRuntime.h"
 
+#include <QtCore/QCoreApplication>
+
 #include <chrono>
 #include <cmath>
 #include <dispatch/dispatch.h>
@@ -556,6 +558,26 @@ bool isKnownProviderInstallKind(PRProviderInstallKind kind)
     return false;
 }
 
+bool providerInstallKindMatchesProvider(PRProviderInstallKind installKind, PRProviderKind provider)
+{
+    switch (provider) {
+        case PRProviderKindModrinth:
+            return installKind == PRProviderInstallKindModrinth;
+        case PRProviderKindCurseForge:
+            return installKind == PRProviderInstallKindCurseForgeFlame;
+        case PRProviderKindFTB:
+            return installKind == PRProviderInstallKindFTB;
+        case PRProviderKindATLauncher:
+            return installKind == PRProviderInstallKindATLauncher;
+        case PRProviderKindTechnic:
+            return installKind == PRProviderInstallKindTechnicZip
+                || installKind == PRProviderInstallKindTechnicSolder;
+        case PRProviderKindLegacyFTB:
+            return installKind == PRProviderInstallKindLegacyFTB;
+    }
+    return false;
+}
+
 bool isKnownProviderInstallOutcome(PRProviderInstallOutcome outcome)
 {
     switch (outcome) {
@@ -683,6 +705,21 @@ bool isKnownInstanceChangeKind(PRInstanceChangeKind kind)
 
 FrontendRuntimeDependencies defaultRuntimeDependencies(const std::filesystem::path& dataRoot)
 {
+    if (!QCoreApplication::instance()) {
+        if (![NSThread isMainThread]) {
+            throw std::logic_error("Native QtCore startup must be owned by the main thread");
+        }
+        static int nativeQtArgumentCount = 1;
+        static char nativeQtApplicationName[] = "PrismNative";
+        static char* nativeQtArguments[] = { nativeQtApplicationName, nullptr };
+        // QtCore is process-scoped: keeping this owner alive avoids tearing
+        // down its event dispatcher before bridge workers and static Qt data.
+        static QCoreApplication* const nativeQtApplication =
+            new QCoreApplication(nativeQtArgumentCount, nativeQtArguments);
+        if (!nativeQtApplication || !QCoreApplication::instance()) {
+            throw std::runtime_error("Native QtCore startup failed");
+        }
+    }
     return productionInstanceRuntimeDependencies(dataRoot);
 }
 
@@ -2452,10 +2489,13 @@ PRProviderBrowseResult *providerBrowseResultFromFacadeResult(const FrontendProvi
     return converted;
 }
 
+PRProviderInstallKind providerInstallKindFromFacadeKind(FrontendProviderInstallKind kind);
+
 PRProviderVersion *providerVersionFromFacadeSnapshot(const FrontendProviderVersionSnapshot& version)
 {
     PRProviderVersion *converted = [[PRProviderVersion alloc]
         initWithProvider:providerKindFromFacadeKind(version.provider)
+             installKind:providerInstallKindFromFacadeKind(version.installKind)
               identifier:foundationStringFromUTF8(version.id)
           packIdentifier:foundationStringFromUTF8(version.packIdentifier)
                     name:foundationStringFromUTF8(version.name)
@@ -4401,8 +4441,8 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, assign, readwrite) PRProviderSort sort;
 @property(nonatomic, copy, readwrite) NSArray<NSString *> *gameVersions;
 @property(nonatomic, copy, readwrite) NSArray<NSString *> *loaders;
-@property(nonatomic, copy, readwrite) NSArray<NSString *> *categories;
 @property(nonatomic, copy, readwrite) NSArray<NSNumber *> *releaseTypes;
+@property(nonatomic, copy, readwrite) NSArray<NSString *> *categories;
 @property(nonatomic, assign, readwrite) PRProviderSide side;
 @property(nonatomic, assign, readwrite) BOOL openSource;
 @property(nonatomic, assign, readwrite) BOOL hideInstalled;
@@ -4449,12 +4489,14 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, copy, readwrite) NSString *packIdentifier;
 @property(nonatomic, copy, readwrite) NSArray<NSString *> *gameVersions;
 @property(nonatomic, copy, readwrite) NSArray<NSString *> *loaders;
+@property(nonatomic, copy, readwrite) NSArray<NSNumber *> *releaseTypes;
 
 @end
 
 @interface PRProviderVersion ()
 
 @property(nonatomic, assign, readwrite) PRProviderKind provider;
+@property(nonatomic, assign, readwrite) PRProviderInstallKind installKind;
 @property(nonatomic, copy, readwrite) NSString *identifier;
 @property(nonatomic, copy, readwrite) NSString *packIdentifier;
 @property(nonatomic, copy, readwrite) NSString *name;
@@ -5631,9 +5673,11 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
                     packIdentifier:(NSString *)packIdentifier
                       gameVersions:(NSArray<NSString *> *)gameVersions
                           loaders:(NSArray<NSString *> *)loaders
+                     releaseTypes:(NSArray<NSNumber *> *)releaseTypes
 {
     if (!isKnownProviderKind(provider) || !isNonEmptyString(packIdentifier)
-        || ![gameVersions isKindOfClass:NSArray.class] || ![loaders isKindOfClass:NSArray.class]) {
+        || ![gameVersions isKindOfClass:NSArray.class] || ![loaders isKindOfClass:NSArray.class]
+        || ![releaseTypes isKindOfClass:NSArray.class]) {
         return nil;
     }
     for (id value in gameVersions) {
@@ -5646,6 +5690,12 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
             return nil;
         }
     }
+    for (id value in releaseTypes) {
+        if (![value isKindOfClass:NSNumber.class]
+            || !isKnownProviderReleaseType((PRProviderReleaseType)[value integerValue])) {
+            return nil;
+        }
+    }
 
     self = [super init];
     if (self) {
@@ -5653,6 +5703,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
         self.packIdentifier = [packIdentifier copy];
         self.gameVersions = [gameVersions copy];
         self.loaders = [loaders copy];
+        self.releaseTypes = [releaseTypes copy];
     }
     return self;
 }
@@ -5662,6 +5713,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @implementation PRProviderVersion
 
 - (instancetype)initWithProvider:(PRProviderKind)provider
+                     installKind:(PRProviderInstallKind)installKind
                          identifier:(NSString *)identifier
                      packIdentifier:(NSString *)packIdentifier
                                name:(NSString *)name
@@ -5672,7 +5724,9 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
            publishedUnixSeconds:(NSInteger)publishedUnixSeconds
                         recommended:(BOOL)recommended
 {
-    if (!isKnownProviderKind(provider) || !isKnownProviderReleaseType(releaseType) || !isNonEmptyString(identifier)
+    if (!isKnownProviderKind(provider) || !isKnownProviderInstallKind(installKind)
+        || !providerInstallKindMatchesProvider(installKind, provider) || !isKnownProviderReleaseType(releaseType)
+        || !isNonEmptyString(identifier)
         || !isNonEmptyString(packIdentifier) || !isNonEmptyString(name) || !isNonEmptyString(version)
         || ![gameVersions isKindOfClass:NSArray.class] || ![loaders isKindOfClass:NSArray.class]) {
         return nil;
@@ -5691,6 +5745,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
     self = [super init];
     if (self) {
         self.provider = provider;
+        self.installKind = installKind;
         self.identifier = [identifier copy];
         self.packIdentifier = [packIdentifier copy];
         self.name = [name copy];
@@ -5859,8 +5914,7 @@ resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentif
         || kind == PRProviderInstallRecoveryKindBlockedFiles;
     if (isFilePrompt) {
         if (action != PRProviderInstallRecoveryActionContinue
-            || (kind == PRProviderInstallRecoveryKindOptionalFiles && resolved.count != 0)
-            || (kind == PRProviderInstallRecoveryKindBlockedFiles && selected.count != 0)) {
+            || (kind == PRProviderInstallRecoveryKindOptionalFiles && resolved.count != 0)) {
             return nil;
         }
     } else if (action == PRProviderInstallRecoveryActionContinue || selected.count != 0 || resolved.count != 0) {
@@ -10882,6 +10936,13 @@ resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentif
                         requestCopy.gameVersions, "Invalid provider version game filters");
                     versionRequest.loaders = utf8StringsFromFoundation(
                         requestCopy.loaders, "Invalid provider version loader filters");
+                    for (NSNumber *releaseType in requestCopy.releaseTypes) {
+                        if (![releaseType isKindOfClass:NSNumber.class]) {
+                            throw std::invalid_argument("Invalid provider version release filters");
+                        }
+                        versionRequest.releaseTypes.push_back(
+                            providerReleaseTypeFromFoundation((PRProviderReleaseType)releaseType.integerValue));
+                    }
                     const FrontendProviderVersionResult versionResult = bridge->_facade->providerVersions(
                         versionRequest,
                         [&](const FrontendTaskSnapshot& snapshot) {

@@ -3726,6 +3726,7 @@ FrontendRuntimeDependencies baseFixtureDependencies()
         ++*versionProgressCalls;
         FrontendProviderVersionSnapshot version;
         version.provider = request.provider;
+        version.installKind = FrontendProviderInstallKind::CurseForgeFlame;
         version.id = "version.bridge.fixture";
         version.packIdentifier = request.packIdentifier;
         version.name = "1.0.0 Bridge";
@@ -3803,7 +3804,8 @@ FrontendRuntimeDependencies baseFixtureDependencies()
         initWithProvider:PRProviderKindCurseForge
           packIdentifier:@"pack.bridge.fixture"
             gameVersions:@[ @"1.21.1" ]
-                loaders:@[ @"fabric" ]];
+                loaders:@[ @"fabric" ]
+           releaseTypes:@[ @(PRProviderReleaseTypeRelease) ]];
     XCTAssertNotNil(versionRequest);
     XCTestExpectation *versionCompletion = [self expectationWithDescription:@"Provider versions completed"];
     __block PRProviderVersionResult *receivedVersionResult = nil;
@@ -3822,9 +3824,12 @@ FrontendRuntimeDependencies baseFixtureDependencies()
     XCTAssertTrue(versionToken.isCancelled);
     XCTAssertEqual(receivedVersionRequest->provider, FrontendProviderKind::CurseForge);
     XCTAssertEqual(receivedVersionRequest->packIdentifier, "pack.bridge.fixture");
+    XCTAssertEqual(receivedVersionRequest->releaseTypes.size(), (size_t)1);
+    XCTAssertEqual(receivedVersionRequest->releaseTypes.front(), FrontendProviderReleaseType::Release);
     XCTAssertEqual(versionProgressCalls->load(), (size_t)2);
     XCTAssertEqual(receivedVersionResult.outcome, PRProviderVersionOutcomeSucceeded);
     XCTAssertEqual(receivedVersionResult.versions.count, (NSUInteger)1);
+    XCTAssertEqual(receivedVersionResult.versions.firstObject.installKind, PRProviderInstallKindCurseForgeFlame);
     XCTAssertTrue(receivedVersionResult.versions.firstObject.recommended);
     XCTAssertEqualObjects(receivedVersionResult.versions.firstObject.identifier, @"version.bridge.fixture");
 
