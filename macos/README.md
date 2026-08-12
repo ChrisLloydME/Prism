@@ -25,6 +25,14 @@ normative [PBP v1 wire rules](../docs/backend-ipc/PROTOCOL_V1.md) and the
 in-process bridge and one-shot launch helper are migration paths, not the final
 ownership model.
 
+For implementation work, start with the
+[current backend support guide](../docs/backend/README.md), the
+[current architecture](../docs/backend/CURRENT_ARCHITECTURE.md), the
+[capability matrix](../docs/backend/CAPABILITY_MATRIX.md), and the
+[agent implementation guide](../docs/backend/AGENT_IMPLEMENTATION_GUIDE.md).
+Those documents distinguish production-backed code from contracts, UI
+surfaces, and the still-unimplemented IPC layer.
+
 ## Command-line verification
 
 ```sh

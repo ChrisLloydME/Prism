@@ -4,6 +4,13 @@ Status: approved implementation design
 Protocol: Prism Backend Protocol (PBP) v1  
 Platform baseline: macOS 14, SwiftUI/AppKit client, C++/Qt backend
 
+> **Implementation status:** this directory specifies the target protocol; it
+> is not evidence that PBP is implemented. The current production path is an
+> in-process Objective-C++ bridge, and the bundled `prism_backend` is a launch
+> helper rather than an RPC daemon. See the
+> [current backend support guide](../backend/README.md) and
+> [capability matrix](../backend/CAPABILITY_MATRIX.md).
+
 This design replaces UI-shaped bridge calls and one-process-per-launch helper
 arguments with a stable local service boundary. It is intentionally independent
 of the current native UI. A redesigned UI, a command-line client, or tests may
