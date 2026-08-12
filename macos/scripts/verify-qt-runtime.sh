@@ -56,8 +56,12 @@ if [ -x "$backend" ]; then
         echo "error: Prism backend helper does not reference bundled Qt frameworks" >&2
         exit 1
     fi
-    if [ ! -f "$app_bundle/Contents/MacOS/jars/NewLaunch.jar" ]; then
+    if [ ! -f "$app_bundle/Contents/Resources/jars/NewLaunch.jar" ]; then
         echo "error: Prism backend helper is missing NewLaunch.jar" >&2
+        exit 1
+    fi
+    if [ -d "$app_bundle/Contents/MacOS/jars" ]; then
+        echo "error: Prism backend JARs must not be placed in the nested-code directory Contents/MacOS" >&2
         exit 1
     fi
     if [ ! -f "$app_bundle/Contents/PlugIns/platforms/libqcocoa.dylib" ]; then

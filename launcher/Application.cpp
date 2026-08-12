@@ -1907,6 +1907,12 @@ QString Application::getJarPath(QString jarFile)
 #if defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD) || defined(Q_OS_OPENBSD)
         FS::PathCombine(m_rootPath, "share", BuildConfig.LAUNCHER_NAME),
 #endif
+#if defined(Q_OS_MACOS)
+        // Bundle data belongs in Contents/Resources. Placing JARs under
+        // Contents/MacOS makes Xcode's recursive CodeSign validation treat
+        // them as unsigned nested code and reject the application bundle.
+        FS::PathCombine(applicationDirPath(), "..", "Resources", "jars"),
+#endif
         FS::PathCombine(m_rootPath, "jars"), FS::PathCombine(applicationDirPath(), "jars"),
         FS::PathCombine(applicationDirPath(), "..", "jars")  // from inside build dir, for debuging
     };
