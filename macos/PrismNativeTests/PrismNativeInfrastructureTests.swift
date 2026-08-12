@@ -294,25 +294,37 @@ final class PrismNativeInfrastructureTests: XCTestCase {
         XCTAssertTrue(bridge.shutdown())
     }
 
-    func testNativeTargetOwnsLegacyBundleMetadataAndIconWithoutSigningChanges() throws {
+    func testNativeTargetOwnsBundleMetadataAndHardenedRuntimeEntitlements() throws {
         let macosRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         let projectSource = try readSource(
             at: macosRoot.appendingPathComponent("PrismNative.xcodeproj/project.pbxproj")
         )
-        let nativeTargetSection = try sourceSection(
+        let debugTargetSection = try sourceSection(
             projectSource,
             from: "A90000000000000000000003 /* Debug */",
+            through: "A90000000000000000000004 /* Release */"
+        )
+        let releaseTargetSection = try sourceSection(
+            projectSource,
+            from: "A90000000000000000000004 /* Release */",
             through: "A90000000000000000000005 /* Debug */"
         )
 
-        XCTAssertTrue(nativeTargetSection.contains("INFOPLIST_FILE = \"PrismNative/Resources/Info.plist\";"))
-        XCTAssertTrue(nativeTargetSection.contains("CODE_SIGN_ENTITLEMENTS = \"PrismNative/Resources/PrismNative.entitlements\";"))
-        XCTAssertTrue(nativeTargetSection.contains("MARKETING_VERSION = 12.0.0;"))
-        XCTAssertTrue(nativeTargetSection.contains("CURRENT_PROJECT_VERSION = 12.0.0;"))
-        XCTAssertFalse(nativeTargetSection.contains("GENERATE_INFOPLIST_FILE = YES;"))
-        XCTAssertFalse(nativeTargetSection.contains("ASSETCATALOG_COMPILER_APPICON_NAME"))
+        XCTAssertTrue(debugTargetSection.contains("INFOPLIST_FILE = \"PrismNative/Resources/Info.plist\";"))
+        XCTAssertTrue(debugTargetSection.contains("CODE_SIGN_ENTITLEMENTS = \"PrismNative/Resources/PrismNative.entitlements\";"))
+        XCTAssertTrue(debugTargetSection.contains("ENABLE_HARDENED_RUNTIME = YES;"))
+        XCTAssertTrue(releaseTargetSection.contains("INFOPLIST_FILE = \"PrismNative/Resources/Info.plist\";"))
+        XCTAssertTrue(releaseTargetSection.contains("CODE_SIGN_ENTITLEMENTS = \"PrismNative/Resources/PrismNative.entitlements\";"))
+        XCTAssertTrue(releaseTargetSection.contains("ENABLE_HARDENED_RUNTIME = YES;"))
+
+        for nativeTargetSection in [debugTargetSection, releaseTargetSection] {
+            XCTAssertTrue(nativeTargetSection.contains("MARKETING_VERSION = 12.0.0;"))
+            XCTAssertTrue(nativeTargetSection.contains("CURRENT_PROJECT_VERSION = 12.0.0;"))
+            XCTAssertFalse(nativeTargetSection.contains("GENERATE_INFOPLIST_FILE = YES;"))
+            XCTAssertFalse(nativeTargetSection.contains("ASSETCATALOG_COMPILER_APPICON_NAME"))
+        }
 
         let infoURL = macosRoot.appendingPathComponent("PrismNative/Resources/Info.plist")
         let info = try XCTUnwrap(
@@ -353,9 +365,15 @@ final class PrismNativeInfrastructureTests: XCTestCase {
         )
         XCTAssertEqual(
             Set(entitlements.keys),
-            Set(["com.apple.security.device.audio-input", "com.apple.security.device.camera"])
+            Set([
+                "com.apple.security.cs.disable-library-validation",
+                "com.apple.security.device.audio-input",
+                "com.apple.security.device.camera",
+            ])
         )
-        XCTAssertFalse(entitlements.keys.contains("com.apple.security.cs.disable-library-validation"))
+        XCTAssertEqual(entitlements["com.apple.security.cs.disable-library-validation"] as? Bool, true)
+        XCTAssertEqual(entitlements["com.apple.security.device.audio-input"] as? Bool, true)
+        XCTAssertEqual(entitlements["com.apple.security.device.camera"] as? Bool, true)
 
         let cmakeSource = try readSource(
             at: macosRoot.deletingLastPathComponent().appendingPathComponent("CMakeLists.txt")
@@ -405,7 +423,8 @@ final class PrismNativeInfrastructureTests: XCTestCase {
         XCTAssertTrue(projectSource.contains("scripts/deploy-qt-runtime.sh"))
         XCTAssertTrue(projectSource.contains("@executable_path/../Frameworks"))
         XCTAssertTrue(projectSource.contains("ENABLE_HARDENED_RUNTIME = YES;"))
-        XCTAssertFalse(projectSource.contains("com.apple.security.cs.disable-library-validation"))
+        XCTAssertTrue(projectSource.contains("PrismNative/Resources/PrismNative.entitlements"))
+        XCTAssertFalse(projectSource.contains("PrismNativeDebug.entitlements"))
         XCTAssertTrue(deploySource.contains("macdeployqt"))
         XCTAssertTrue(deploySource.contains("-no-codesign"))
         XCTAssertTrue(deploySource.contains("CODE_SIGNING_ALLOWED"))
