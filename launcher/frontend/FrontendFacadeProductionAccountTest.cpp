@@ -201,6 +201,30 @@ int main()
         const auto recovered = facade.authenticateAccount(refreshRequest);
         require(recovered.outcome == FrontendAccountAuthenticationOutcome::Succeeded,
                 "refresh recovery did not restore the production account");
+
+        auto skinProfile = runtime->skinAccountProfile("microsoft.profile");
+        require(skinProfile.has_value() && skinProfile->profileName == "Microsoft_Player",
+                "production account adapter did not expose non-secret skin profile metadata");
+        const auto skinCredential = runtime->skinAccessCredential("microsoft.profile");
+        require(skinCredential == std::optional<std::string>("synthetic-access"),
+                "production account adapter did not retain the short-lived skin credential internally");
+        skinProfile->currentSkinIdentifier = "skin.synthetic";
+        skinProfile->currentSkinURL = "https://textures.example.invalid/skin.png";
+        skinProfile->currentModel = FrontendSkinModel::Slim;
+        skinProfile->currentSkinData = { 1, 2, 3, 4 };
+        skinProfile->currentCapeIdentifier = "cape.synthetic";
+        skinProfile->capes = {
+            { "cape.synthetic", "Synthetic Cape", { 5, 6, 7 }, "https://textures.example.invalid/cape.png" },
+        };
+        require(runtime->persistSkinAccountProfile(*skinProfile),
+                "production account adapter could not persist confirmed skin metadata");
+        const auto confirmedSkinProfile = runtime->skinAccountProfile("microsoft.profile");
+        require(confirmedSkinProfile.has_value()
+                    && confirmedSkinProfile->currentSkinIdentifier == "skin.synthetic"
+                    && confirmedSkinProfile->currentModel == FrontendSkinModel::Slim
+                    && confirmedSkinProfile->currentCapeIdentifier == "cape.synthetic"
+                    && confirmedSkinProfile->capes.size() == 1,
+                "persisted skin profile metadata did not read back through AccountData");
         facade.shutdown();
 
         auto reconstructedRuntime = makeProductionAccountRuntime(root, ProductionAccountRuntime::defaultDependencies());
@@ -214,6 +238,10 @@ int main()
         require(rebuiltOffline.outcome == FrontendOfflineLaunchIdentityLoadOutcome::Succeeded
                     && rebuiltOffline.identity->name == "Saved_Player",
                 "offline identity did not survive reconstruction");
+        const auto rebuiltSkinProfile = reconstructedRuntime->skinAccountProfile("microsoft.profile");
+        require(rebuiltSkinProfile.has_value() && rebuiltSkinProfile->currentSkinIdentifier == "skin.synthetic"
+                    && !reconstructedRuntime->skinAccessCredential("microsoft.profile").has_value(),
+                "skin metadata or short-lived credential lifetime changed after reconstruction");
         reconstructed.shutdown();
     } catch (const std::exception& exception) {
         std::cerr << exception.what() << '\n';

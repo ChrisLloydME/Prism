@@ -1774,4 +1774,282 @@ typedef NS_ENUM(NSInteger, PROfflineLaunchIdentityUpdateOutcome) {
 
 @end
 
+typedef NS_ENUM(NSInteger, PRNewsLoadOutcome) {
+    PRNewsLoadOutcomeSucceeded = 0,
+    PRNewsLoadOutcomeFailed,
+    PRNewsLoadOutcomeCancelled,
+    PRNewsLoadOutcomeRejected,
+};
+
+@interface PRNewsEntry : NSObject
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithIdentifier:(NSString *)identifier
+                                      title:(NSString *)title
+                                       link:(NSURL *)link
+                                    content:(NSString *)content
+                              publishedDate:(nullable NSString *)publishedDate NS_DESIGNATED_INITIALIZER;
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, copy, readonly) NSString *title;
+@property(nonatomic, copy, readonly) NSURL *link;
+@property(nonatomic, copy, readonly) NSString *content;
+@property(nonatomic, copy, readonly, nullable) NSString *publishedDate;
+@end
+
+@interface PRNewsLoadResult : NSObject
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithOutcome:(PRNewsLoadOutcome)outcome
+                          entries:(NSArray<PRNewsEntry *> *)entries
+                  localizationKey:(NSString *)localizationKey
+                   diagnosticText:(nullable NSString *)diagnosticText
+                        retryable:(BOOL)retryable NS_DESIGNATED_INITIALIZER;
+@property(nonatomic, assign, readonly) PRNewsLoadOutcome outcome;
+@property(nonatomic, copy, readonly) NSArray<PRNewsEntry *> *entries;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL retryable;
+@end
+
+typedef NS_ENUM(NSInteger, PRUpdateCheckOutcome) {
+    PRUpdateCheckOutcomeNoUpdate = 0,
+    PRUpdateCheckOutcomeAvailable,
+    PRUpdateCheckOutcomeFailed,
+    PRUpdateCheckOutcomeCancelled,
+    PRUpdateCheckOutcomeRejected,
+};
+
+typedef NS_ENUM(NSInteger, PRUpdateDecision) {
+    PRUpdateDecisionInstall = 0,
+    PRUpdateDecisionRemindLater,
+    PRUpdateDecisionSkipVersion,
+};
+
+typedef NS_ENUM(NSInteger, PRUpdateDecisionOutcome) {
+    PRUpdateDecisionOutcomeSucceeded = 0,
+    PRUpdateDecisionOutcomeAuthorizationRequired,
+    PRUpdateDecisionOutcomeFailed,
+    PRUpdateDecisionOutcomeCancelled,
+    PRUpdateDecisionOutcomeRejected,
+};
+
+@interface PRUpdateNotice : NSObject
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithCurrentVersion:(NSString *)currentVersion
+                                availableVersion:(NSString *)availableVersion
+                                    releaseNotes:(NSString *)releaseNotes NS_DESIGNATED_INITIALIZER;
+@property(nonatomic, copy, readonly) NSString *currentVersion;
+@property(nonatomic, copy, readonly) NSString *availableVersion;
+@property(nonatomic, copy, readonly) NSString *releaseNotes;
+@end
+
+@interface PRUpdateCheckResult : NSObject
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithOutcome:(PRUpdateCheckOutcome)outcome
+                           notice:(nullable PRUpdateNotice *)notice
+                  localizationKey:(NSString *)localizationKey
+                   diagnosticText:(nullable NSString *)diagnosticText
+                        retryable:(BOOL)retryable NS_DESIGNATED_INITIALIZER;
+@property(nonatomic, assign, readonly) PRUpdateCheckOutcome outcome;
+@property(nonatomic, strong, readonly, nullable) PRUpdateNotice *notice;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL retryable;
+@end
+
+@interface PRUpdateDecisionResult : NSObject
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithDecision:(PRUpdateDecision)decision
+                           outcome:(PRUpdateDecisionOutcome)outcome
+                  availableVersion:(NSString *)availableVersion
+                  localizationKey:(NSString *)localizationKey
+                   diagnosticText:(nullable NSString *)diagnosticText
+                        retryable:(BOOL)retryable NS_DESIGNATED_INITIALIZER;
+@property(nonatomic, assign, readonly) PRUpdateDecision decision;
+@property(nonatomic, assign, readonly) PRUpdateDecisionOutcome outcome;
+@property(nonatomic, copy, readonly) NSString *availableVersion;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL retryable;
+@end
+
+typedef NS_ENUM(NSInteger, PRShortcutLaunchTarget) {
+    PRShortcutLaunchTargetInstance = 0,
+    PRShortcutLaunchTargetWorld,
+    PRShortcutLaunchTargetServer,
+};
+
+typedef NS_ENUM(NSInteger, PRShortcutDestination) {
+    PRShortcutDestinationDesktop = 0,
+    PRShortcutDestinationApplications,
+    PRShortcutDestinationOther,
+};
+
+typedef NS_ENUM(NSInteger, PRShortcutCreationOutcome) {
+    PRShortcutCreationOutcomeSucceeded = 0,
+    PRShortcutCreationOutcomeUnknownInstance,
+    PRShortcutCreationOutcomeFailed,
+    PRShortcutCreationOutcomeCancelled,
+    PRShortcutCreationOutcomeRejected,
+};
+
+@interface PRShortcutCreationRequest : NSObject
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithInstanceIdentifier:(NSString *)instanceIdentifier
+                                                name:(NSString *)name
+                                        launchTarget:(PRShortcutLaunchTarget)launchTarget
+                                     worldIdentifier:(nullable NSString *)worldIdentifier
+                                       serverAddress:(nullable NSString *)serverAddress
+                                         profileName:(nullable NSString *)profileName
+                                         destination:(PRShortcutDestination)destination
+                                      destinationURL:(nullable NSURL *)destinationURL
+                                             iconKey:(NSString *)iconKey NS_DESIGNATED_INITIALIZER;
+@property(nonatomic, copy, readonly) NSString *instanceIdentifier;
+@property(nonatomic, copy, readonly) NSString *name;
+@property(nonatomic, assign, readonly) PRShortcutLaunchTarget launchTarget;
+@property(nonatomic, copy, readonly, nullable) NSString *worldIdentifier;
+@property(nonatomic, copy, readonly, nullable) NSString *serverAddress;
+@property(nonatomic, copy, readonly, nullable) NSString *profileName;
+@property(nonatomic, assign, readonly) PRShortcutDestination destination;
+@property(nonatomic, copy, readonly, nullable) NSURL *destinationURL;
+@property(nonatomic, copy, readonly) NSString *iconKey;
+@end
+
+@interface PRShortcutCreationResult : NSObject
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithInstanceIdentifier:(NSString *)instanceIdentifier
+                                      outcome:(PRShortcutCreationOutcome)outcome
+                              localizationKey:(NSString *)localizationKey
+                               diagnosticText:(nullable NSString *)diagnosticText
+                                    retryable:(BOOL)retryable NS_DESIGNATED_INITIALIZER;
+@property(nonatomic, copy, readonly) NSString *instanceIdentifier;
+@property(nonatomic, assign, readonly) PRShortcutCreationOutcome outcome;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL retryable;
+@end
+
+typedef NS_ENUM(NSInteger, PRSkinModel) {
+    PRSkinModelClassic = 0,
+    PRSkinModelSlim,
+};
+
+typedef NS_ENUM(NSInteger, PRSkinLoadOutcome) {
+    PRSkinLoadOutcomeSucceeded = 0,
+    PRSkinLoadOutcomeFailed,
+    PRSkinLoadOutcomeCancelled,
+    PRSkinLoadOutcomeRejected,
+};
+
+typedef NS_ENUM(NSInteger, PRSkinOperation) {
+    PRSkinOperationImportFile = 0,
+    PRSkinOperationImportURL,
+    PRSkinOperationImportUser,
+    PRSkinOperationUpload,
+    PRSkinOperationReset,
+    PRSkinOperationDelete,
+    PRSkinOperationRename,
+};
+
+typedef NS_ENUM(NSInteger, PRSkinActionOutcome) {
+    PRSkinActionOutcomeSucceeded = 0,
+    PRSkinActionOutcomeFailed,
+    PRSkinActionOutcomeCancelled,
+    PRSkinActionOutcomeRejected,
+};
+
+@interface PRSkinCape : NSObject
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithIdentifier:(NSString *)identifier
+                                displayName:(NSString *)displayName
+                                  imageData:(NSData *)imageData NS_DESIGNATED_INITIALIZER;
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, copy, readonly) NSString *displayName;
+@property(nonatomic, copy, readonly) NSData *imageData;
+@end
+
+@interface PRSkinSnapshot : NSObject
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithIdentifier:(NSString *)identifier
+                                        name:(NSString *)name
+                                       model:(PRSkinModel)model
+                              capeIdentifier:(nullable NSString *)capeIdentifier
+                                 textureData:(NSData *)textureData
+                                 previewData:(NSData *)previewData
+                                   sourceURL:(NSURL *)sourceURL NS_DESIGNATED_INITIALIZER;
+@property(nonatomic, copy, readonly) NSString *identifier;
+@property(nonatomic, copy, readonly) NSString *name;
+@property(nonatomic, assign, readonly) PRSkinModel model;
+@property(nonatomic, copy, readonly, nullable) NSString *capeIdentifier;
+@property(nonatomic, copy, readonly) NSData *textureData;
+@property(nonatomic, copy, readonly) NSData *previewData;
+@property(nonatomic, copy, readonly) NSURL *sourceURL;
+@end
+
+@interface PRSkinLoadResult : NSObject
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithOutcome:(PRSkinLoadOutcome)outcome
+                accountIdentifier:(NSString *)accountIdentifier
+                            skins:(NSArray<PRSkinSnapshot *> *)skins
+                            capes:(NSArray<PRSkinCape *> *)capes
+            currentSkinIdentifier:(nullable NSString *)currentSkinIdentifier
+                  localizationKey:(NSString *)localizationKey
+                   diagnosticText:(nullable NSString *)diagnosticText
+                        retryable:(BOOL)retryable NS_DESIGNATED_INITIALIZER;
+@property(nonatomic, assign, readonly) PRSkinLoadOutcome outcome;
+@property(nonatomic, copy, readonly) NSString *accountIdentifier;
+@property(nonatomic, copy, readonly) NSArray<PRSkinSnapshot *> *skins;
+@property(nonatomic, copy, readonly) NSArray<PRSkinCape *> *capes;
+@property(nonatomic, copy, readonly, nullable) NSString *currentSkinIdentifier;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL retryable;
+@end
+
+@interface PRSkinActionRequest : NSObject
+- (instancetype)init NS_UNAVAILABLE;
+- (nullable instancetype)initWithOperation:(PRSkinOperation)operation
+                         accountIdentifier:(NSString *)accountIdentifier
+                            skinIdentifier:(nullable NSString *)skinIdentifier
+                                     model:(PRSkinModel)model
+                            capeIdentifier:(nullable NSString *)capeIdentifier
+                                 sourceURL:(nullable NSURL *)sourceURL
+                            remoteURLString:(nullable NSString *)remoteURLString
+                                  username:(nullable NSString *)username
+                           replacementName:(nullable NSString *)replacementName
+                                 confirmed:(BOOL)confirmed NS_DESIGNATED_INITIALIZER;
+@property(nonatomic, assign, readonly) PRSkinOperation operation;
+@property(nonatomic, copy, readonly) NSString *accountIdentifier;
+@property(nonatomic, copy, readonly, nullable) NSString *skinIdentifier;
+@property(nonatomic, assign, readonly) PRSkinModel model;
+@property(nonatomic, copy, readonly, nullable) NSString *capeIdentifier;
+@property(nonatomic, copy, readonly, nullable) NSURL *sourceURL;
+@property(nonatomic, copy, readonly, nullable) NSString *remoteURLString;
+@property(nonatomic, copy, readonly, nullable) NSString *username;
+@property(nonatomic, copy, readonly, nullable) NSString *replacementName;
+@property(nonatomic, assign, readonly) BOOL confirmed;
+@end
+
+@interface PRSkinActionResult : NSObject
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithOperation:(PRSkinOperation)operation
+                            outcome:(PRSkinActionOutcome)outcome
+                  accountIdentifier:(NSString *)accountIdentifier
+                              skins:(NSArray<PRSkinSnapshot *> *)skins
+                              capes:(NSArray<PRSkinCape *> *)capes
+              currentSkinIdentifier:(nullable NSString *)currentSkinIdentifier
+             selectedSkinIdentifier:(nullable NSString *)selectedSkinIdentifier
+                    localizationKey:(NSString *)localizationKey
+                     diagnosticText:(nullable NSString *)diagnosticText
+                          retryable:(BOOL)retryable NS_DESIGNATED_INITIALIZER;
+@property(nonatomic, assign, readonly) PRSkinOperation operation;
+@property(nonatomic, assign, readonly) PRSkinActionOutcome outcome;
+@property(nonatomic, copy, readonly) NSString *accountIdentifier;
+@property(nonatomic, copy, readonly) NSArray<PRSkinSnapshot *> *skins;
+@property(nonatomic, copy, readonly) NSArray<PRSkinCape *> *capes;
+@property(nonatomic, copy, readonly, nullable) NSString *currentSkinIdentifier;
+@property(nonatomic, copy, readonly, nullable) NSString *selectedSkinIdentifier;
+@property(nonatomic, copy, readonly) NSString *localizationKey;
+@property(nonatomic, copy, readonly, nullable) NSString *diagnosticText;
+@property(nonatomic, assign, readonly) BOOL retryable;
+@end
+
 NS_ASSUME_NONNULL_END

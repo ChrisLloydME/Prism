@@ -72,6 +72,9 @@ final class PrismUtilitySurfacesTests: XCTestCase {
         XCTAssertTrue(model.choose(.install))
         XCTAssertEqual(decisions, [.install])
         XCTAssertFalse(model.choose(.skipVersion))
+        XCTAssertTrue(model.check())
+        XCTAssertTrue(model.cancel())
+        XCTAssertEqual(model.state, .cancelled)
     }
 
     func testProviderChoiceModelKeepsSkipAndConfirmSemantics() {
@@ -104,7 +107,11 @@ final class PrismUtilitySurfacesTests: XCTestCase {
 
     func testRecoveryMessageModelGuardsActionsAndCopiesFixtureDetails() throws {
         var decisions: [PrismRecoveryDecision] = []
-        let model = PrismRecoveryMessageModel(onDecision: { decisions.append($0) })
+        var copiedText: String?
+        let model = PrismRecoveryMessageModel(
+            clipboardWriter: { copiedText = $0; return true },
+            onDecision: { decisions.append($0) }
+        )
         let detail = try XCTUnwrap(PrismRecoveryDetail(id: "url", label: "URL", value: "https://example.invalid/fixture"))
         model.present(PrismRecoveryMessage(
             titleKey: "recovery.fixture.title",
@@ -117,6 +124,7 @@ final class PrismUtilitySurfacesTests: XCTestCase {
         ))
 
         XCTAssertTrue(model.copyDetails())
+        XCTAssertEqual(copiedText, "URL: https://example.invalid/fixture")
         XCTAssertFalse(model.choose(.edit))
         XCTAssertTrue(model.choose(.retry))
         XCTAssertEqual(decisions, [.retry])
@@ -184,6 +192,13 @@ final class PrismUtilitySurfacesTests: XCTestCase {
             "PrismProviderChoiceModel",
             "PrismRecoveryMessageModel",
             "PrismShortcutCreationModel",
+            "bridge.loadNews",
+            "bridge.checkForUpdates",
+            "bridge.createShortcut",
+            "if case .empty = model.state",
+            "prism.news.article.\\(entry.id)",
+            "prism.news.article-link.\\(entry.id)",
+            "prism.news.article-content.\\(entry.id)",
             "TabView",
             "NavigationSplitView",
             "List(",
@@ -244,6 +259,13 @@ final class PrismUtilitySurfacesTests: XCTestCase {
             "PrismShortcutCreationModel"
         ] {
             XCTAssertTrue(appSource.contains(requiredToken), "Missing utility window registration: \(requiredToken)")
+        }
+        for requiredToken in [
+            "PrismNewsModel(bridge: runtime.bridge)",
+            "PrismUpdateModel(bridge: runtime.bridge)",
+            "bridge: runtime.bridge"
+        ] {
+            XCTAssertTrue(appSource.contains(requiredToken), "Missing production utility wiring: \(requiredToken)")
         }
 
         let commandModelSource = try String(

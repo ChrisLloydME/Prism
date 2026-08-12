@@ -711,6 +711,8 @@ final class PrismSkinManagementModel: ObservableObject {
 
     private var generation = 0
     private var retryRequest: PrismSkinRetryRequest?
+    private let bridge: PRPrismBridge?
+    private var requestToken: PRBridgeObservationToken?
 
     let onLoad: ((String, Int) -> Void)?
     let onImport: ((PrismSkinImportRequest, Int) -> Void)?
@@ -731,10 +733,11 @@ final class PrismSkinManagementModel: ObservableObject {
     }
 
     init(
-        accountIdentifier: String = "account.fixture.microsoft",
-        initialSkins: [PrismSkinSnapshot] = PrismSkinFixture.skins,
-        initialCapes: [PrismSkinCape] = PrismSkinFixture.capes,
-        currentSkinIdentifier: String? = PrismSkinFixture.currentSkinIdentifier,
+        accountIdentifier: String = "",
+        initialSkins: [PrismSkinSnapshot] = [],
+        initialCapes: [PrismSkinCape] = [],
+        currentSkinIdentifier: String? = nil,
+        bridge: PRPrismBridge? = nil,
         onLoad: ((String, Int) -> Void)? = nil,
         onImport: ((PrismSkinImportRequest, Int) -> Void)? = nil,
         onUpload: ((PrismSkinUploadRequest, Int) -> Void)? = nil,
@@ -745,7 +748,7 @@ final class PrismSkinManagementModel: ObservableObject {
         onPresentImportPanel: ((Int) -> Void)? = nil
     ) {
         let normalizedAccount = accountIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.accountIdentifier = normalizedAccount.isEmpty ? "account.fixture.microsoft" : normalizedAccount
+        self.accountIdentifier = normalizedAccount
         let validSkins = initialSkins.filter(\.isUsable)
         self.listState = validSkins.isEmpty ? .empty : .content(validSkins)
         self.capes = initialCapes
@@ -756,6 +759,7 @@ final class PrismSkinManagementModel: ObservableObject {
         let selected = validSkins.first { $0.id == selectedIdentifier }
         self.draftModel = selected?.model ?? .classic
         self.draftCapeIdentifier = selected?.capeIdentifier ?? PrismSkinCape.noneIdentifier
+        self.bridge = bridge
         self.onLoad = onLoad
         self.onImport = onImport
         self.onUpload = onUpload
@@ -819,12 +823,13 @@ final class PrismSkinManagementModel: ObservableObject {
         let normalized = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return }
         invalidateCurrentOperation()
+        requestToken?.cancel()
+        requestToken = nil
         accountIdentifier = normalized
-        let fixture = PrismSkinFixture.skins
-        listState = .content(fixture)
-        capes = PrismSkinFixture.capes
-        currentSkinIdentifier = PrismSkinFixture.currentSkinIdentifier
-        selectedSkinIdentifier = currentSkinIdentifier
+        listState = .empty
+        capes = []
+        currentSkinIdentifier = nil
+        selectedSkinIdentifier = nil
         syncDraft()
     }
 
@@ -843,11 +848,31 @@ final class PrismSkinManagementModel: ObservableObject {
     func beginLoad() -> Int {
         let ticket = begin(operation: .load, retry: .load)
         listState = .loading(generation: ticket)
-        guard let onLoad else {
+        requestToken?.cancel()
+        if let bridge {
+            requestToken = bridge.loadSkins(withAccountIdentifier: accountIdentifier) { [weak self] result, error in
+                self?.requestToken = nil
+                guard let self else { return }
+                if let result {
+                    _ = self.apply(bridgeLoadResult: result, generation: ticket)
+                } else if let error {
+                    _ = self.apply(
+                        loadResult: PrismSkinLoadResult(
+                            accountIdentifier: self.accountIdentifier,
+                            skins: [],
+                            capes: [],
+                            currentSkinIdentifier: nil,
+                            failure: Self.failure(from: error)
+                        ),
+                        generation: ticket
+                    )
+                }
+            }
+        } else if let onLoad {
+            onLoad(accountIdentifier, ticket)
+        } else {
             failUnavailable(operation: .load, generation: ticket)
-            return ticket
         }
-        onLoad(accountIdentifier, ticket)
         return ticket
     }
 
@@ -913,8 +938,7 @@ final class PrismSkinManagementModel: ObservableObject {
         }
         let request = PrismSkinImportRequest(accountIdentifier: accountIdentifier, source: .file(url.standardizedFileURL))
         retryRequest = .importSkin(request)
-        onImport?(request, ticket)
-        if onImport == nil { failUnavailable(operation: .importFile, generation: ticket) }
+        dispatch(request: .importSkin(request), operation: .importFile, generation: ticket)
         return true
     }
 
@@ -931,8 +955,7 @@ final class PrismSkinManagementModel: ObservableObject {
         }
         let request = PrismSkinImportRequest(accountIdentifier: accountIdentifier, source: .remoteURL(url))
         let ticket = begin(operation: .importURL, retry: .importSkin(request))
-        onImport?(request, ticket)
-        if onImport == nil { failUnavailable(operation: .importURL, generation: ticket) }
+        dispatch(request: .importSkin(request), operation: .importURL, generation: ticket)
         return true
     }
 
@@ -946,8 +969,7 @@ final class PrismSkinManagementModel: ObservableObject {
         }
         let request = PrismSkinImportRequest(accountIdentifier: accountIdentifier, source: .username(username))
         let ticket = begin(operation: .importUser, retry: .importSkin(request))
-        onImport?(request, ticket)
-        if onImport == nil { failUnavailable(operation: .importUser, generation: ticket) }
+        dispatch(request: .importSkin(request), operation: .importUser, generation: ticket)
         return true
     }
 
@@ -961,8 +983,7 @@ final class PrismSkinManagementModel: ObservableObject {
             capeIdentifier: draftCapeIdentifier
         )
         let ticket = begin(operation: .upload, retry: .upload(request))
-        onUpload?(request, ticket)
-        if onUpload == nil { failUnavailable(operation: .upload, generation: ticket) }
+        dispatch(request: .upload(request), operation: .upload, generation: ticket)
         return true
     }
 
@@ -971,8 +992,7 @@ final class PrismSkinManagementModel: ObservableObject {
         guard canReset else { return false }
         let request = PrismSkinResetRequest(accountIdentifier: accountIdentifier)
         let ticket = begin(operation: .reset, retry: .reset(request))
-        onReset?(request, ticket)
-        if onReset == nil { failUnavailable(operation: .reset, generation: ticket) }
+        dispatch(request: .reset(request), operation: .reset, generation: ticket)
         return true
     }
 
@@ -986,8 +1006,7 @@ final class PrismSkinManagementModel: ObservableObject {
         }
         let request = PrismSkinDeleteRequest(accountIdentifier: accountIdentifier, skinIdentifier: selectedSkinIdentifier, confirmed: true)
         let ticket = begin(operation: .delete, retry: .delete(request))
-        onDelete?(request, ticket)
-        if onDelete == nil { failUnavailable(operation: .delete, generation: ticket) }
+        dispatch(request: .delete(request), operation: .delete, generation: ticket)
         return true
     }
 
@@ -1002,8 +1021,7 @@ final class PrismSkinManagementModel: ObservableObject {
         }
         let request = PrismSkinRenameRequest(accountIdentifier: accountIdentifier, skinIdentifier: selectedSkinIdentifier, newName: normalized)
         let ticket = begin(operation: .rename, retry: .rename(request))
-        onRename?(request, ticket)
-        if onRename == nil { failUnavailable(operation: .rename, generation: ticket) }
+        dispatch(request: .rename(request), operation: .rename, generation: ticket)
         return true
     }
 
@@ -1023,8 +1041,10 @@ final class PrismSkinManagementModel: ObservableObject {
             let validSkins = skins.filter(\.isUsable)
             listState = validSkins.isEmpty ? .empty : .content(validSkins)
         }
-        if actionResult.currentSkinIdentifier != nil {
-            currentSkinIdentifier = actionResult.currentSkinIdentifier
+        if actionResult.operation == .reset {
+            currentSkinIdentifier = nil
+        } else if let currentSkinIdentifier = actionResult.currentSkinIdentifier {
+            self.currentSkinIdentifier = currentSkinIdentifier
         }
         if let selectedSkinIdentifier = actionResult.selectedSkinIdentifier {
             _ = select(id: selectedSkinIdentifier)
@@ -1050,24 +1070,19 @@ final class PrismSkinManagementModel: ObservableObject {
             case .username: operation = .importUser
             }
             let ticket = begin(operation: operation, retry: .importSkin(request))
-            onImport?(request, ticket)
-            if onImport == nil { failUnavailable(operation: operation, generation: ticket) }
+            dispatch(request: .importSkin(request), operation: operation, generation: ticket)
         case .upload(let request):
             let ticket = begin(operation: .upload, retry: .upload(request))
-            onUpload?(request, ticket)
-            if onUpload == nil { failUnavailable(operation: .upload, generation: ticket) }
+            dispatch(request: .upload(request), operation: .upload, generation: ticket)
         case .reset(let request):
             let ticket = begin(operation: .reset, retry: .reset(request))
-            onReset?(request, ticket)
-            if onReset == nil { failUnavailable(operation: .reset, generation: ticket) }
+            dispatch(request: .reset(request), operation: .reset, generation: ticket)
         case .delete(let request):
             let ticket = begin(operation: .delete, retry: .delete(request))
-            onDelete?(request, ticket)
-            if onDelete == nil { failUnavailable(operation: .delete, generation: ticket) }
+            dispatch(request: .delete(request), operation: .delete, generation: ticket)
         case .rename(let request):
             let ticket = begin(operation: .rename, retry: .rename(request))
-            onRename?(request, ticket)
-            if onRename == nil { failUnavailable(operation: .rename, generation: ticket) }
+            dispatch(request: .rename(request), operation: .rename, generation: ticket)
         }
         return true
     }
@@ -1076,6 +1091,8 @@ final class PrismSkinManagementModel: ObservableObject {
     func cancel() -> Bool {
         guard case .running(let operation, let ticket) = operationState else { return false }
         onCancel?(operation, ticket)
+        requestToken?.cancel()
+        requestToken = nil
         invalidateCurrentOperation()
         operationState = .cancelled
         if operation == .load { listState = .cancelled }
@@ -1089,6 +1106,256 @@ final class PrismSkinManagementModel: ObservableObject {
         if skins.isEmpty {
             listState = .empty
         }
+    }
+
+    private func dispatch(
+        request: PrismSkinRetryRequest,
+        operation: PrismSkinOperation,
+        generation ticket: Int
+    ) {
+        requestToken?.cancel()
+        if let bridge {
+            guard let bridgeRequest = bridgeRequest(from: request) else {
+                setLocalFailure(key: "skins.action.invalidRequest", diagnostic: "The skin request is incomplete.")
+                return
+            }
+            requestToken = bridge.performSkinAction(with: bridgeRequest) { [weak self] result, error in
+                self?.requestToken = nil
+                guard let self else { return }
+                if let result {
+                    _ = self.apply(bridgeActionResult: result, generation: ticket)
+                } else if let error {
+                    _ = self.apply(
+                        actionResult: .failure(operation: operation, failure: Self.failure(from: error)),
+                        generation: ticket
+                    )
+                }
+            }
+            return
+        }
+
+        switch request {
+        case .load:
+            onLoad?(accountIdentifier, ticket)
+        case .importSkin(let value):
+            onImport?(value, ticket)
+        case .upload(let value):
+            onUpload?(value, ticket)
+        case .reset(let value):
+            onReset?(value, ticket)
+        case .delete(let value):
+            onDelete?(value, ticket)
+        case .rename(let value):
+            onRename?(value, ticket)
+        }
+        let hasCallback: Bool
+        switch request {
+        case .load: hasCallback = onLoad != nil
+        case .importSkin: hasCallback = onImport != nil
+        case .upload: hasCallback = onUpload != nil
+        case .reset: hasCallback = onReset != nil
+        case .delete: hasCallback = onDelete != nil
+        case .rename: hasCallback = onRename != nil
+        }
+        if !hasCallback { failUnavailable(operation: operation, generation: ticket) }
+    }
+
+    private func bridgeRequest(from retry: PrismSkinRetryRequest) -> PRSkinActionRequest? {
+        let operation: PRSkinOperation
+        var account = accountIdentifier
+        var skinIdentifier: String?
+        var model: PRSkinModel = .classic
+        var capeIdentifier: String?
+        var sourceURL: URL?
+        var remoteURL: String?
+        var username: String?
+        var replacementName: String?
+        var confirmed = false
+
+        switch retry {
+        case .load:
+            return nil
+        case .importSkin(let request):
+            account = request.accountIdentifier
+            switch request.source {
+            case .file(let url):
+                operation = .importFile
+                sourceURL = url
+            case .remoteURL(let url):
+                operation = .importURL
+                remoteURL = url.absoluteString
+            case .username(let value):
+                operation = .importUser
+                username = value
+            }
+        case .upload(let request):
+            operation = .upload
+            account = request.accountIdentifier
+            skinIdentifier = request.skinIdentifier
+            model = request.model == .slim ? .slim : .classic
+            capeIdentifier = request.capeIdentifier.isEmpty ? nil : request.capeIdentifier
+        case .reset(let request):
+            operation = .reset
+            account = request.accountIdentifier
+        case .delete(let request):
+            operation = .delete
+            account = request.accountIdentifier
+            skinIdentifier = request.skinIdentifier
+            confirmed = request.confirmed
+        case .rename(let request):
+            operation = .rename
+            account = request.accountIdentifier
+            skinIdentifier = request.skinIdentifier
+            replacementName = request.newName
+        }
+        return PRSkinActionRequest(
+            operation: operation,
+            accountIdentifier: account,
+            skinIdentifier: skinIdentifier,
+            model: model,
+            capeIdentifier: capeIdentifier,
+            sourceURL: sourceURL,
+            remoteURLString: remoteURL,
+            username: username,
+            replacementName: replacementName,
+            confirmed: confirmed
+        )
+    }
+
+    private func apply(bridgeLoadResult: PRSkinLoadResult, generation: Int) -> Bool {
+        switch bridgeLoadResult.outcome {
+        case .succeeded:
+            guard let mapped = Self.map(
+                skins: bridgeLoadResult.skins,
+                capes: bridgeLoadResult.capes
+            ) else { return false }
+            return apply(
+                loadResult: .success(
+                    accountIdentifier: bridgeLoadResult.accountIdentifier,
+                    skins: mapped.skins,
+                    capes: mapped.capes,
+                    currentSkinIdentifier: bridgeLoadResult.currentSkinIdentifier
+                ),
+                generation: generation
+            )
+        case .cancelled:
+            guard isCurrent(operation: .load, generation: generation) else { return false }
+            operationState = .cancelled
+            listState = .cancelled
+            return true
+        case .failed, .rejected:
+            return apply(
+                loadResult: PrismSkinLoadResult(
+                    accountIdentifier: bridgeLoadResult.accountIdentifier,
+                    skins: [],
+                    capes: [],
+                    currentSkinIdentifier: nil,
+                    failure: Self.failure(
+                        key: bridgeLoadResult.localizationKey,
+                        diagnostic: bridgeLoadResult.diagnosticText,
+                        retryable: bridgeLoadResult.retryable,
+                        rejected: bridgeLoadResult.outcome == .rejected
+                    )
+                ),
+                generation: generation
+            )
+        @unknown default:
+            return false
+        }
+    }
+
+    private func apply(bridgeActionResult: PRSkinActionResult, generation: Int) -> Bool {
+        let operation = Self.operation(from: bridgeActionResult.operation)
+        switch bridgeActionResult.outcome {
+        case .succeeded:
+            guard let mapped = Self.map(
+                skins: bridgeActionResult.skins,
+                capes: bridgeActionResult.capes
+            ) else { return false }
+            return apply(
+                actionResult: .success(
+                    operation: operation,
+                    skins: mapped.skins,
+                    capes: mapped.capes,
+                    selectedSkinIdentifier: bridgeActionResult.selectedSkinIdentifier,
+                    currentSkinIdentifier: bridgeActionResult.currentSkinIdentifier
+                ),
+                generation: generation
+            )
+        case .cancelled:
+            return apply(actionResult: .cancelled(operation: operation), generation: generation)
+        case .failed, .rejected:
+            return apply(
+                actionResult: .failure(
+                    operation: operation,
+                    failure: Self.failure(
+                        key: bridgeActionResult.localizationKey,
+                        diagnostic: bridgeActionResult.diagnosticText,
+                        retryable: bridgeActionResult.retryable,
+                        rejected: bridgeActionResult.outcome == .rejected
+                    )
+                ),
+                generation: generation
+            )
+        @unknown default:
+            return false
+        }
+    }
+
+    private static func map(
+        skins: [PRSkinSnapshot],
+        capes: [PRSkinCape]
+    ) -> (skins: [PrismSkinSnapshot], capes: [PrismSkinCape])? {
+        let mappedSkins = skins.map {
+            PrismSkinSnapshot(
+                id: $0.identifier,
+                name: $0.name,
+                model: $0.model == .slim ? .slim : .classic,
+                capeIdentifier: $0.capeIdentifier ?? PrismSkinCape.noneIdentifier,
+                textureData: $0.textureData,
+                previewData: $0.previewData,
+                sourceURL: $0.sourceURL
+            )
+        }
+        let mappedCapes = capes.compactMap {
+            PrismSkinCape(id: $0.identifier, displayName: $0.displayName, imageData: $0.imageData)
+        }
+        guard mappedSkins.allSatisfy(\.isUsable), mappedCapes.count == capes.count else { return nil }
+        return (mappedSkins, mappedCapes)
+    }
+
+    private static func operation(from operation: PRSkinOperation) -> PrismSkinOperation {
+        switch operation {
+        case .importFile: return .importFile
+        case .importURL: return .importURL
+        case .importUser: return .importUser
+        case .upload: return .upload
+        case .reset: return .reset
+        case .delete: return .delete
+        case .rename: return .rename
+        @unknown default: return .load
+        }
+    }
+
+    private static func failure(from error: PRBridgeError) -> PrismSkinFailure {
+        PrismSkinFailure(
+            localizationKey: error.localizationKey,
+            diagnosticText: error.diagnosticText,
+            recoveryAction: error.recoveryKind == .retry ? .retry : .cancel
+        )
+    }
+
+    private static func failure(
+        key: String,
+        diagnostic: String?,
+        retryable: Bool,
+        rejected: Bool
+    ) -> PrismSkinFailure {
+        PrismSkinFailure(
+            localizationKey: key,
+            diagnosticText: diagnostic,
+            recoveryAction: retryable ? .retry : (rejected ? .edit : .cancel)
+        )
     }
 
     private func begin(operation: PrismSkinOperation, retry: PrismSkinRetryRequest?) -> Int {

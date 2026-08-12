@@ -40,6 +40,7 @@ set(LAUNCHER_FRONTEND_PUBLIC_HEADERS
     ProductionAccountRuntime.h
     ProductionLaunchRuntime.h
     ProductionInstanceDetailRuntime.h
+    ProductionUtilityRuntime.h
 )
 
 add_library(Launcher_frontend STATIC
@@ -53,6 +54,7 @@ add_library(Launcher_frontend STATIC
     ProductionLaunchRuntime.cpp
     ProductionMinecraftLaunch.cpp
     ProductionInstanceDetailRuntime.cpp
+    ProductionUtilityRuntime.cpp
     ../archive/ArchiveReader.cpp
     ../archive/ArchiveWriter.cpp
     ../GZip.cpp
@@ -207,4 +209,12 @@ if(BUILD_TESTING)
     target_include_directories(Launcher_frontend_production_instance_detail_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
     target_link_libraries(Launcher_frontend_production_instance_detail_test PRIVATE Launcher_frontend)
     add_test(NAME FrontendFacadeProductionInstanceDetail COMMAND Launcher_frontend_production_instance_detail_test)
+
+    add_executable(Launcher_frontend_production_utility_test
+        FrontendFacadeProductionUtilityTest.cpp
+    )
+    target_compile_features(Launcher_frontend_production_utility_test PRIVATE cxx_std_20)
+    target_include_directories(Launcher_frontend_production_utility_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+    target_link_libraries(Launcher_frontend_production_utility_test PRIVATE Launcher_frontend)
+    add_test(NAME FrontendFacadeProductionUtility COMMAND Launcher_frontend_production_utility_test)
 endif()

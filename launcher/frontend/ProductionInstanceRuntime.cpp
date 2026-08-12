@@ -8,6 +8,7 @@
 #include "ProductionJavaRuntime.h"
 #include "ProductionLaunchRuntime.h"
 #include "ProductionSettingsRuntime.h"
+#include "ProductionUtilityRuntime.h"
 
 #include "settings/INIFile.h"
 
@@ -306,13 +307,28 @@ std::shared_ptr<ProductionInstanceRuntime> makeProductionInstanceRuntime(std::fi
     return std::make_shared<ProductionInstanceRuntime>(std::move(dataRoot));
 }
 
-FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesystem::path dataRoot)
+FrontendRuntimeDependencies productionInstanceRuntimeDependencies(
+    std::filesystem::path dataRoot,
+    std::filesystem::path launcherExecutablePath,
+    std::filesystem::path launcherIconPath)
 {
     const auto normalizedDataRoot = dataRoot.lexically_normal();
     auto runtime = makeProductionInstanceRuntime(normalizedDataRoot);
     auto settingsRuntime = makeProductionSettingsRuntime(normalizedDataRoot);
     auto javaRuntime = makeProductionJavaRuntime(normalizedDataRoot);
     auto accountRuntime = makeProductionAccountRuntime(normalizedDataRoot);
+    auto utilityDependencies = ProductionUtilityRuntime::defaultDependencies(
+        std::move(launcherExecutablePath), std::move(launcherIconPath));
+    utilityDependencies.accountProfileLoader = [accountRuntime](const std::string& accountIdentifier) {
+        return accountRuntime->skinAccountProfile(accountIdentifier);
+    };
+    utilityDependencies.accountCredentialProvider = [accountRuntime](const std::string& accountIdentifier) {
+        return accountRuntime->skinAccessCredential(accountIdentifier);
+    };
+    utilityDependencies.accountProfileWriter = [accountRuntime](const FrontendSkinAccountProfile& profile) {
+        return accountRuntime->persistSkinAccountProfile(profile);
+    };
+    auto utilityRuntime = makeProductionUtilityRuntime(normalizedDataRoot, std::move(utilityDependencies));
     auto acquisitionRuntime = makeProductionInstanceAcquisitionRuntime(normalizedDataRoot);
     auto providerRuntime = makeProductionProviderRuntime(normalizedDataRoot);
     auto detailRuntime = makeProductionInstanceDetailRuntime(normalizedDataRoot);
@@ -329,15 +345,17 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
         }
     };
     dependencies.now = [] { return std::chrono::system_clock::now(); };
-    dependencies.cancelPendingWork = [runtime, launchRuntime, providerRuntime] {
+    dependencies.cancelPendingWork = [runtime, launchRuntime, providerRuntime, utilityRuntime] {
         runtime->stopInstanceObservation();
         launchRuntime->cancelPendingWork();
         providerRuntime->shutdown();
+        utilityRuntime->shutdown();
     };
     dependencies.shutdown = [runtime,
                              settingsRuntime,
                              javaRuntime,
                              accountRuntime,
+                             utilityRuntime,
                              acquisitionRuntime,
                              providerRuntime,
                              detailRuntime,
@@ -345,6 +363,7 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
         runtime->shutdown();
         settingsRuntime->shutdown();
         javaRuntime->shutdown();
+        utilityRuntime->shutdown();
         accountRuntime->shutdown();
         acquisitionRuntime->shutdown();
         providerRuntime->shutdown();
@@ -487,5 +506,6 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesyste
     };
     dependencies = productionJavaRuntimeDependencies(std::move(javaRuntime), std::move(dependencies));
     dependencies = productionAccountRuntimeDependencies(std::move(accountRuntime), std::move(dependencies));
+    dependencies = productionUtilityRuntimeDependencies(std::move(utilityRuntime), std::move(dependencies));
     return productionLaunchRuntimeDependencies(std::move(launchRuntime), std::move(dependencies));
 }

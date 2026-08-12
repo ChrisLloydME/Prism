@@ -78,6 +78,9 @@ class ProductionAccountRuntime final {
     FrontendOfflineLaunchIdentityUpdateResult updateOfflineLaunchIdentity(
         const FrontendOfflineLaunchIdentityUpdateRequest& request);
     std::optional<ProductionLaunchSession> launchSessionForInstance(const std::string& instanceIdentifier);
+    std::optional<FrontendSkinAccountProfile> skinAccountProfile(const std::string& accountIdentifier);
+    std::optional<std::string> skinAccessCredential(const std::string& accountIdentifier);
+    bool persistSkinAccountProfile(const FrontendSkinAccountProfile& profile);
     void shutdown() noexcept;
 
     const std::filesystem::path& dataRoot() const noexcept { return m_dataRoot; }

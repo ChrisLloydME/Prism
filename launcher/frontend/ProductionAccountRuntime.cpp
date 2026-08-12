@@ -85,6 +85,23 @@ QString fromUTF8(const std::string& value)
     return QString::fromStdString(value);
 }
 
+std::vector<std::uint8_t> byteVector(const QByteArray& value)
+{
+    if (value.isEmpty()) {
+        return {};
+    }
+    return { reinterpret_cast<const std::uint8_t*>(value.constData()),
+             reinterpret_cast<const std::uint8_t*>(value.constData()) + value.size() };
+}
+
+QByteArray byteArray(const std::vector<std::uint8_t>& value)
+{
+    if (value.empty()) {
+        return {};
+    }
+    return QByteArray(reinterpret_cast<const char*>(value.data()), static_cast<qsizetype>(value.size()));
+}
+
 std::string jsonString(const QJsonObject& object, const char* key)
 {
     const auto value = object.value(QLatin1String(key));
@@ -197,6 +214,43 @@ QJsonObject profileObject(const std::string& identifier, const std::string& name
     profile.insert(QStringLiteral("skin"), skin);
     profile.insert(QStringLiteral("capes"), QJsonArray());
     return profile;
+}
+
+QJsonObject skinProfileObject(const FrontendSkinAccountProfile& profile, QJsonObject object)
+{
+    object.insert(QStringLiteral("id"), fromUTF8(profile.accountIdentifier));
+    object.insert(QStringLiteral("name"), fromUTF8(profile.profileName));
+
+    QJsonObject skin = object.value(QStringLiteral("skin")).toObject();
+    skin.insert(QStringLiteral("id"), fromUTF8(profile.currentSkinIdentifier));
+    skin.insert(QStringLiteral("url"), fromUTF8(profile.currentSkinURL));
+    skin.insert(QStringLiteral("variant"),
+                profile.currentModel == FrontendSkinModel::Slim ? QStringLiteral("SLIM") : QStringLiteral("CLASSIC"));
+    if (profile.currentSkinData.empty()) {
+        skin.remove(QStringLiteral("data"));
+    } else {
+        skin.insert(QStringLiteral("data"), QString::fromLatin1(byteArray(profile.currentSkinData).toBase64()));
+    }
+    object.insert(QStringLiteral("skin"), skin);
+
+    QJsonArray capes;
+    for (const auto& snapshot : profile.capes) {
+        QJsonObject cape;
+        cape.insert(QStringLiteral("id"), fromUTF8(snapshot.id));
+        cape.insert(QStringLiteral("url"), fromUTF8(snapshot.remoteURL));
+        cape.insert(QStringLiteral("alias"), fromUTF8(snapshot.displayName));
+        if (!snapshot.imageData.empty()) {
+            cape.insert(QStringLiteral("data"), QString::fromLatin1(byteArray(snapshot.imageData).toBase64()));
+        }
+        capes.append(cape);
+    }
+    object.insert(QStringLiteral("capes"), capes);
+    if (profile.currentCapeIdentifier.empty()) {
+        object.remove(QStringLiteral("cape"));
+    } else {
+        object.insert(QStringLiteral("cape"), fromUTF8(profile.currentCapeIdentifier));
+    }
+    return object;
 }
 
 }  // namespace
@@ -1162,6 +1216,132 @@ std::optional<ProductionLaunchSession> ProductionAccountRuntime::launchSessionFo
         session.accessToken = "0";
     }
     return session;
+}
+
+std::optional<FrontendSkinAccountProfile> ProductionAccountRuntime::skinAccountProfile(
+    const std::string& accountIdentifier)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_shutdown || !safeText(accountIdentifier, kMaximumAccountIdentifierLength)) {
+        return std::nullopt;
+    }
+
+    std::string failureKey;
+    std::string failureText;
+    const auto records = loadAccountRecords(failureKey, failureText);
+    const auto selected = std::find_if(records.begin(), records.end(), [&](const auto& record) {
+        return record.identifier == accountIdentifier && record.data.type == AccountType::MSA;
+    });
+    if (!failureKey.empty() || selected == records.end()) {
+        return std::nullopt;
+    }
+
+    const auto& minecraftProfile = selected->data.minecraftProfile;
+    FrontendSkinAccountProfile profile;
+    profile.accountIdentifier = accountIdentifier;
+    profile.profileName = toUTF8(minecraftProfile.name);
+    profile.currentSkinIdentifier = toUTF8(minecraftProfile.skin.id);
+    profile.currentSkinURL = toUTF8(minecraftProfile.skin.url);
+    profile.currentModel = minecraftProfile.skin.variant.compare(QStringLiteral("SLIM"), Qt::CaseInsensitive) == 0
+        ? FrontendSkinModel::Slim
+        : FrontendSkinModel::Classic;
+    profile.currentCapeIdentifier = toUTF8(minecraftProfile.currentCape);
+    profile.currentSkinData = byteVector(minecraftProfile.skin.data);
+    profile.capes.reserve(static_cast<std::size_t>(minecraftProfile.capes.size()));
+    for (auto iterator = minecraftProfile.capes.cbegin(); iterator != minecraftProfile.capes.cend(); ++iterator) {
+        const auto& cape = iterator.value();
+        auto displayName = toUTF8(cape.alias);
+        if (displayName.empty()) {
+            displayName = toUTF8(cape.id);
+        }
+        profile.capes.push_back({ toUTF8(cape.id), std::move(displayName), byteVector(cape.data), toUTF8(cape.url) });
+    }
+    return profile;
+}
+
+std::optional<std::string> ProductionAccountRuntime::skinAccessCredential(const std::string& accountIdentifier)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_shutdown || !safeText(accountIdentifier, kMaximumAccountIdentifierLength)) {
+        return std::nullopt;
+    }
+
+    std::string failureKey;
+    std::string failureText;
+    const auto records = loadAccountRecords(failureKey, failureText);
+    const auto selected = std::find_if(records.begin(), records.end(), [&](const auto& record) {
+        return record.identifier == accountIdentifier && record.data.type == AccountType::MSA;
+    });
+    if (!failureKey.empty() || selected == records.end()) {
+        return std::nullopt;
+    }
+
+    std::string credential = selected->data.accessToken().toStdString();
+    if (const auto inMemory = m_launchCredentials.find(accountIdentifier); inMemory != m_launchCredentials.end()) {
+        credential = inMemory->second;
+    }
+    if (credential.empty() || credential == "0") {
+        return std::nullopt;
+    }
+    return credential;
+}
+
+bool ProductionAccountRuntime::persistSkinAccountProfile(const FrontendSkinAccountProfile& profile)
+{
+    constexpr std::size_t maximumImageBytes = 8U * 1024U * 1024U;
+    if (!safeText(profile.accountIdentifier, kMaximumAccountIdentifierLength)
+        || !safeText(profile.profileName, kMaximumDisplayNameLength)
+        || profile.currentSkinData.size() > maximumImageBytes || profile.capes.size() > 256) {
+        return false;
+    }
+    std::unordered_set<std::string> capeIdentifiers;
+    for (const auto& cape : profile.capes) {
+        if (!safeText(cape.id, 256) || !safeText(cape.displayName, 256) || cape.imageData.size() > maximumImageBytes
+            || (!cape.remoteURL.empty() && !safeURL(cape.remoteURL)) || !capeIdentifiers.insert(cape.id).second) {
+            return false;
+        }
+    }
+    if (!profile.currentCapeIdentifier.empty() && !capeIdentifiers.contains(profile.currentCapeIdentifier)) {
+        return false;
+    }
+    if (!profile.currentSkinURL.empty() && !safeURL(profile.currentSkinURL)) {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_shutdown) {
+        return false;
+    }
+    std::string failureKey;
+    std::string failureText;
+    const auto root = readAccountsObject(m_accountsPath, failureKey, failureText);
+    if (!root.has_value() || root->isEmpty()) {
+        return false;
+    }
+    auto accounts = root->value(QStringLiteral("accounts")).toArray();
+    bool found = false;
+    for (int index = 0; index < accounts.size(); ++index) {
+        if (!accounts.at(index).isObject()) {
+            continue;
+        }
+        auto object = accounts.at(index).toObject();
+        AccountData data;
+        if (!data.resumeStateFromV3(object) || data.type != AccountType::MSA
+            || toUTF8(data.profileId()) != profile.accountIdentifier) {
+            continue;
+        }
+        object.insert(
+            QStringLiteral("profile"), skinProfileObject(profile, object.value(QStringLiteral("profile")).toObject()));
+        accounts.replace(index, object);
+        found = true;
+        break;
+    }
+    if (!found) {
+        return false;
+    }
+    QJsonObject updated = *root;
+    updated.insert(QStringLiteral("accounts"), accounts);
+    return writeAccountsObject(m_accountsPath, updated);
 }
 
 void ProductionAccountRuntime::shutdown() noexcept

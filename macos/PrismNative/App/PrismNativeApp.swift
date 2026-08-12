@@ -32,13 +32,10 @@ struct PrismNativeApp: App {
     @StateObject private var accountModel: PrismAccountModel
     @StateObject private var authenticationModel: PrismAccountAuthenticationModel
     @StateObject private var offlineIdentityModel: PrismOfflineLaunchIdentityModel
-    @StateObject private var skinModel = PrismSkinManagementModel()
-    @StateObject private var shortcutModel = PrismShortcutCreationModel(
-        instanceIdentifier: "",
-        instanceName: "",
-        worlds: [],
-        profiles: []
-    )
+    @StateObject private var newsModel: PrismNewsModel
+    @StateObject private var updateModel: PrismUpdateModel
+    @StateObject private var skinModel: PrismSkinManagementModel
+    @StateObject private var shortcutModel: PrismShortcutCreationModel
 
     init() {
         let runtime = PrismNativeRuntime()
@@ -67,6 +64,27 @@ struct PrismNativeApp: App {
         )
         _offlineIdentityModel = StateObject(
             wrappedValue: PrismOfflineLaunchIdentityModel(bridge: runtime.bridge)
+        )
+        _newsModel = StateObject(wrappedValue: PrismNewsModel(bridge: runtime.bridge))
+        _updateModel = StateObject(wrappedValue: PrismUpdateModel(bridge: runtime.bridge))
+        _skinModel = StateObject(
+            wrappedValue: PrismSkinManagementModel(
+                accountIdentifier: "",
+                initialSkins: [],
+                initialCapes: [],
+                currentSkinIdentifier: nil,
+                bridge: runtime.bridge
+            )
+        )
+        _shortcutModel = StateObject(
+            wrappedValue: PrismShortcutCreationModel(
+                instanceIdentifier: "",
+                instanceName: "",
+                worlds: [],
+                profiles: [],
+                iconKeys: ["default"],
+                bridge: runtime.bridge
+            )
         )
     }
 
@@ -103,12 +121,12 @@ struct PrismNativeApp: App {
         .defaultSize(width: 520, height: 460)
 
         Window("News", id: "prism.news") {
-            PrismNewsWindow()
+            PrismNewsWindow(model: newsModel)
         }
         .defaultSize(width: 760, height: 520)
 
         Window("Check for Updates", id: "prism.updates") {
-            PrismUpdateWindow()
+            PrismUpdateWindow(model: updateModel)
         }
         .defaultSize(width: 600, height: 420)
 

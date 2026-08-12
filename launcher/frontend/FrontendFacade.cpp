@@ -2848,6 +2848,328 @@ FrontendProviderInstallResult executeProviderInstall(
     return result;
 }
 
+bool isKnownNewsOutcome(FrontendNewsOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendNewsOutcome::Succeeded:
+        case FrontendNewsOutcome::Failed:
+        case FrontendNewsOutcome::Cancelled:
+        case FrontendNewsOutcome::Rejected:
+            return true;
+    }
+    return false;
+}
+
+void validateNewsResult(const FrontendNewsResult& result)
+{
+    if (!isKnownNewsOutcome(result.outcome) || result.localizationKey.empty()) {
+        throw std::invalid_argument("News results require a known outcome and localization key");
+    }
+    std::set<std::string> identifiers;
+    for (const auto& entry : result.entries) {
+        if (!entry.hasStableIdentifier() || entry.title.empty() || entry.link.empty() || entry.content.empty()
+            || !identifiers.insert(entry.id).second) {
+            throw std::invalid_argument("News entries require unique identifiers, titles, links, and content");
+        }
+    }
+    if (result.outcome != FrontendNewsOutcome::Succeeded && !result.entries.empty()) {
+        throw std::invalid_argument("Failed news loading cannot return entries");
+    }
+}
+
+bool isKnownUpdateCheckOutcome(FrontendUpdateCheckOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendUpdateCheckOutcome::NoUpdate:
+        case FrontendUpdateCheckOutcome::Available:
+        case FrontendUpdateCheckOutcome::Failed:
+        case FrontendUpdateCheckOutcome::Cancelled:
+        case FrontendUpdateCheckOutcome::Rejected:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownUpdateDecision(FrontendUpdateDecision decision) noexcept
+{
+    switch (decision) {
+        case FrontendUpdateDecision::Install:
+        case FrontendUpdateDecision::RemindLater:
+        case FrontendUpdateDecision::SkipVersion:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownUpdateDecisionOutcome(FrontendUpdateDecisionOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendUpdateDecisionOutcome::Succeeded:
+        case FrontendUpdateDecisionOutcome::AuthorizationRequired:
+        case FrontendUpdateDecisionOutcome::Failed:
+        case FrontendUpdateDecisionOutcome::Cancelled:
+        case FrontendUpdateDecisionOutcome::Rejected:
+            return true;
+    }
+    return false;
+}
+
+void validateUpdateCheckResult(const FrontendUpdateCheckResult& result, const std::string& currentVersion)
+{
+    if (!isKnownUpdateCheckOutcome(result.outcome) || result.localizationKey.empty()) {
+        throw std::invalid_argument("Update check results require a known outcome and localization key");
+    }
+    if (result.outcome == FrontendUpdateCheckOutcome::Available) {
+        if (!result.notice.has_value() || result.notice->currentVersion != currentVersion
+            || result.notice->availableVersion.empty() || result.notice->releaseNotes.empty()) {
+            throw std::invalid_argument("Available update checks require a complete matching notice");
+        }
+    } else if (result.notice.has_value()) {
+        throw std::invalid_argument("Only an available update check may return a notice");
+    }
+}
+
+void validateUpdateDecisionRequest(const FrontendUpdateDecisionRequest& request)
+{
+    if (!isKnownUpdateDecision(request.decision) || request.availableVersion.empty()) {
+        throw std::invalid_argument("Update decisions require a known action and available version");
+    }
+}
+
+void validateUpdateDecisionResult(
+    const FrontendUpdateDecisionResult& result, const FrontendUpdateDecisionRequest& request)
+{
+    if (!isKnownUpdateDecision(result.decision) || !isKnownUpdateDecisionOutcome(result.outcome)
+        || result.localizationKey.empty() || result.decision != request.decision
+        || result.availableVersion != request.availableVersion) {
+        throw std::invalid_argument("Update decision results require known values and must preserve their request");
+    }
+}
+
+bool isKnownShortcutLaunchTarget(FrontendShortcutLaunchTarget target) noexcept
+{
+    switch (target) {
+        case FrontendShortcutLaunchTarget::Instance:
+        case FrontendShortcutLaunchTarget::World:
+        case FrontendShortcutLaunchTarget::Server:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownShortcutDestination(FrontendShortcutDestination destination) noexcept
+{
+    switch (destination) {
+        case FrontendShortcutDestination::Desktop:
+        case FrontendShortcutDestination::Applications:
+        case FrontendShortcutDestination::Other:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownShortcutCreationOutcome(FrontendShortcutCreationOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendShortcutCreationOutcome::Succeeded:
+        case FrontendShortcutCreationOutcome::UnknownInstance:
+        case FrontendShortcutCreationOutcome::Failed:
+        case FrontendShortcutCreationOutcome::Cancelled:
+        case FrontendShortcutCreationOutcome::Rejected:
+            return true;
+    }
+    return false;
+}
+
+void validateShortcutRequest(const FrontendShortcutCreationRequest& request)
+{
+    if (!isKnownShortcutLaunchTarget(request.launchTarget) || !isKnownShortcutDestination(request.destination)
+        || request.instanceIdentifier.empty() || request.name.empty() || request.iconKey.empty()) {
+        throw std::invalid_argument("Shortcut creation requires known options, an instance identifier, name, and icon");
+    }
+    if (request.launchTarget == FrontendShortcutLaunchTarget::World && request.worldIdentifier.empty()) {
+        throw std::invalid_argument("World shortcuts require a world identifier");
+    }
+    if (request.launchTarget == FrontendShortcutLaunchTarget::Server && request.serverAddress.empty()) {
+        throw std::invalid_argument("Server shortcuts require an address");
+    }
+    if (request.destination == FrontendShortcutDestination::Other
+        && (request.destinationPath.empty() || !request.destinationPath.is_absolute())) {
+        throw std::invalid_argument("Other shortcut destinations require an absolute path");
+    }
+    if (request.destination != FrontendShortcutDestination::Other && !request.destinationPath.empty()) {
+        throw std::invalid_argument("Only Other shortcut destinations may carry a path");
+    }
+}
+
+void validateShortcutResult(
+    const FrontendShortcutCreationResult& result, const FrontendShortcutCreationRequest& request)
+{
+    if (!isKnownShortcutCreationOutcome(result.outcome) || result.localizationKey.empty()
+        || result.instanceIdentifier != request.instanceIdentifier) {
+        throw std::invalid_argument("Shortcut creation results require a known outcome and must preserve the instance");
+    }
+}
+
+bool isKnownSkinModel(FrontendSkinModel model) noexcept
+{
+    switch (model) {
+        case FrontendSkinModel::Classic:
+        case FrontendSkinModel::Slim:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownSkinLoadOutcome(FrontendSkinLoadOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendSkinLoadOutcome::Succeeded:
+        case FrontendSkinLoadOutcome::Failed:
+        case FrontendSkinLoadOutcome::Cancelled:
+        case FrontendSkinLoadOutcome::Rejected:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownSkinOperation(FrontendSkinOperation operation) noexcept
+{
+    switch (operation) {
+        case FrontendSkinOperation::ImportFile:
+        case FrontendSkinOperation::ImportURL:
+        case FrontendSkinOperation::ImportUser:
+        case FrontendSkinOperation::Upload:
+        case FrontendSkinOperation::Reset:
+        case FrontendSkinOperation::Delete:
+        case FrontendSkinOperation::Rename:
+            return true;
+    }
+    return false;
+}
+
+bool isKnownSkinActionOutcome(FrontendSkinActionOutcome outcome) noexcept
+{
+    switch (outcome) {
+        case FrontendSkinActionOutcome::Succeeded:
+        case FrontendSkinActionOutcome::Failed:
+        case FrontendSkinActionOutcome::Cancelled:
+        case FrontendSkinActionOutcome::Rejected:
+            return true;
+    }
+    return false;
+}
+
+void validateSkinSnapshots(const std::vector<FrontendSkinSnapshot>& skins)
+{
+    std::set<std::string> identifiers;
+    for (const auto& skin : skins) {
+        if (!skin.hasStableIdentifier() || skin.name.empty() || !isKnownSkinModel(skin.model) || skin.textureData.empty()
+            || skin.previewData.empty() || skin.sourcePath.empty() || !skin.sourcePath.is_absolute()
+            || !identifiers.insert(skin.id).second) {
+            throw std::invalid_argument("Skin snapshots require unique identifiers and complete texture metadata");
+        }
+    }
+}
+
+void validateSkinCapes(const std::vector<FrontendSkinCapeSnapshot>& capes)
+{
+    std::set<std::string> identifiers;
+    for (const auto& cape : capes) {
+        if (!cape.hasStableIdentifier() || cape.displayName.empty() || cape.imageData.empty()
+            || !identifiers.insert(cape.id).second) {
+            throw std::invalid_argument("Skin cape snapshots require unique identifiers and image data");
+        }
+    }
+}
+
+void validateSkinLoadResult(const FrontendSkinLoadResult& result, const std::string& accountIdentifier)
+{
+    if (!isKnownSkinLoadOutcome(result.outcome) || result.localizationKey.empty()
+        || result.accountIdentifier != accountIdentifier) {
+        throw std::invalid_argument("Skin loading requires a known outcome and must preserve the account identifier");
+    }
+    if (result.outcome == FrontendSkinLoadOutcome::Succeeded) {
+        validateSkinSnapshots(result.skins);
+        validateSkinCapes(result.capes);
+        if (result.currentSkinIdentifier.has_value()
+            && std::none_of(result.skins.begin(), result.skins.end(), [&](const auto& skin) {
+                   return skin.id == *result.currentSkinIdentifier;
+               })) {
+            throw std::invalid_argument("The current skin identifier must resolve in the returned list");
+        }
+    } else if (!result.skins.empty() || !result.capes.empty() || result.currentSkinIdentifier.has_value()) {
+        throw std::invalid_argument("Failed skin loading cannot return snapshots");
+    }
+}
+
+void validateSkinActionRequest(const FrontendSkinActionRequest& request)
+{
+    if (!isKnownSkinOperation(request.operation) || !isKnownSkinModel(request.model)
+        || request.accountIdentifier.empty()) {
+        throw std::invalid_argument("Skin actions require known options and an account identifier");
+    }
+    switch (request.operation) {
+        case FrontendSkinOperation::ImportFile:
+            if (request.sourcePath.empty() || !request.sourcePath.is_absolute()) {
+                throw std::invalid_argument("Skin file import requires an absolute source path");
+            }
+            break;
+        case FrontendSkinOperation::ImportURL:
+            if (request.sourceURL.empty()) {
+                throw std::invalid_argument("Skin URL import requires a source URL");
+            }
+            break;
+        case FrontendSkinOperation::ImportUser:
+            if (request.username.empty()) {
+                throw std::invalid_argument("Skin user import requires a username");
+            }
+            break;
+        case FrontendSkinOperation::Upload:
+            if (request.skinIdentifier.empty()) {
+                throw std::invalid_argument("Skin upload requires a skin identifier");
+            }
+            break;
+        case FrontendSkinOperation::Reset:
+            break;
+        case FrontendSkinOperation::Delete:
+            if (request.skinIdentifier.empty() || !request.confirmed) {
+                throw std::invalid_argument("Skin deletion requires an identifier and confirmation");
+            }
+            break;
+        case FrontendSkinOperation::Rename:
+            if (request.skinIdentifier.empty() || request.newName.empty()) {
+                throw std::invalid_argument("Skin rename requires an identifier and name");
+            }
+            break;
+    }
+}
+
+void validateSkinActionResult(const FrontendSkinActionResult& result, const FrontendSkinActionRequest& request)
+{
+    if (!isKnownSkinOperation(result.operation) || !isKnownSkinActionOutcome(result.outcome)
+        || result.localizationKey.empty() || result.operation != request.operation
+        || result.accountIdentifier != request.accountIdentifier) {
+        throw std::invalid_argument("Skin actions require known results and must preserve their request");
+    }
+    if (result.outcome == FrontendSkinActionOutcome::Succeeded) {
+        validateSkinSnapshots(result.skins);
+        validateSkinCapes(result.capes);
+        const auto resolves = [&](const std::optional<std::string>& identifier) {
+            return !identifier.has_value()
+                || std::any_of(result.skins.begin(), result.skins.end(), [&](const auto& skin) {
+                       return skin.id == *identifier;
+                   });
+        };
+        if (!resolves(result.currentSkinIdentifier) || !resolves(result.selectedSkinIdentifier)) {
+            throw std::invalid_argument("Skin action selections must resolve in the confirmed list");
+        }
+    } else if (!result.skins.empty() || !result.capes.empty() || result.currentSkinIdentifier.has_value()
+               || result.selectedSkinIdentifier.has_value()) {
+        throw std::invalid_argument("Failed skin actions cannot return confirmed snapshots");
+    }
+}
+
 }  // namespace
 
 FrontendFacade::FrontendFacade(std::filesystem::path dataRoot, FrontendRuntimeDependencies runtimeDependencies)
@@ -3203,6 +3525,97 @@ FrontendProviderInstallResult FrontendFacade::installProviderPack(
     ensureRunning(m_lifecycleState);
     return executeProviderInstall(
         m_runtimeDependencies.installProviderPack, m_dataRoot, request, progressHandler, cancellationCheck);
+}
+
+FrontendNewsResult FrontendFacade::news(
+    const FrontendRuntimeDependencies::UtilityCancellationCheck& cancellationCheck) const
+{
+    ensureRunning(m_lifecycleState);
+    if (!m_runtimeDependencies.loadNews) {
+        return { FrontendNewsOutcome::Rejected, {}, "news.adapterUnavailable", "News loading is unavailable.", false };
+    }
+    auto result = m_runtimeDependencies.loadNews(m_dataRoot, cancellationCheck);
+    validateNewsResult(result);
+    return result;
+}
+
+FrontendUpdateCheckResult FrontendFacade::checkForUpdates(
+    const std::string& currentVersion,
+    const FrontendRuntimeDependencies::UtilityCancellationCheck& cancellationCheck) const
+{
+    ensureRunning(m_lifecycleState);
+    if (currentVersion.empty()) {
+        throw std::invalid_argument("Update checks require the current version");
+    }
+    if (!m_runtimeDependencies.checkForUpdates) {
+        return { FrontendUpdateCheckOutcome::Rejected, std::nullopt, "updates.adapterUnavailable",
+                 "Update checking is unavailable.", false };
+    }
+    auto result = m_runtimeDependencies.checkForUpdates(m_dataRoot, currentVersion, cancellationCheck);
+    validateUpdateCheckResult(result, currentVersion);
+    return result;
+}
+
+FrontendUpdateDecisionResult FrontendFacade::applyUpdateDecision(
+    const FrontendUpdateDecisionRequest& request,
+    const FrontendRuntimeDependencies::UtilityCancellationCheck& cancellationCheck) const
+{
+    ensureRunning(m_lifecycleState);
+    validateUpdateDecisionRequest(request);
+    if (!m_runtimeDependencies.applyUpdateDecision) {
+        return { request.decision, FrontendUpdateDecisionOutcome::Rejected, request.availableVersion,
+                 "updates.adapterUnavailable", "Update decisions are unavailable.", false };
+    }
+    auto result = m_runtimeDependencies.applyUpdateDecision(m_dataRoot, request, cancellationCheck);
+    validateUpdateDecisionResult(result, request);
+    return result;
+}
+
+FrontendShortcutCreationResult FrontendFacade::createShortcut(
+    const FrontendShortcutCreationRequest& request,
+    const FrontendRuntimeDependencies::UtilityCancellationCheck& cancellationCheck) const
+{
+    ensureRunning(m_lifecycleState);
+    validateShortcutRequest(request);
+    if (!m_runtimeDependencies.createShortcut) {
+        return { FrontendShortcutCreationOutcome::Rejected, request.instanceIdentifier,
+                 "shortcuts.adapterUnavailable", "Shortcut creation is unavailable.", false };
+    }
+    auto result = m_runtimeDependencies.createShortcut(m_dataRoot, request, cancellationCheck);
+    validateShortcutResult(result, request);
+    return result;
+}
+
+FrontendSkinLoadResult FrontendFacade::skins(
+    const std::string& accountIdentifier,
+    const FrontendRuntimeDependencies::UtilityCancellationCheck& cancellationCheck) const
+{
+    ensureRunning(m_lifecycleState);
+    if (accountIdentifier.empty()) {
+        throw std::invalid_argument("Skin loading requires an account identifier");
+    }
+    if (!m_runtimeDependencies.loadSkins) {
+        return { FrontendSkinLoadOutcome::Rejected, accountIdentifier, {}, {}, std::nullopt,
+                 "skins.adapter.unavailable", "Skin loading is unavailable.", false };
+    }
+    auto result = m_runtimeDependencies.loadSkins(m_dataRoot, accountIdentifier, cancellationCheck);
+    validateSkinLoadResult(result, accountIdentifier);
+    return result;
+}
+
+FrontendSkinActionResult FrontendFacade::performSkinAction(
+    const FrontendSkinActionRequest& request,
+    const FrontendRuntimeDependencies::UtilityCancellationCheck& cancellationCheck) const
+{
+    ensureRunning(m_lifecycleState);
+    validateSkinActionRequest(request);
+    if (!m_runtimeDependencies.performSkinAction) {
+        return { request.operation, FrontendSkinActionOutcome::Rejected, request.accountIdentifier, {}, {},
+                 std::nullopt, std::nullopt, "skins.adapter.unavailable", "Skin actions are unavailable.", false };
+    }
+    auto result = m_runtimeDependencies.performSkinAction(m_dataRoot, request, cancellationCheck);
+    validateSkinActionResult(result, request);
+    return result;
 }
 
 FrontendOfflineLaunchIdentityLoadResult FrontendFacade::loadOfflineLaunchIdentity(

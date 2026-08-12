@@ -52,4 +52,7 @@ class ProductionInstanceRuntime final {
 };
 
 std::shared_ptr<ProductionInstanceRuntime> makeProductionInstanceRuntime(std::filesystem::path dataRoot);
-FrontendRuntimeDependencies productionInstanceRuntimeDependencies(std::filesystem::path dataRoot);
+FrontendRuntimeDependencies productionInstanceRuntimeDependencies(
+    std::filesystem::path dataRoot,
+    std::filesystem::path launcherExecutablePath = {},
+    std::filesystem::path launcherIconPath = {});

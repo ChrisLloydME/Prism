@@ -985,6 +985,187 @@ struct FrontendProviderInstallResult final {
     std::optional<FrontendProviderInstallRecoveryPrompt> recoveryPrompt;
 };
 
+/// Immutable Atom/RSS entry for the native News window. The production
+/// adapter owns transport, XML parsing, cache policy, and cancellation.
+struct FrontendNewsEntry final {
+    std::string id;
+    std::string title;
+    std::string link;
+    std::string content;
+    std::string publishedDate;
+
+    bool hasStableIdentifier() const noexcept { return !id.empty(); }
+};
+
+enum class FrontendNewsOutcome : std::uint8_t { Succeeded, Failed, Cancelled, Rejected };
+
+struct FrontendNewsResult final {
+    FrontendNewsOutcome outcome = FrontendNewsOutcome::Rejected;
+    std::vector<FrontendNewsEntry> entries;
+    std::string localizationKey;
+    std::string diagnosticText;
+    bool retryable = false;
+};
+
+struct FrontendUpdateNotice final {
+    std::string currentVersion;
+    std::string availableVersion;
+    std::string releaseNotes;
+};
+
+enum class FrontendUpdateCheckOutcome : std::uint8_t { NoUpdate, Available, Failed, Cancelled, Rejected };
+
+struct FrontendUpdateCheckResult final {
+    FrontendUpdateCheckOutcome outcome = FrontendUpdateCheckOutcome::Rejected;
+    std::optional<FrontendUpdateNotice> notice;
+    std::string localizationKey;
+    std::string diagnosticText;
+    bool retryable = false;
+};
+
+enum class FrontendUpdateDecision : std::uint8_t { Install, RemindLater, SkipVersion };
+
+struct FrontendUpdateDecisionRequest final {
+    FrontendUpdateDecision decision = FrontendUpdateDecision::RemindLater;
+    std::string availableVersion;
+};
+
+enum class FrontendUpdateDecisionOutcome : std::uint8_t {
+    Succeeded,
+    AuthorizationRequired,
+    Failed,
+    Cancelled,
+    Rejected,
+};
+
+struct FrontendUpdateDecisionResult final {
+    FrontendUpdateDecision decision = FrontendUpdateDecision::RemindLater;
+    FrontendUpdateDecisionOutcome outcome = FrontendUpdateDecisionOutcome::Rejected;
+    std::string availableVersion;
+    std::string localizationKey;
+    std::string diagnosticText;
+    bool retryable = false;
+};
+
+enum class FrontendShortcutLaunchTarget : std::uint8_t { Instance, World, Server };
+enum class FrontendShortcutDestination : std::uint8_t { Desktop, Applications, Other };
+
+struct FrontendShortcutCreationRequest final {
+    std::string instanceIdentifier;
+    std::string name;
+    FrontendShortcutLaunchTarget launchTarget = FrontendShortcutLaunchTarget::Instance;
+    std::string worldIdentifier;
+    std::string serverAddress;
+    std::string profileName;
+    FrontendShortcutDestination destination = FrontendShortcutDestination::Desktop;
+    std::filesystem::path destinationPath;
+    std::string iconKey;
+};
+
+enum class FrontendShortcutCreationOutcome : std::uint8_t {
+    Succeeded,
+    UnknownInstance,
+    Failed,
+    Cancelled,
+    Rejected,
+};
+
+struct FrontendShortcutCreationResult final {
+    FrontendShortcutCreationOutcome outcome = FrontendShortcutCreationOutcome::Rejected;
+    std::string instanceIdentifier;
+    std::string localizationKey;
+    std::string diagnosticText;
+    bool retryable = false;
+};
+
+enum class FrontendSkinModel : std::uint8_t { Classic, Slim };
+
+struct FrontendSkinCapeSnapshot final {
+    std::string id;
+    std::string displayName;
+    std::vector<std::uint8_t> imageData;
+    std::string remoteURL;
+
+    bool hasStableIdentifier() const noexcept { return !id.empty(); }
+};
+
+struct FrontendSkinSnapshot final {
+    std::string id;
+    std::string name;
+    FrontendSkinModel model = FrontendSkinModel::Classic;
+    std::string capeIdentifier;
+    std::vector<std::uint8_t> textureData;
+    std::vector<std::uint8_t> previewData;
+    std::filesystem::path sourcePath;
+    std::string remoteURL;
+
+    bool hasStableIdentifier() const noexcept { return !id.empty(); }
+};
+
+/// Non-secret profile metadata used by the skin runtime. Access credentials
+/// remain private to the production account/utility adapters.
+struct FrontendSkinAccountProfile final {
+    std::string accountIdentifier;
+    std::string profileName;
+    std::string currentSkinIdentifier;
+    std::string currentSkinURL;
+    FrontendSkinModel currentModel = FrontendSkinModel::Classic;
+    std::string currentCapeIdentifier;
+    std::vector<std::uint8_t> currentSkinData;
+    std::vector<FrontendSkinCapeSnapshot> capes;
+};
+
+enum class FrontendSkinLoadOutcome : std::uint8_t { Succeeded, Failed, Cancelled, Rejected };
+
+struct FrontendSkinLoadResult final {
+    FrontendSkinLoadOutcome outcome = FrontendSkinLoadOutcome::Rejected;
+    std::string accountIdentifier;
+    std::vector<FrontendSkinSnapshot> skins;
+    std::vector<FrontendSkinCapeSnapshot> capes;
+    std::optional<std::string> currentSkinIdentifier;
+    std::string localizationKey;
+    std::string diagnosticText;
+    bool retryable = false;
+};
+
+enum class FrontendSkinOperation : std::uint8_t {
+    ImportFile,
+    ImportURL,
+    ImportUser,
+    Upload,
+    Reset,
+    Delete,
+    Rename,
+};
+
+struct FrontendSkinActionRequest final {
+    FrontendSkinOperation operation = FrontendSkinOperation::ImportFile;
+    std::string accountIdentifier;
+    std::string skinIdentifier;
+    FrontendSkinModel model = FrontendSkinModel::Classic;
+    std::string capeIdentifier;
+    std::filesystem::path sourcePath;
+    std::string sourceURL;
+    std::string username;
+    std::string newName;
+    bool confirmed = false;
+};
+
+enum class FrontendSkinActionOutcome : std::uint8_t { Succeeded, Failed, Cancelled, Rejected };
+
+struct FrontendSkinActionResult final {
+    FrontendSkinOperation operation = FrontendSkinOperation::ImportFile;
+    FrontendSkinActionOutcome outcome = FrontendSkinActionOutcome::Rejected;
+    std::string accountIdentifier;
+    std::vector<FrontendSkinSnapshot> skins;
+    std::vector<FrontendSkinCapeSnapshot> capes;
+    std::optional<std::string> currentSkinIdentifier;
+    std::optional<std::string> selectedSkinIdentifier;
+    std::string localizationKey;
+    std::string diagnosticText;
+    bool retryable = false;
+};
+
 inline constexpr std::size_t kFrontendLogMaxEntries = 512;
 inline constexpr std::size_t kFrontendLogMaxBytes = 256 * 1024;
 
@@ -1122,6 +1303,19 @@ struct FrontendRuntimeDependencies final {
         const FrontendProviderInstallRequest&,
         const ProviderInstallProgressHandler&,
         const ProviderInstallCancellationCheck&)>;
+    using UtilityCancellationCheck = std::function<bool()>;
+    using NewsLoader = std::function<FrontendNewsResult(
+        const std::filesystem::path&, const UtilityCancellationCheck&)>;
+    using UpdateChecker = std::function<FrontendUpdateCheckResult(
+        const std::filesystem::path&, const std::string&, const UtilityCancellationCheck&)>;
+    using UpdateDecisionRunner = std::function<FrontendUpdateDecisionResult(
+        const std::filesystem::path&, const FrontendUpdateDecisionRequest&, const UtilityCancellationCheck&)>;
+    using ShortcutCreator = std::function<FrontendShortcutCreationResult(
+        const std::filesystem::path&, const FrontendShortcutCreationRequest&, const UtilityCancellationCheck&)>;
+    using SkinLoader = std::function<FrontendSkinLoadResult(
+        const std::filesystem::path&, const std::string&, const UtilityCancellationCheck&)>;
+    using SkinActionRunner = std::function<FrontendSkinActionResult(
+        const std::filesystem::path&, const FrontendSkinActionRequest&, const UtilityCancellationCheck&)>;
     using OfflineLaunchIdentityLoader = std::function<FrontendOfflineLaunchIdentityLoadResult(
         const std::filesystem::path&, const FrontendOfflineLaunchIdentityRequest&)>;
     using OfflineLaunchIdentityUpdater = std::function<FrontendOfflineLaunchIdentityUpdateResult(
@@ -1172,6 +1366,12 @@ struct FrontendRuntimeDependencies final {
     ProviderBrowseRunner browseProvider;
     ProviderVersionRunner loadProviderVersions;
     ProviderInstallRunner installProviderPack;
+    NewsLoader loadNews;
+    UpdateChecker checkForUpdates;
+    UpdateDecisionRunner applyUpdateDecision;
+    ShortcutCreator createShortcut;
+    SkinLoader loadSkins;
+    SkinActionRunner performSkinAction;
     OfflineLaunchIdentityLoader loadOfflineLaunchIdentity;
     OfflineLaunchIdentityUpdater updateOfflineLaunchIdentity;
     TaskSnapshotLoader loadTaskSnapshot;
@@ -1274,6 +1474,23 @@ class FrontendFacade final {
         const FrontendProviderInstallRequest& request,
         const FrontendRuntimeDependencies::ProviderInstallProgressHandler& progressHandler = {},
         const FrontendRuntimeDependencies::ProviderInstallCancellationCheck& cancellationCheck = {}) const;
+    FrontendNewsResult news(
+        const FrontendRuntimeDependencies::UtilityCancellationCheck& cancellationCheck = {}) const;
+    FrontendUpdateCheckResult checkForUpdates(
+        const std::string& currentVersion,
+        const FrontendRuntimeDependencies::UtilityCancellationCheck& cancellationCheck = {}) const;
+    FrontendUpdateDecisionResult applyUpdateDecision(
+        const FrontendUpdateDecisionRequest& request,
+        const FrontendRuntimeDependencies::UtilityCancellationCheck& cancellationCheck = {}) const;
+    FrontendShortcutCreationResult createShortcut(
+        const FrontendShortcutCreationRequest& request,
+        const FrontendRuntimeDependencies::UtilityCancellationCheck& cancellationCheck = {}) const;
+    FrontendSkinLoadResult skins(
+        const std::string& accountIdentifier,
+        const FrontendRuntimeDependencies::UtilityCancellationCheck& cancellationCheck = {}) const;
+    FrontendSkinActionResult performSkinAction(
+        const FrontendSkinActionRequest& request,
+        const FrontendRuntimeDependencies::UtilityCancellationCheck& cancellationCheck = {}) const;
     FrontendOfflineLaunchIdentityLoadResult loadOfflineLaunchIdentity(
         const FrontendOfflineLaunchIdentityRequest& request) const;
     FrontendOfflineLaunchIdentityUpdateResult updateOfflineLaunchIdentity(

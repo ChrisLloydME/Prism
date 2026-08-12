@@ -4100,4 +4100,204 @@ resolvedBlockedFileIdentifiers:@[]];
     XCTAssertTrue(receivedResult.recoveryPrompt.retryable);
 }
 
+- (void)testUtilityAdaptersConvertFoundationValuesOnMainActor
+{
+    const std::filesystem::path fixtureRoot(self.fixtureRootURL.fileSystemRepresentation);
+    auto updateDecision = std::make_shared<FrontendUpdateDecisionRequest>();
+    auto shortcutRequest = std::make_shared<FrontendShortcutCreationRequest>();
+    auto skinRequest = std::make_shared<FrontendSkinActionRequest>();
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.loadNews = [](const std::filesystem::path&, const auto&) {
+        return FrontendNewsResult{
+            FrontendNewsOutcome::Succeeded,
+            { { "news.bridge", "Bridge News", "https://example.invalid/news", "Bridge content", "2026-08-12" } },
+            "news.loaded", "", false };
+    };
+    dependencies.checkForUpdates = [](const std::filesystem::path&, const std::string& currentVersion, const auto&) {
+        return FrontendUpdateCheckResult{
+            FrontendUpdateCheckOutcome::Available,
+            FrontendUpdateNotice{ currentVersion, "12.1", "Bridge release notes" },
+            "updates.available", "", false };
+    };
+    dependencies.applyUpdateDecision = [updateDecision](
+                                           const std::filesystem::path&,
+                                           const FrontendUpdateDecisionRequest& request,
+                                           const auto&) {
+        *updateDecision = request;
+        return FrontendUpdateDecisionResult{
+            request.decision, FrontendUpdateDecisionOutcome::AuthorizationRequired,
+            request.availableVersion, "updates.install.authorizationRequired", "Separate authorization required", false };
+    };
+    dependencies.createShortcut = [shortcutRequest](
+                                      const std::filesystem::path&,
+                                      const FrontendShortcutCreationRequest& request,
+                                      const auto&) {
+        *shortcutRequest = request;
+        return FrontendShortcutCreationResult{
+            FrontendShortcutCreationOutcome::Succeeded, request.instanceIdentifier, "shortcuts.created", "", false };
+    };
+    const FrontendSkinSnapshot skin{
+        "skin.bridge", "Bridge Skin", FrontendSkinModel::Slim, "cape.bridge",
+        { 1, 2, 3 }, { 1, 2, 3 }, fixtureRoot / "skins" / "skin.bridge.png", "" };
+    const FrontendSkinCapeSnapshot cape{ "cape.bridge", "Bridge Cape", { 4, 5, 6 }, "" };
+    dependencies.loadSkins = [skin, cape](const std::filesystem::path&, const std::string& account, const auto&) {
+        return FrontendSkinLoadResult{
+            FrontendSkinLoadOutcome::Succeeded, account, { skin }, { cape }, "skin.bridge",
+            "skins.load.succeeded", "", false };
+    };
+    dependencies.performSkinAction = [skinRequest, skin, cape](
+                                         const std::filesystem::path&,
+                                         const FrontendSkinActionRequest& request,
+                                         const auto&) {
+        *skinRequest = request;
+        return FrontendSkinActionResult{
+            request.operation, FrontendSkinActionOutcome::Succeeded, request.accountIdentifier,
+            { skin }, { cape }, "skin.bridge", "skin.bridge", "skins.action.succeeded", "", false };
+    };
+
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    XCTAssertNotNil(bridge);
+
+    XCTestExpectation *newsDone = [self expectationWithDescription:@"News converted"];
+    PRBridgeObservationToken *newsToken = [bridge loadNewsWithCompletion:^(PRNewsLoadResult *result, PRBridgeError *error) {
+        XCTAssertTrue(NSThread.isMainThread);
+        XCTAssertNil(error);
+        XCTAssertEqual(result.outcome, PRNewsLoadOutcomeSucceeded);
+        XCTAssertEqual(result.entries.count, (NSUInteger)1);
+        XCTAssertEqualObjects(result.entries.firstObject.identifier, @"news.bridge");
+        XCTAssertEqualObjects(result.entries.firstObject.link.absoluteString, @"https://example.invalid/news");
+        [newsDone fulfill];
+    }];
+
+    XCTestExpectation *updateDone = [self expectationWithDescription:@"Update converted"];
+    PRBridgeObservationToken *updateToken = [bridge checkForUpdatesWithCurrentVersion:@"12.0"
+                                                                           completion:^(PRUpdateCheckResult *result, PRBridgeError *error) {
+        XCTAssertTrue(NSThread.isMainThread);
+        XCTAssertNil(error);
+        XCTAssertEqual(result.outcome, PRUpdateCheckOutcomeAvailable);
+        XCTAssertEqualObjects(result.notice.currentVersion, @"12.0");
+        XCTAssertEqualObjects(result.notice.availableVersion, @"12.1");
+        [updateDone fulfill];
+    }];
+
+    XCTestExpectation *decisionDone = [self expectationWithDescription:@"Update decision converted"];
+    PRBridgeObservationToken *decisionToken = [bridge applyUpdateDecision:PRUpdateDecisionInstall
+                                                          availableVersion:@"12.1"
+                                                                completion:^(PRUpdateDecisionResult *result, PRBridgeError *error) {
+        XCTAssertNil(error);
+        XCTAssertEqual(result.outcome, PRUpdateDecisionOutcomeAuthorizationRequired);
+        XCTAssertEqualObjects(result.localizationKey, @"updates.install.authorizationRequired");
+        [decisionDone fulfill];
+    }];
+
+    PRShortcutCreationRequest *shortcut = [[PRShortcutCreationRequest alloc]
+        initWithInstanceIdentifier:@"instance.bridge"
+                              name:@"Bridge Shortcut"
+                      launchTarget:PRShortcutLaunchTargetWorld
+                   worldIdentifier:@"Bridge World"
+                     serverAddress:nil
+                       profileName:@"Bridge Player"
+                       destination:PRShortcutDestinationOther
+                    destinationURL:[self.fixtureRootURL URLByAppendingPathComponent:@"Bridge Shortcut"]
+                           iconKey:@"default"];
+    XCTAssertNotNil(shortcut);
+    XCTestExpectation *shortcutDone = [self expectationWithDescription:@"Shortcut converted"];
+    PRBridgeObservationToken *shortcutToken = [bridge createShortcutWithRequest:shortcut
+                                                                      completion:^(PRShortcutCreationResult *result, PRBridgeError *error) {
+        XCTAssertNil(error);
+        XCTAssertEqual(result.outcome, PRShortcutCreationOutcomeSucceeded);
+        XCTAssertEqualObjects(result.instanceIdentifier, @"instance.bridge");
+        [shortcutDone fulfill];
+    }];
+
+    XCTestExpectation *skinsDone = [self expectationWithDescription:@"Skins converted"];
+    PRBridgeObservationToken *skinsToken = [bridge loadSkinsWithAccountIdentifier:@"account.bridge"
+                                                                        completion:^(PRSkinLoadResult *result, PRBridgeError *error) {
+        XCTAssertNil(error);
+        XCTAssertEqual(result.outcome, PRSkinLoadOutcomeSucceeded);
+        XCTAssertEqualObjects(result.skins.firstObject.identifier, @"skin.bridge");
+        XCTAssertEqual(result.skins.firstObject.model, PRSkinModelSlim);
+        XCTAssertEqualObjects(result.capes.firstObject.identifier, @"cape.bridge");
+        [skinsDone fulfill];
+    }];
+
+    PRSkinActionRequest *rename = [[PRSkinActionRequest alloc]
+        initWithOperation:PRSkinOperationRename
+        accountIdentifier:@"account.bridge"
+           skinIdentifier:@"skin.bridge"
+                    model:PRSkinModelSlim
+           capeIdentifier:@"cape.bridge"
+                sourceURL:nil
+           remoteURLString:nil
+                 username:nil
+          replacementName:@"Renamed Bridge Skin"
+                confirmed:NO];
+    XCTAssertNotNil(rename);
+    XCTestExpectation *skinActionDone = [self expectationWithDescription:@"Skin action converted"];
+    PRBridgeObservationToken *skinActionToken = [bridge performSkinActionWithRequest:rename
+                                                                           completion:^(PRSkinActionResult *result, PRBridgeError *error) {
+        XCTAssertNil(error);
+        XCTAssertEqual(result.outcome, PRSkinActionOutcomeSucceeded);
+        XCTAssertEqual(result.operation, PRSkinOperationRename);
+        XCTAssertEqualObjects(result.selectedSkinIdentifier, @"skin.bridge");
+        [skinActionDone fulfill];
+    }];
+
+    XCTAssertNotNil(newsToken);
+    XCTAssertNotNil(updateToken);
+    XCTAssertNotNil(decisionToken);
+    XCTAssertNotNil(shortcutToken);
+    XCTAssertNotNil(skinsToken);
+    XCTAssertNotNil(skinActionToken);
+    [self waitForExpectations:@[ newsDone, updateDone, decisionDone, shortcutDone, skinsDone, skinActionDone ]
+                      timeout:3.0];
+    XCTAssertEqual(updateDecision->decision, FrontendUpdateDecision::Install);
+    XCTAssertEqual(updateDecision->availableVersion, "12.1");
+    XCTAssertEqual(shortcutRequest->launchTarget, FrontendShortcutLaunchTarget::World);
+    XCTAssertEqual(shortcutRequest->worldIdentifier, "Bridge World");
+    XCTAssertEqual(shortcutRequest->profileName, "Bridge Player");
+    XCTAssertEqual(shortcutRequest->destinationPath, fixtureRoot / "Bridge Shortcut");
+    XCTAssertEqual(skinRequest->operation, FrontendSkinOperation::Rename);
+    XCTAssertEqual(skinRequest->newName, "Renamed Bridge Skin");
+    XCTAssertTrue(newsToken.isCancelled);
+    XCTAssertTrue(updateToken.isCancelled);
+    XCTAssertTrue(decisionToken.isCancelled);
+    XCTAssertTrue(shortcutToken.isCancelled);
+    XCTAssertTrue(skinsToken.isCancelled);
+    XCTAssertTrue(skinActionToken.isCancelled);
+}
+
+- (void)testUtilityTokenCancellationSuppressesDeliveryAndReachesCancellationPort
+{
+    dispatch_semaphore_t entered = dispatch_semaphore_create(0);
+    dispatch_semaphore_t released = dispatch_semaphore_create(0);
+    auto cancellationObserved = std::make_shared<std::atomic<bool>>(false);
+    FrontendRuntimeDependencies dependencies = baseFixtureDependencies();
+    dependencies.loadNews = [entered, released, cancellationObserved](const std::filesystem::path&, const auto& isCancelled) {
+        dispatch_semaphore_signal(entered);
+        dispatch_semaphore_wait(released, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC));
+        cancellationObserved->store(isCancelled && isCancelled());
+        return FrontendNewsResult{ FrontendNewsOutcome::Cancelled, {}, "news.cancelled", "", false };
+    };
+    PRPrismBridge *bridge = [self bridgeWithDependencies:std::move(dependencies)
+                                       cancellationHandler:nil
+                                          shutdownHandler:nil];
+    __block NSUInteger deliveryCount = 0;
+    PRBridgeObservationToken *token = [bridge loadNewsWithCompletion:^(__unused PRNewsLoadResult *result,
+                                                                       __unused PRBridgeError *error) {
+        deliveryCount += 1;
+    }];
+    XCTAssertNotNil(token);
+    XCTAssertEqual(dispatch_semaphore_wait(entered, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC)), 0);
+    XCTAssertTrue([token cancel]);
+    dispatch_semaphore_signal(released);
+    XCTestExpectation *drained = [self expectationWithDescription:@"Utility cancellation drained"];
+    dispatch_async(dispatch_get_main_queue(), ^{ [drained fulfill]; });
+    [self waitForExpectations:@[ drained ] timeout:2.0];
+    XCTAssertTrue(cancellationObserved->load());
+    XCTAssertEqual(deliveryCount, (NSUInteger)0);
+}
+
 @end

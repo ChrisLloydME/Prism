@@ -124,6 +124,18 @@ typedef void (^PROfflineLaunchIdentityLoadCompletionHandler)(PROfflineLaunchIden
                                                               PRBridgeError * _Nullable error);
 typedef void (^PROfflineLaunchIdentityUpdateCompletionHandler)(PROfflineLaunchIdentityUpdateResult * _Nullable result,
                                                                 PRBridgeError * _Nullable error);
+typedef void (^PRNewsLoadCompletionHandler)(PRNewsLoadResult * _Nullable result,
+                                             PRBridgeError * _Nullable error);
+typedef void (^PRUpdateCheckCompletionHandler)(PRUpdateCheckResult * _Nullable result,
+                                                PRBridgeError * _Nullable error);
+typedef void (^PRUpdateDecisionCompletionHandler)(PRUpdateDecisionResult * _Nullable result,
+                                                   PRBridgeError * _Nullable error);
+typedef void (^PRShortcutCreationCompletionHandler)(PRShortcutCreationResult * _Nullable result,
+                                                     PRBridgeError * _Nullable error);
+typedef void (^PRSkinLoadCompletionHandler)(PRSkinLoadResult * _Nullable result,
+                                             PRBridgeError * _Nullable error);
+typedef void (^PRSkinActionCompletionHandler)(PRSkinActionResult * _Nullable result,
+                                               PRBridgeError * _Nullable error);
 
 /// Owns one bridge observation registration and cancels it when released.
 @interface PRBridgeObservationToken : NSObject
@@ -368,6 +380,27 @@ typedef void (^PROfflineLaunchIdentityUpdateCompletionHandler)(PROfflineLaunchId
                                                                     action:(PRAccountAuthenticationAction)action
                                                                   progress:(nullable PRAccountAuthenticationProgressHandler)progress
                                                                 completion:(PRAccountAuthenticationCompletionHandler)completion;
+
+/// Loads the bounded Prism Atom/RSS feed through the production adapter.
+- (nullable PRBridgeObservationToken *)loadNewsWithCompletion:(PRNewsLoadCompletionHandler)completion;
+
+/// Checks the signed-app update metadata feed. This method never installs an
+/// update; installation remains an explicit separately authorized decision.
+- (nullable PRBridgeObservationToken *)checkForUpdatesWithCurrentVersion:(NSString *)currentVersion
+                                                               completion:(PRUpdateCheckCompletionHandler)completion;
+- (nullable PRBridgeObservationToken *)applyUpdateDecision:(PRUpdateDecision)decision
+                                           availableVersion:(NSString *)availableVersion
+                                                 completion:(PRUpdateDecisionCompletionHandler)completion;
+
+/// Creates a macOS application shortcut through the backend-owned writer.
+- (nullable PRBridgeObservationToken *)createShortcutWithRequest:(PRShortcutCreationRequest *)request
+                                                       completion:(PRShortcutCreationCompletionHandler)completion;
+
+/// Loads and mutates skin data without exposing credentials or Qt ownership.
+- (nullable PRBridgeObservationToken *)loadSkinsWithAccountIdentifier:(NSString *)accountIdentifier
+                                                            completion:(PRSkinLoadCompletionHandler)completion;
+- (nullable PRBridgeObservationToken *)performSkinActionWithRequest:(PRSkinActionRequest *)request
+                                                          completion:(PRSkinActionCompletionHandler)completion;
 
 /// Loads the bundle-rooted offline/demo player name without launching a game
 /// or reading the installed upstream data root. The adapter owns the

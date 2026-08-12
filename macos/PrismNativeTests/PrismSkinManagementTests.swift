@@ -3,8 +3,21 @@ import XCTest
 
 @MainActor
 final class PrismSkinManagementTests: XCTestCase {
-    func testSkinSelectionModelCapeAndFixtureDataRemainFoundationValues() throws {
+    func testProductionDefaultsDoNotContainFixtureAccountOrSkins() {
         let model = PrismSkinManagementModel()
+        XCTAssertTrue(model.accountIdentifier.isEmpty)
+        XCTAssertTrue(model.skins.isEmpty)
+        XCTAssertTrue(model.capes.isEmpty)
+        XCTAssertNil(model.currentSkinIdentifier)
+    }
+
+    func testSkinSelectionModelCapeAndFixtureDataRemainFoundationValues() throws {
+        let model = PrismSkinManagementModel(
+            accountIdentifier: "account.fixture.microsoft",
+            initialSkins: PrismSkinFixture.skins,
+            initialCapes: PrismSkinFixture.capes,
+            currentSkinIdentifier: PrismSkinFixture.currentSkinIdentifier
+        )
 
         XCTAssertEqual(model.skins.count, 2)
         XCTAssertEqual(model.selectedSkinIdentifier, PrismSkinFixture.currentSkinIdentifier)
@@ -24,6 +37,10 @@ final class PrismSkinManagementTests: XCTestCase {
         var loadGenerations: [Int] = []
         var cancellations: [(PrismSkinOperation, Int)] = []
         let model = PrismSkinManagementModel(
+            accountIdentifier: "account.fixture.microsoft",
+            initialSkins: PrismSkinFixture.skins,
+            initialCapes: PrismSkinFixture.capes,
+            currentSkinIdentifier: PrismSkinFixture.currentSkinIdentifier,
             onLoad: { _, generation in loadGenerations.append(generation) },
             onCancel: { operation, generation in cancellations.append((operation, generation)) }
         )
@@ -63,6 +80,10 @@ final class PrismSkinManagementTests: XCTestCase {
         var renames: [PrismSkinRenameRequest] = []
         var generations: [Int] = []
         let model = PrismSkinManagementModel(
+            accountIdentifier: "account.fixture.microsoft",
+            initialSkins: PrismSkinFixture.skins,
+            initialCapes: PrismSkinFixture.capes,
+            currentSkinIdentifier: PrismSkinFixture.currentSkinIdentifier,
             onUpload: { request, generation in uploads.append(request); generations.append(generation) },
             onReset: { request, generation in resets.append(request); generations.append(generation) },
             onDelete: { request, generation in deletes.append(request); generations.append(generation) },
@@ -120,6 +141,10 @@ final class PrismSkinManagementTests: XCTestCase {
         var presentedGeneration: Int?
         var imports: [PrismSkinImportRequest] = []
         let model = PrismSkinManagementModel(
+            accountIdentifier: "account.fixture.microsoft",
+            initialSkins: PrismSkinFixture.skins,
+            initialCapes: PrismSkinFixture.capes,
+            currentSkinIdentifier: PrismSkinFixture.currentSkinIdentifier,
             onImport: { request, _ in imports.append(request) },
             onPresentImportPanel: { presentedGeneration = $0 }
         )
@@ -187,7 +212,9 @@ final class PrismSkinManagementTests: XCTestCase {
             "PrismSystemOpenPanel.present",
             "UTType.png",
             "maxItemCount",
-            "defaultTotalByteLimit"
+            "defaultTotalByteLimit",
+            "bridge.loadSkins",
+            "bridge.performSkinAction"
         ] {
             XCTAssertTrue(source.contains(requiredToken), "Missing native skin contract: \(requiredToken)")
         }
@@ -215,6 +242,8 @@ final class PrismSkinManagementTests: XCTestCase {
 
         XCTAssertTrue(appSource.contains("Window(\"Manage Skins\", id: \"prism.skin-management\")"))
         XCTAssertTrue(appSource.contains("PrismSkinManagementView(model: skinModel)"))
+        XCTAssertTrue(appSource.contains("bridge: runtime.bridge"))
+        XCTAssertFalse(appSource.contains("PrismSkinManagementModel()"))
         XCTAssertTrue(settingsSource.contains("openWindow(id: \"prism.skin-management\")"))
         XCTAssertTrue(accountSource.contains("Manage Skins…"))
         XCTAssertTrue(accountSource.contains("account.type == .microsoft"))

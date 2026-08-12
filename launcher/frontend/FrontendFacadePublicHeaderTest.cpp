@@ -58,6 +58,13 @@ static_assert(static_cast<std::uint8_t>(FrontendTaskCancellationResult::Requeste
 static_assert(static_cast<std::uint8_t>(FrontendTaskCancellationResult::AlreadyTerminal) == 1);
 static_assert(static_cast<std::uint8_t>(FrontendTaskCancellationResult::UnknownTask) == 2);
 static_assert(static_cast<std::uint8_t>(FrontendTaskCancellationResult::Rejected) == 3);
+static_assert(static_cast<std::uint8_t>(FrontendNewsOutcome::Succeeded) == 0);
+static_assert(static_cast<std::uint8_t>(FrontendNewsOutcome::Rejected) == 3);
+static_assert(static_cast<std::uint8_t>(FrontendUpdateCheckOutcome::Available) == 1);
+static_assert(static_cast<std::uint8_t>(FrontendUpdateDecisionOutcome::AuthorizationRequired) == 1);
+static_assert(static_cast<std::uint8_t>(FrontendShortcutCreationOutcome::UnknownInstance) == 1);
+static_assert(static_cast<std::uint8_t>(FrontendSkinModel::Slim) == 1);
+static_assert(static_cast<std::uint8_t>(FrontendSkinOperation::Rename) == 6);
 
 int main()
 {
@@ -107,6 +114,10 @@ int main()
     settings.id = "header-contract";
     const FrontendInstanceChange change{ FrontendInstanceChangeKind::Added, snapshot };
     const FrontendLogSnapshot logSnapshot{ "header-contract", {}, 0, 0, false };
+    const FrontendNewsEntry newsEntry{
+        "news-contract", "News Contract", "https://example.invalid/news", "Contract content", "" };
+    const FrontendSkinSnapshot skin{
+        "skin-contract", "Skin Contract", FrontendSkinModel::Classic, {}, { 1 }, { 1 }, "/skins/skin.png", {} };
     const FrontendRuntimeDependencies dependencies;
     return snapshot.hasStableIdentifier() && details.hasStableIdentifier() && component.hasStableIdentifier()
             && resource.hasStableIdentifier() && mutationRequest.resourceIdentifier == resource.id
@@ -117,6 +128,7 @@ int main()
             && details.notesEditable
             && settings.hasStableIdentifier()
             && change.instance.id == snapshot.id && logSnapshot.hasStableIdentifier()
+            && newsEntry.hasStableIdentifier() && skin.hasStableIdentifier()
             && !dependencies.isComplete()
         ? 0
         : 1;

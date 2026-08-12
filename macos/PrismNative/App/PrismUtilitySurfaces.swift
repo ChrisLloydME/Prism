@@ -148,13 +148,17 @@ final class PrismNewsModel: ObservableObject {
     private var generation = 0
     private let onLoad: ((Int) -> Void)?
     private let onCancel: (() -> Void)?
+    private let bridge: PRPrismBridge?
+    private var requestToken: PRBridgeObservationToken?
 
     init(
         initialState: PrismNewsState = .empty,
+        bridge: PRPrismBridge? = nil,
         onLoad: ((Int) -> Void)? = nil,
         onCancel: (() -> Void)? = nil
     ) {
         self.state = initialState
+        self.bridge = bridge
         self.onLoad = onLoad
         self.onCancel = onCancel
         if case .content(let entries) = initialState {
@@ -180,9 +184,28 @@ final class PrismNewsModel: ObservableObject {
     func load() -> Bool {
         guard !isLoading else { return false }
         generation += 1
+        let activeGeneration = generation
         selectedEntryID = nil
         state = .loading
-        if let onLoad {
+        requestToken?.cancel()
+        if let bridge {
+            requestToken = bridge.loadNews { [weak self] result, error in
+                self?.requestToken = nil
+                guard let self else { return }
+                if let result {
+                    _ = self.apply(bridgeResult: result, generation: activeGeneration)
+                } else if let error {
+                    _ = self.apply(
+                        failure: PrismNewsFailure(
+                            localizationKey: error.localizationKey,
+                            diagnosticText: error.diagnosticText,
+                            retryable: error.recoveryKind == .retry
+                        ),
+                        generation: activeGeneration
+                    )
+                }
+            }
+        } else if let onLoad {
             onLoad(generation)
         } else {
             state = .failed(PrismNewsFailure(
@@ -198,6 +221,8 @@ final class PrismNewsModel: ObservableObject {
     func cancel() -> Bool {
         guard isLoading else { return false }
         generation += 1
+        requestToken?.cancel()
+        requestToken = nil
         onCancel?()
         state = .cancelled
         return true
@@ -244,6 +269,46 @@ final class PrismNewsModel: ObservableObject {
     private static func isValid(_ entries: [PrismNewsEntry]) -> Bool {
         Set(entries.map(\.id)).count == entries.count && entries.allSatisfy { !$0.id.isEmpty }
     }
+
+    private func apply(bridgeResult: PRNewsLoadResult, generation resultGeneration: Int) -> Bool {
+        switch bridgeResult.outcome {
+        case .succeeded:
+            let entries = bridgeResult.entries.compactMap {
+                PrismNewsEntry(
+                    id: $0.identifier,
+                    title: $0.title,
+                    link: $0.link,
+                    content: $0.content,
+                    publishedDate: $0.publishedDate
+                )
+            }
+            guard entries.count == bridgeResult.entries.count else { return false }
+            return apply(entries: entries, generation: resultGeneration)
+        case .cancelled:
+            guard resultGeneration == generation else { return false }
+            state = .cancelled
+            selectedEntryID = nil
+            return true
+        case .failed, .rejected:
+            return apply(
+                failure: PrismNewsFailure(
+                    localizationKey: bridgeResult.localizationKey,
+                    diagnosticText: bridgeResult.diagnosticText,
+                    retryable: bridgeResult.retryable
+                ),
+                generation: resultGeneration
+            )
+        @unknown default:
+            return apply(
+                failure: PrismNewsFailure(
+                    localizationKey: "news.unknownOutcome",
+                    diagnosticText: nil,
+                    retryable: true
+                ),
+                generation: resultGeneration
+            )
+        }
+    }
 }
 
 enum PrismUpdateDecision: Equatable, Sendable {
@@ -286,6 +351,7 @@ enum PrismUpdateState: Equatable, Sendable {
     case noUpdate
     case available(PrismUpdateNotice)
     case failed(PrismUpdateFailure)
+    case cancelled
     case decided(PrismUpdateDecision)
 }
 
@@ -295,11 +361,18 @@ final class PrismUpdateModel: ObservableObject {
     private var generation = 0
     private let onCheck: ((Int) -> Void)?
     private let onDecision: ((PrismUpdateDecision, PrismUpdateNotice) -> Void)?
+    private let bridge: PRPrismBridge?
+    private let currentVersion: String
+    private var requestToken: PRBridgeObservationToken?
 
     init(
+        currentVersion: String = PrismAboutMetadata.fromBundle().version,
+        bridge: PRPrismBridge? = nil,
         onCheck: ((Int) -> Void)? = nil,
         onDecision: ((PrismUpdateDecision, PrismUpdateNotice) -> Void)? = nil
     ) {
+        self.currentVersion = currentVersion
+        self.bridge = bridge
         self.onCheck = onCheck
         self.onDecision = onDecision
     }
@@ -313,8 +386,27 @@ final class PrismUpdateModel: ObservableObject {
     func check() -> Bool {
         guard state != .checking else { return false }
         generation += 1
+        let activeGeneration = generation
         state = .checking
-        if let onCheck {
+        requestToken?.cancel()
+        if let bridge {
+            requestToken = bridge.checkForUpdates(withCurrentVersion: currentVersion) { [weak self] result, error in
+                self?.requestToken = nil
+                guard let self else { return }
+                if let result {
+                    _ = self.apply(bridgeResult: result, generation: activeGeneration)
+                } else if let error {
+                    _ = self.apply(
+                        failure: PrismUpdateFailure(
+                            localizationKey: error.localizationKey,
+                            diagnosticText: error.diagnosticText,
+                            retryable: error.recoveryKind == .retry
+                        ),
+                        generation: activeGeneration
+                    )
+                }
+            }
+        } else if let onCheck {
             onCheck(generation)
         } else {
             state = .failed(PrismUpdateFailure(
@@ -323,6 +415,16 @@ final class PrismUpdateModel: ObservableObject {
                 retryable: false
             ))
         }
+        return true
+    }
+
+    @discardableResult
+    func cancel() -> Bool {
+        guard state == .checking else { return false }
+        generation += 1
+        requestToken?.cancel()
+        requestToken = nil
+        state = .cancelled
         return true
     }
 
@@ -354,9 +456,83 @@ final class PrismUpdateModel: ObservableObject {
     @discardableResult
     func choose(_ decision: PrismUpdateDecision) -> Bool {
         guard let notice else { return false }
+        generation += 1
+        let activeGeneration = generation
         state = .decided(decision)
-        onDecision?(decision, notice)
+        requestToken?.cancel()
+        if let bridge {
+            requestToken = bridge.apply(
+                decision.bridgeDecision,
+                availableVersion: notice.availableVersion
+            ) { [weak self] result, error in
+                self?.requestToken = nil
+                guard let self, activeGeneration == self.generation else { return }
+                if let error {
+                    self.state = .failed(PrismUpdateFailure(
+                        localizationKey: error.localizationKey,
+                        diagnosticText: error.diagnosticText,
+                        retryable: error.recoveryKind == .retry
+                    ))
+                } else if let result,
+                          result.outcome != .succeeded {
+                    self.state = .failed(PrismUpdateFailure(
+                        localizationKey: result.localizationKey,
+                        diagnosticText: result.diagnosticText,
+                        retryable: result.retryable
+                    ))
+                }
+            }
+        } else {
+            onDecision?(decision, notice)
+        }
         return true
+    }
+
+    private func apply(bridgeResult: PRUpdateCheckResult, generation resultGeneration: Int) -> Bool {
+        switch bridgeResult.outcome {
+        case .noUpdate:
+            return applyNoUpdate(generation: resultGeneration)
+        case .available:
+            guard let value = bridgeResult.notice,
+                  let notice = PrismUpdateNotice(
+                      currentVersion: value.currentVersion,
+                      availableVersion: value.availableVersion,
+                      releaseNotes: value.releaseNotes
+                  ) else { return false }
+            return apply(notice: notice, generation: resultGeneration)
+        case .cancelled:
+            guard state == .checking, resultGeneration == generation else { return false }
+            state = .cancelled
+            return true
+        case .failed, .rejected:
+            return apply(
+                failure: PrismUpdateFailure(
+                    localizationKey: bridgeResult.localizationKey,
+                    diagnosticText: bridgeResult.diagnosticText,
+                    retryable: bridgeResult.retryable
+                ),
+                generation: resultGeneration
+            )
+        @unknown default:
+            return apply(
+                failure: PrismUpdateFailure(
+                    localizationKey: "updates.unknownOutcome",
+                    diagnosticText: nil,
+                    retryable: true
+                ),
+                generation: resultGeneration
+            )
+        }
+    }
+}
+
+private extension PrismUpdateDecision {
+    var bridgeDecision: PRUpdateDecision {
+        switch self {
+        case .install: return .install
+        case .remindLater: return .remindLater
+        case .skipVersion: return .skipVersion
+        }
     }
 }
 
@@ -497,8 +673,16 @@ enum PrismRecoveryMessageState: Equatable, Sendable {
 final class PrismRecoveryMessageModel: ObservableObject {
     @Published private(set) var state: PrismRecoveryMessageState = .idle
     private let onDecision: ((PrismRecoveryDecision) -> Void)?
+    private let clipboardWriter: (String) -> Bool
 
-    init(onDecision: ((PrismRecoveryDecision) -> Void)? = nil) {
+    init(
+        clipboardWriter: @escaping (String) -> Bool = { text in
+            NSPasteboard.general.clearContents()
+            return NSPasteboard.general.setString(text, forType: .string)
+        },
+        onDecision: ((PrismRecoveryDecision) -> Void)? = nil
+    ) {
+        self.clipboardWriter = clipboardWriter
         self.onDecision = onDecision
     }
 
@@ -527,8 +711,7 @@ final class PrismRecoveryMessageModel: ObservableObject {
         let text = message.details
             .map { "\($0.label): \($0.value)" }
             .joined(separator: "\n")
-        NSPasteboard.general.clearContents()
-        return NSPasteboard.general.setString(text, forType: .string)
+        return clipboardWriter(text)
     }
 
     func reset() {
@@ -620,9 +803,10 @@ struct PrismShortcutCreationResult: Equatable, Sendable {
     let outcome: PrismShortcutCreationOutcome
     let localizationKey: String
     let diagnosticText: String?
+    let retryable: Bool
 
     static func succeeded(for instanceIdentifier: String) -> Self {
-        Self(instanceIdentifier: instanceIdentifier, outcome: .succeeded, localizationKey: "shortcuts.created", diagnosticText: nil)
+        Self(instanceIdentifier: instanceIdentifier, outcome: .succeeded, localizationKey: "shortcuts.created", diagnosticText: nil, retryable: false)
     }
 }
 
@@ -644,14 +828,18 @@ enum PrismShortcutCreationState: Equatable, Sendable {
 final class PrismShortcutCreationModel: ObservableObject {
     @Published var draft: PrismShortcutCreationDraft
     @Published private(set) var state: PrismShortcutCreationState = .editing
-    let worlds: [PrismShortcutWorld]
-    let profiles: [PrismShortcutProfile]
+    @Published private(set) var worlds: [PrismShortcutWorld]
+    @Published private(set) var profiles: [PrismShortcutProfile]
     let iconKeys: [String]
 
     private var generation = 0
     private var savePanelGeneration = 0
     private let onCreate: ((PrismShortcutCreationRequest, Int) -> Void)?
     private let onCancel: (() -> Void)?
+    private let bridge: PRPrismBridge?
+    private var createToken: PRBridgeObservationToken?
+    private var contextTokens: [PRBridgeObservationToken] = []
+    private var contextGeneration = 0
 
     init(
         instanceIdentifier: String,
@@ -659,12 +847,17 @@ final class PrismShortcutCreationModel: ObservableObject {
         worlds: [PrismShortcutWorld] = [],
         profiles: [PrismShortcutProfile] = [],
         iconKeys: [String] = ["default", "grass", "stone"],
+        bridge: PRPrismBridge? = nil,
         onCreate: ((PrismShortcutCreationRequest, Int) -> Void)? = nil,
         onCancel: (() -> Void)? = nil
     ) {
-        self.worlds = Self.unique(worlds)
-        self.profiles = Self.unique(profiles)
-        self.iconKeys = Self.unique(iconKeys)
+        let normalizedWorlds = Self.unique(worlds)
+        let normalizedProfiles = Self.unique(profiles)
+        let normalizedIconKeys = Self.unique(iconKeys)
+        self.worlds = normalizedWorlds
+        self.profiles = normalizedProfiles
+        self.iconKeys = normalizedIconKeys
+        self.bridge = bridge
         self.onCreate = onCreate
         self.onCancel = onCancel
         self.draft = PrismShortcutCreationDraft(
@@ -675,10 +868,10 @@ final class PrismShortcutCreationModel: ObservableObject {
             worldID: nil,
             serverAddress: "",
             overrideAccount: false,
-            profileID: self.profiles.first?.id,
+            profileID: normalizedProfiles.first?.id,
             destination: .desktop,
             destinationURL: nil,
-            iconKey: self.iconKeys.first ?? "default"
+            iconKey: normalizedIconKeys.first ?? "default"
         )
     }
 
@@ -733,6 +926,45 @@ final class PrismShortcutCreationModel: ObservableObject {
         draft.destination = .desktop
         draft.destinationURL = nil
         savePanelGeneration += 1
+        contextGeneration += 1
+        let activeContextGeneration = contextGeneration
+        contextTokens.forEach { $0.cancel() }
+        contextTokens.removeAll()
+        guard let bridge, !draft.instanceIdentifier.isEmpty else { return }
+        worlds = []
+        profiles = []
+        let detailsToken = bridge.loadInstanceDetails(withIdentifier: draft.instanceIdentifier) { [weak self] details, _ in
+            guard let self, activeContextGeneration == self.contextGeneration,
+                  let details, details.identifier == self.draft.instanceIdentifier else { return }
+            self.draft.instanceName = details.name
+        }
+        if let detailsToken {
+            contextTokens.append(detailsToken)
+        }
+        let worldsToken = bridge.loadInstanceWorlds(withIdentifier: draft.instanceIdentifier) { [weak self] values, _ in
+            guard let self, activeContextGeneration == self.contextGeneration, let values else { return }
+            self.worlds = Self.unique(values.filter(\.canBeJoined).map {
+                PrismShortcutWorld(id: $0.name, displayName: $0.name)
+            })
+        }
+        if let worldsToken {
+            contextTokens.append(worldsToken)
+        }
+        let profilesToken = bridge.loadAccountSnapshots { [weak self] result, _ in
+            guard let self, activeContextGeneration == self.contextGeneration,
+                  result?.outcome == .succeeded else { return }
+            self.profiles = Self.unique(result?.accounts.compactMap { account in
+                let name = account.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+                return name.isEmpty ? nil : PrismShortcutProfile(id: account.identifier, displayName: name)
+            } ?? [])
+            if self.draft.overrideAccount,
+               !self.profiles.contains(where: { $0.id == self.draft.profileID }) {
+                self.draft.profileID = self.profiles.first?.id
+            }
+        }
+        if let profilesToken {
+            contextTokens.append(profilesToken)
+        }
     }
 
     func setLaunchTarget(_ target: PrismShortcutLaunchTarget) {
@@ -801,9 +1033,33 @@ final class PrismShortcutCreationModel: ObservableObject {
     func startCreate() -> Bool {
         guard let request = makeRequest(), !isCreating else { return false }
         generation += 1
+        let activeGeneration = generation
         savePanelGeneration += 1
         state = .creating
-        guard let onCreate else {
+        createToken?.cancel()
+        if let bridge,
+           let bridgeRequest = bridgeRequest(from: request) {
+            createToken = bridge.createShortcut(with: bridgeRequest) { [weak self] result, error in
+                self?.createToken = nil
+                guard let self else { return }
+                if let result {
+                    _ = self.apply(bridgeResult: result, generation: activeGeneration)
+                } else if let error {
+                    _ = self.apply(
+                        result: PrismShortcutCreationResult(
+                            instanceIdentifier: request.instanceIdentifier,
+                            outcome: .failed,
+                            localizationKey: error.localizationKey,
+                            diagnosticText: error.diagnosticText,
+                            retryable: error.recoveryKind == .retry
+                        ),
+                        generation: activeGeneration
+                    )
+                }
+            }
+        } else if let onCreate {
+            onCreate(request, generation)
+        } else {
             state = .failed(PrismShortcutCreationFailure(
                 localizationKey: "shortcuts.adapterUnavailable",
                 diagnosticText: nil,
@@ -811,7 +1067,6 @@ final class PrismShortcutCreationModel: ObservableObject {
             ))
             return false
         }
-        onCreate(request, generation)
         return true
     }
 
@@ -820,6 +1075,8 @@ final class PrismShortcutCreationModel: ObservableObject {
         guard isCreating else { return false }
         generation += 1
         savePanelGeneration += 1
+        createToken?.cancel()
+        createToken = nil
         onCancel?()
         state = .cancelled
         return true
@@ -846,7 +1103,7 @@ final class PrismShortcutCreationModel: ObservableObject {
             state = .failed(PrismShortcutCreationFailure(
                 localizationKey: key,
                 diagnosticText: result.diagnosticText,
-                retryable: true
+                retryable: result.retryable
             ))
         case .cancelled:
             state = .cancelled
@@ -858,6 +1115,55 @@ final class PrismShortcutCreationModel: ObservableObject {
         generation += 1
         savePanelGeneration += 1
         state = .editing
+    }
+
+    private func bridgeRequest(from request: PrismShortcutCreationRequest) -> PRShortcutCreationRequest? {
+        let target: PRShortcutLaunchTarget
+        switch request.launchTarget {
+        case .instance: target = .instance
+        case .world: target = .world
+        case .server: target = .server
+        }
+        let destination: PRShortcutDestination
+        switch request.destination {
+        case .desktop: destination = .desktop
+        case .applications: destination = .applications
+        case .other: destination = .other
+        }
+        let profileName = request.profileID.flatMap { identifier in
+            profiles.first { $0.id == identifier }?.displayName
+        }
+        return PRShortcutCreationRequest(
+            instanceIdentifier: request.instanceIdentifier,
+            name: request.name,
+            launchTarget: target,
+            worldIdentifier: request.worldID,
+            serverAddress: request.serverAddress,
+            profileName: profileName,
+            destination: destination,
+            destinationURL: request.destinationURL,
+            iconKey: request.iconKey
+        )
+    }
+
+    private func apply(bridgeResult: PRShortcutCreationResult, generation: Int) -> Bool {
+        let outcome: PrismShortcutCreationOutcome
+        switch bridgeResult.outcome {
+        case .succeeded: outcome = .succeeded
+        case .cancelled: outcome = .cancelled
+        case .unknownInstance, .failed, .rejected: outcome = .failed
+        @unknown default: outcome = .failed
+        }
+        return apply(
+            result: PrismShortcutCreationResult(
+                instanceIdentifier: bridgeResult.instanceIdentifier,
+                outcome: outcome,
+                localizationKey: bridgeResult.localizationKey,
+                diagnosticText: bridgeResult.diagnosticText,
+                retryable: bridgeResult.retryable
+            ),
+            generation: generation
+        )
     }
 
     private static func unique(_ worlds: [PrismShortcutWorld]) -> [PrismShortcutWorld] {
@@ -1045,7 +1351,7 @@ struct PrismNewsView: View {
                         }
                     }
                     .tag(Optional(entry.id))
-                    .accessibilityIdentifier("prism.news.article.(entry.id)")
+                    .accessibilityIdentifier("prism.news.article.\(entry.id)")
                 }
                 .listStyle(.sidebar)
                 .navigationTitle("News")
@@ -1068,7 +1374,7 @@ struct PrismNewsView: View {
                         Link(destination: entry.link) {
                             Label("Open Article", systemImage: "safari")
                         }
-                        .accessibilityIdentifier("prism.news.article-link.(entry.id)")
+                        .accessibilityIdentifier("prism.news.article-link.\(entry.id)")
                         Divider()
                         Text(entry.content)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1076,7 +1382,7 @@ struct PrismNewsView: View {
                     }
                     .padding(20)
                 }
-                .accessibilityIdentifier("prism.news.article-content.(entry.id)")
+                .accessibilityIdentifier("prism.news.article-content.\(entry.id)")
             } else {
                 ContentUnavailableView("Select an Article", systemImage: "newspaper", description: Text("Choose an article from the list."))
             }
@@ -1120,9 +1426,8 @@ struct PrismUpdateView: View {
             case .checking:
                 VStack(spacing: 10) {
                     ProgressView("Checking for Updates")
-                    Button("Cancel", role: .cancel) { }
+                    Button("Cancel", role: .cancel) { _ = model.cancel() }
                         .keyboardShortcut(.cancelAction)
-                        .disabled(true)
                         .accessibilityIdentifier("prism.update.cancel")
                 }
             case .noUpdate:
@@ -1154,6 +1459,14 @@ struct PrismUpdateView: View {
                             .accessibilityIdentifier("prism.update.retry")
                     }
                 }
+            case .cancelled:
+                ContentUnavailableView("Update Check Cancelled", systemImage: "xmark.circle", description: Text("No update action was performed."))
+                    .overlay(alignment: .bottom) {
+                        Button("Check Again") { _ = model.check() }
+                            .keyboardShortcut(.defaultAction)
+                            .padding(.bottom, 20)
+                            .accessibilityIdentifier("prism.update.check-after-cancel")
+                    }
             case .decided(let decision):
                 ContentUnavailableView(
                     decision.titleKey,
@@ -1576,16 +1889,21 @@ struct PrismShortcutCreationView: View {
 
 @MainActor
 struct PrismNewsWindow: View {
-    @StateObject private var model = PrismNewsModel()
+    @ObservedObject var model: PrismNewsModel
 
     var body: some View {
         PrismNewsView(model: model)
+            .task {
+                if case .empty = model.state {
+                    _ = model.load()
+                }
+            }
     }
 }
 
 @MainActor
 struct PrismUpdateWindow: View {
-    @StateObject private var model = PrismUpdateModel()
+    @ObservedObject var model: PrismUpdateModel
 
     var body: some View {
         PrismUpdateView(model: model)

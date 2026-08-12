@@ -625,6 +625,7 @@ struct PrismSettingsView: View {
                     offlineIdentityModel: offlineIdentityModel,
                     onManageSkins: { accountIdentifier in
                         skinModel.setAccountContext(identifier: accountIdentifier)
+                        _ = skinModel.beginLoad()
                         openWindow(id: "prism.skin-management")
                     }
                 )

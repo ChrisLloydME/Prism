@@ -720,7 +720,17 @@ FrontendRuntimeDependencies defaultRuntimeDependencies(const std::filesystem::pa
             throw std::runtime_error("Native QtCore startup failed");
         }
     }
-    return productionInstanceRuntimeDependencies(dataRoot);
+    NSBundle *bundle = NSBundle.mainBundle;
+    std::filesystem::path executablePath;
+    std::filesystem::path iconPath;
+    if (bundle.executableURL.fileSystemRepresentation != nullptr) {
+        executablePath = std::filesystem::path(bundle.executableURL.fileSystemRepresentation);
+    }
+    NSURL *iconURL = [bundle URLForResource:@"Prism" withExtension:@"icns"];
+    if (iconURL.fileSystemRepresentation != nullptr) {
+        iconPath = std::filesystem::path(iconURL.fileSystemRepresentation);
+    }
+    return productionInstanceRuntimeDependencies(dataRoot, std::move(executablePath), std::move(iconPath));
 }
 
 std::filesystem::path dataRootPathForURL(NSURL *dataRootURL)
@@ -1443,6 +1453,343 @@ std::filesystem::path resourceSourcePathFromFoundation(NSURL *sourceURL)
         throw std::invalid_argument("Resource import requires a filesystem representation");
     }
     return std::filesystem::path(fileSystemRepresentation);
+}
+
+NSURL *fileURLFromFacadePath(const std::filesystem::path& path);
+
+NSData *dataFromFacadeBytes(const std::vector<std::uint8_t>& bytes)
+{
+    return bytes.empty() ? [NSData data] : [NSData dataWithBytes:bytes.data() length:bytes.size()];
+}
+
+NSURL *webURLFromFacadeString(const std::string& value)
+{
+    NSURL *url = [NSURL URLWithString:foundationStringFromUTF8(value)];
+    if (!url || !url.scheme || !url.host) {
+        throw std::invalid_argument("Facade returned an invalid web URL");
+    }
+    return url;
+}
+
+PRNewsLoadOutcome newsOutcomeFromFacadeOutcome(FrontendNewsOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendNewsOutcome::Succeeded: return PRNewsLoadOutcomeSucceeded;
+        case FrontendNewsOutcome::Failed: return PRNewsLoadOutcomeFailed;
+        case FrontendNewsOutcome::Cancelled: return PRNewsLoadOutcomeCancelled;
+        case FrontendNewsOutcome::Rejected: return PRNewsLoadOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown news outcome");
+}
+
+PRNewsLoadResult *newsResultFromFacadeResult(const FrontendNewsResult& result)
+{
+    NSMutableArray<PRNewsEntry *> *entries = [NSMutableArray arrayWithCapacity:result.entries.size()];
+    for (const auto& entry : result.entries) {
+        PRNewsEntry *converted = [[PRNewsEntry alloc]
+            initWithIdentifier:foundationStringFromUTF8(entry.id)
+                         title:foundationStringFromUTF8(entry.title)
+                          link:webURLFromFacadeString(entry.link)
+                       content:foundationStringFromUTF8(entry.content)
+                 publishedDate:foundationStringFromUTF8(entry.publishedDate)];
+        if (!converted) {
+            throw std::invalid_argument("Facade returned an invalid news entry");
+        }
+        [entries addObject:converted];
+    }
+    return [[PRNewsLoadResult alloc]
+        initWithOutcome:newsOutcomeFromFacadeOutcome(result.outcome)
+                 entries:entries
+         localizationKey:foundationStringFromUTF8AllowEmpty(result.localizationKey)
+          diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+               retryable:result.retryable];
+}
+
+PRUpdateCheckOutcome updateCheckOutcomeFromFacadeOutcome(FrontendUpdateCheckOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendUpdateCheckOutcome::NoUpdate: return PRUpdateCheckOutcomeNoUpdate;
+        case FrontendUpdateCheckOutcome::Available: return PRUpdateCheckOutcomeAvailable;
+        case FrontendUpdateCheckOutcome::Failed: return PRUpdateCheckOutcomeFailed;
+        case FrontendUpdateCheckOutcome::Cancelled: return PRUpdateCheckOutcomeCancelled;
+        case FrontendUpdateCheckOutcome::Rejected: return PRUpdateCheckOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown update check outcome");
+}
+
+PRUpdateDecision updateDecisionFromFacadeDecision(FrontendUpdateDecision decision)
+{
+    switch (decision) {
+        case FrontendUpdateDecision::Install: return PRUpdateDecisionInstall;
+        case FrontendUpdateDecision::RemindLater: return PRUpdateDecisionRemindLater;
+        case FrontendUpdateDecision::SkipVersion: return PRUpdateDecisionSkipVersion;
+    }
+    throw std::invalid_argument("Facade returned an unknown update decision");
+}
+
+FrontendUpdateDecision updateDecisionFromFoundationDecision(PRUpdateDecision decision)
+{
+    switch (decision) {
+        case PRUpdateDecisionInstall: return FrontendUpdateDecision::Install;
+        case PRUpdateDecisionRemindLater: return FrontendUpdateDecision::RemindLater;
+        case PRUpdateDecisionSkipVersion: return FrontendUpdateDecision::SkipVersion;
+    }
+    throw std::invalid_argument("Native update decision is unknown");
+}
+
+PRUpdateDecisionOutcome updateDecisionOutcomeFromFacadeOutcome(FrontendUpdateDecisionOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendUpdateDecisionOutcome::Succeeded: return PRUpdateDecisionOutcomeSucceeded;
+        case FrontendUpdateDecisionOutcome::AuthorizationRequired: return PRUpdateDecisionOutcomeAuthorizationRequired;
+        case FrontendUpdateDecisionOutcome::Failed: return PRUpdateDecisionOutcomeFailed;
+        case FrontendUpdateDecisionOutcome::Cancelled: return PRUpdateDecisionOutcomeCancelled;
+        case FrontendUpdateDecisionOutcome::Rejected: return PRUpdateDecisionOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown update decision outcome");
+}
+
+PRUpdateCheckResult *updateCheckResultFromFacadeResult(const FrontendUpdateCheckResult& result)
+{
+    PRUpdateNotice *notice = nil;
+    if (result.notice.has_value()) {
+        notice = [[PRUpdateNotice alloc]
+            initWithCurrentVersion:foundationStringFromUTF8(result.notice->currentVersion)
+                  availableVersion:foundationStringFromUTF8(result.notice->availableVersion)
+                      releaseNotes:foundationStringFromUTF8(result.notice->releaseNotes)];
+        if (!notice) {
+            throw std::invalid_argument("Facade returned an invalid update notice");
+        }
+    }
+    return [[PRUpdateCheckResult alloc]
+        initWithOutcome:updateCheckOutcomeFromFacadeOutcome(result.outcome)
+                  notice:notice
+         localizationKey:foundationStringFromUTF8AllowEmpty(result.localizationKey)
+          diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+               retryable:result.retryable];
+}
+
+PRUpdateDecisionResult *updateDecisionResultFromFacadeResult(const FrontendUpdateDecisionResult& result)
+{
+    return [[PRUpdateDecisionResult alloc]
+        initWithDecision:updateDecisionFromFacadeDecision(result.decision)
+                  outcome:updateDecisionOutcomeFromFacadeOutcome(result.outcome)
+         availableVersion:foundationStringFromUTF8(result.availableVersion)
+         localizationKey:foundationStringFromUTF8AllowEmpty(result.localizationKey)
+          diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+               retryable:result.retryable];
+}
+
+FrontendShortcutLaunchTarget shortcutTargetFromFoundationTarget(PRShortcutLaunchTarget target)
+{
+    switch (target) {
+        case PRShortcutLaunchTargetInstance: return FrontendShortcutLaunchTarget::Instance;
+        case PRShortcutLaunchTargetWorld: return FrontendShortcutLaunchTarget::World;
+        case PRShortcutLaunchTargetServer: return FrontendShortcutLaunchTarget::Server;
+    }
+    throw std::invalid_argument("Native shortcut target is unknown");
+}
+
+FrontendShortcutDestination shortcutDestinationFromFoundationDestination(PRShortcutDestination destination)
+{
+    switch (destination) {
+        case PRShortcutDestinationDesktop: return FrontendShortcutDestination::Desktop;
+        case PRShortcutDestinationApplications: return FrontendShortcutDestination::Applications;
+        case PRShortcutDestinationOther: return FrontendShortcutDestination::Other;
+    }
+    throw std::invalid_argument("Native shortcut destination is unknown");
+}
+
+PRShortcutCreationOutcome shortcutOutcomeFromFacadeOutcome(FrontendShortcutCreationOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendShortcutCreationOutcome::Succeeded: return PRShortcutCreationOutcomeSucceeded;
+        case FrontendShortcutCreationOutcome::UnknownInstance: return PRShortcutCreationOutcomeUnknownInstance;
+        case FrontendShortcutCreationOutcome::Failed: return PRShortcutCreationOutcomeFailed;
+        case FrontendShortcutCreationOutcome::Cancelled: return PRShortcutCreationOutcomeCancelled;
+        case FrontendShortcutCreationOutcome::Rejected: return PRShortcutCreationOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown shortcut outcome");
+}
+
+FrontendShortcutCreationRequest shortcutRequestFromFoundation(PRShortcutCreationRequest *request)
+{
+    FrontendShortcutCreationRequest converted;
+    converted.instanceIdentifier = stableIdentifierFromFoundation(request.instanceIdentifier);
+    converted.name = utf8TextFromFoundation(request.name);
+    converted.launchTarget = shortcutTargetFromFoundationTarget(request.launchTarget);
+    converted.worldIdentifier = request.worldIdentifier ? utf8TextFromFoundation(request.worldIdentifier) : "";
+    converted.serverAddress = request.serverAddress ? utf8TextFromFoundation(request.serverAddress) : "";
+    converted.profileName = request.profileName ? utf8TextFromFoundation(request.profileName) : "";
+    converted.destination = shortcutDestinationFromFoundationDestination(request.destination);
+    if (request.destinationURL) {
+        converted.destinationPath = resourceSourcePathFromFoundation(request.destinationURL);
+    }
+    converted.iconKey = stableIdentifierFromFoundation(request.iconKey);
+    return converted;
+}
+
+PRShortcutCreationResult *shortcutResultFromFacadeResult(const FrontendShortcutCreationResult& result)
+{
+    return [[PRShortcutCreationResult alloc]
+        initWithInstanceIdentifier:foundationStringFromUTF8(result.instanceIdentifier)
+                         outcome:shortcutOutcomeFromFacadeOutcome(result.outcome)
+                 localizationKey:foundationStringFromUTF8AllowEmpty(result.localizationKey)
+                  diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+                       retryable:result.retryable];
+}
+
+PRSkinModel skinModelFromFacadeModel(FrontendSkinModel model)
+{
+    switch (model) {
+        case FrontendSkinModel::Classic: return PRSkinModelClassic;
+        case FrontendSkinModel::Slim: return PRSkinModelSlim;
+    }
+    throw std::invalid_argument("Facade returned an unknown skin model");
+}
+
+FrontendSkinModel skinModelFromFoundationModel(PRSkinModel model)
+{
+    switch (model) {
+        case PRSkinModelClassic: return FrontendSkinModel::Classic;
+        case PRSkinModelSlim: return FrontendSkinModel::Slim;
+    }
+    throw std::invalid_argument("Native skin model is unknown");
+}
+
+PRSkinOperation skinOperationFromFacadeOperation(FrontendSkinOperation operation)
+{
+    switch (operation) {
+        case FrontendSkinOperation::ImportFile: return PRSkinOperationImportFile;
+        case FrontendSkinOperation::ImportURL: return PRSkinOperationImportURL;
+        case FrontendSkinOperation::ImportUser: return PRSkinOperationImportUser;
+        case FrontendSkinOperation::Upload: return PRSkinOperationUpload;
+        case FrontendSkinOperation::Reset: return PRSkinOperationReset;
+        case FrontendSkinOperation::Delete: return PRSkinOperationDelete;
+        case FrontendSkinOperation::Rename: return PRSkinOperationRename;
+    }
+    throw std::invalid_argument("Facade returned an unknown skin operation");
+}
+
+FrontendSkinOperation skinOperationFromFoundationOperation(PRSkinOperation operation)
+{
+    switch (operation) {
+        case PRSkinOperationImportFile: return FrontendSkinOperation::ImportFile;
+        case PRSkinOperationImportURL: return FrontendSkinOperation::ImportURL;
+        case PRSkinOperationImportUser: return FrontendSkinOperation::ImportUser;
+        case PRSkinOperationUpload: return FrontendSkinOperation::Upload;
+        case PRSkinOperationReset: return FrontendSkinOperation::Reset;
+        case PRSkinOperationDelete: return FrontendSkinOperation::Delete;
+        case PRSkinOperationRename: return FrontendSkinOperation::Rename;
+    }
+    throw std::invalid_argument("Native skin operation is unknown");
+}
+
+PRSkinLoadOutcome skinLoadOutcomeFromFacadeOutcome(FrontendSkinLoadOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendSkinLoadOutcome::Succeeded: return PRSkinLoadOutcomeSucceeded;
+        case FrontendSkinLoadOutcome::Failed: return PRSkinLoadOutcomeFailed;
+        case FrontendSkinLoadOutcome::Cancelled: return PRSkinLoadOutcomeCancelled;
+        case FrontendSkinLoadOutcome::Rejected: return PRSkinLoadOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown skin load outcome");
+}
+
+PRSkinActionOutcome skinActionOutcomeFromFacadeOutcome(FrontendSkinActionOutcome outcome)
+{
+    switch (outcome) {
+        case FrontendSkinActionOutcome::Succeeded: return PRSkinActionOutcomeSucceeded;
+        case FrontendSkinActionOutcome::Failed: return PRSkinActionOutcomeFailed;
+        case FrontendSkinActionOutcome::Cancelled: return PRSkinActionOutcomeCancelled;
+        case FrontendSkinActionOutcome::Rejected: return PRSkinActionOutcomeRejected;
+    }
+    throw std::invalid_argument("Facade returned an unknown skin action outcome");
+}
+
+NSArray<PRSkinCape *> *skinCapesFromFacadeSnapshots(const std::vector<FrontendSkinCapeSnapshot>& snapshots)
+{
+    NSMutableArray<PRSkinCape *> *converted = [NSMutableArray arrayWithCapacity:snapshots.size()];
+    for (const auto& snapshot : snapshots) {
+        PRSkinCape *cape = [[PRSkinCape alloc]
+            initWithIdentifier:foundationStringFromUTF8(snapshot.id)
+                   displayName:foundationStringFromUTF8(snapshot.displayName)
+                     imageData:dataFromFacadeBytes(snapshot.imageData)];
+        if (!cape) {
+            throw std::invalid_argument("Facade returned invalid cape metadata");
+        }
+        [converted addObject:cape];
+    }
+    return [converted copy];
+}
+
+NSArray<PRSkinSnapshot *> *skinsFromFacadeSnapshots(const std::vector<FrontendSkinSnapshot>& snapshots)
+{
+    NSMutableArray<PRSkinSnapshot *> *converted = [NSMutableArray arrayWithCapacity:snapshots.size()];
+    for (const auto& snapshot : snapshots) {
+        PRSkinSnapshot *skin = [[PRSkinSnapshot alloc]
+            initWithIdentifier:foundationStringFromUTF8(snapshot.id)
+                         name:foundationStringFromUTF8(snapshot.name)
+                        model:skinModelFromFacadeModel(snapshot.model)
+               capeIdentifier:foundationStringFromUTF8(snapshot.capeIdentifier)
+                  textureData:dataFromFacadeBytes(snapshot.textureData)
+                  previewData:dataFromFacadeBytes(snapshot.previewData)
+                    sourceURL:fileURLFromFacadePath(snapshot.sourcePath)];
+        if (!skin) {
+            throw std::invalid_argument("Facade returned invalid skin metadata");
+        }
+        [converted addObject:skin];
+    }
+    return [converted copy];
+}
+
+PRSkinLoadResult *skinLoadResultFromFacadeResult(const FrontendSkinLoadResult& result)
+{
+    return [[PRSkinLoadResult alloc]
+        initWithOutcome:skinLoadOutcomeFromFacadeOutcome(result.outcome)
+        accountIdentifier:foundationStringFromUTF8(result.accountIdentifier)
+                   skins:skinsFromFacadeSnapshots(result.skins)
+                   capes:skinCapesFromFacadeSnapshots(result.capes)
+   currentSkinIdentifier:result.currentSkinIdentifier.has_value()
+        ? foundationStringFromUTF8(*result.currentSkinIdentifier) : nil
+         localizationKey:foundationStringFromUTF8AllowEmpty(result.localizationKey)
+          diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+               retryable:result.retryable];
+}
+
+FrontendSkinActionRequest skinActionRequestFromFoundation(PRSkinActionRequest *request)
+{
+    FrontendSkinActionRequest converted;
+    converted.operation = skinOperationFromFoundationOperation(request.operation);
+    converted.accountIdentifier = stableIdentifierFromFoundation(request.accountIdentifier);
+    converted.skinIdentifier = request.skinIdentifier ? stableIdentifierFromFoundation(request.skinIdentifier) : "";
+    converted.model = skinModelFromFoundationModel(request.model);
+    converted.capeIdentifier = request.capeIdentifier ? stableIdentifierFromFoundation(request.capeIdentifier) : "";
+    if (request.sourceURL) {
+        converted.sourcePath = resourceSourcePathFromFoundation(request.sourceURL);
+    }
+    converted.sourceURL = request.remoteURLString ? utf8TextFromFoundation(request.remoteURLString) : "";
+    converted.username = request.username ? utf8TextFromFoundation(request.username) : "";
+    converted.newName = request.replacementName ? utf8TextFromFoundation(request.replacementName) : "";
+    converted.confirmed = request.confirmed;
+    return converted;
+}
+
+PRSkinActionResult *skinActionResultFromFacadeResult(const FrontendSkinActionResult& result)
+{
+    return [[PRSkinActionResult alloc]
+        initWithOperation:skinOperationFromFacadeOperation(result.operation)
+                   outcome:skinActionOutcomeFromFacadeOutcome(result.outcome)
+         accountIdentifier:foundationStringFromUTF8(result.accountIdentifier)
+                     skins:skinsFromFacadeSnapshots(result.skins)
+                     capes:skinCapesFromFacadeSnapshots(result.capes)
+     currentSkinIdentifier:result.currentSkinIdentifier.has_value()
+        ? foundationStringFromUTF8(*result.currentSkinIdentifier) : nil
+    selectedSkinIdentifier:result.selectedSkinIdentifier.has_value()
+        ? foundationStringFromUTF8(*result.selectedSkinIdentifier) : nil
+           localizationKey:foundationStringFromUTF8AllowEmpty(result.localizationKey)
+            diagnosticText:foundationStringFromUTF8(result.diagnosticText)
+                 retryable:result.retryable];
 }
 
 std::filesystem::path exportDestinationPathFromFoundation(NSURL *destinationURL)
@@ -4167,6 +4514,34 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 
 @end
 
+@interface PRBridgeUtilityDelivery : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)initWithResult:(nullable id)result
+                          error:(nullable PRBridgeError *)error NS_DESIGNATED_INITIALIZER;
+@property(nonatomic, strong, readonly, nullable) id result;
+@property(nonatomic, strong, readonly, nullable) PRBridgeError *error;
+
+@end
+
+
+@implementation PRBridgeUtilityDelivery
+
+- (instancetype)initWithResult:(id)result error:(PRBridgeError *)error
+{
+    self = [super init];
+    if (self) {
+        _result = result;
+        _error = error;
+    }
+    return self;
+}
+
+@end
+
+typedef id _Nullable (^PRBridgeUtilityWork)(FrontendFacade& facade, PRBridgeObservationState *state);
+typedef void (^PRBridgeUtilityCompletion)(id _Nullable result, PRBridgeError * _Nullable error);
+
 @interface PRBridgeObservationToken ()
 
 @property(nonatomic, strong) PRBridgeObservationState *state;
@@ -4261,6 +4636,7 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *providerInstallRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *offlineIdentityLoadRequestStates;
 @property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *offlineIdentityUpdateRequestStates;
+@property(nonatomic, strong) NSMutableArray<PRBridgeObservationState *> *utilityRequestStates;
 @property(nonatomic, strong) NSLock *observationLock;
 
 - (nullable instancetype)initWithDataRootURL:(NSURL *)dataRootURL
@@ -4304,6 +4680,9 @@ typedef void (^PRBridgeObservationRemovalHandler)(void);
 - (void)removeProviderInstallRequest:(PRBridgeObservationState *)request;
 - (void)removeOfflineIdentityLoadRequest:(PRBridgeObservationState *)request;
 - (void)removeOfflineIdentityUpdateRequest:(PRBridgeObservationState *)request;
+- (void)removeUtilityRequest:(PRBridgeObservationState *)request;
+- (nullable PRBridgeObservationToken *)enqueueUtilityWork:(PRBridgeUtilityWork)work
+                                                completion:(PRBridgeUtilityCompletion)completion;
 - (nullable PRBridgeObservationToken *)loadTaskStatusWithIdentifier:(NSString *)identifier
                                                             completion:(PRTaskStatusCompletionHandler)completion;
 - (nullable PRBridgeObservationToken *)performTaskCancellationWithIdentifier:(NSString *)identifier
@@ -7493,6 +7872,362 @@ resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentif
 
 @end
 
+@implementation PRNewsEntry
+
+- (instancetype)initWithIdentifier:(NSString *)identifier
+                              title:(NSString *)title
+                               link:(NSURL *)link
+                            content:(NSString *)content
+                      publishedDate:(NSString *)publishedDate
+{
+    if (!isNonEmptyString(identifier) || !isNonEmptyString(title) || !isNonEmptyString(content)
+        || ![link isKindOfClass:NSURL.class] || !link.scheme || !link.host) {
+        return nil;
+    }
+    self = [super init];
+    if (self) {
+        _identifier = [identifier copy];
+        _title = [title copy];
+        _link = [link copy];
+        _content = [content copy];
+        _publishedDate = nullableStringCopy(publishedDate);
+    }
+    return self;
+}
+
+@end
+
+
+@implementation PRNewsLoadResult
+
+- (instancetype)initWithOutcome:(PRNewsLoadOutcome)outcome
+                          entries:(NSArray<PRNewsEntry *> *)entries
+                  localizationKey:(NSString *)localizationKey
+                   diagnosticText:(NSString *)diagnosticText
+                        retryable:(BOOL)retryable
+{
+    if (outcome < PRNewsLoadOutcomeSucceeded || outcome > PRNewsLoadOutcomeRejected
+        || ![entries isKindOfClass:NSArray.class] || ![localizationKey isKindOfClass:NSString.class]) {
+        return nil;
+    }
+    for (id entry in entries) {
+        if (![entry isKindOfClass:PRNewsEntry.class]) {
+            return nil;
+        }
+    }
+    self = [super init];
+    if (self) {
+        _outcome = outcome;
+        _entries = [entries copy];
+        _localizationKey = [localizationKey copy];
+        _diagnosticText = nullableStringCopy(diagnosticText);
+        _retryable = retryable;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRUpdateNotice
+
+- (instancetype)initWithCurrentVersion:(NSString *)currentVersion
+                        availableVersion:(NSString *)availableVersion
+                            releaseNotes:(NSString *)releaseNotes
+{
+    if (!isNonEmptyString(currentVersion) || !isNonEmptyString(availableVersion) || !isNonEmptyString(releaseNotes)) {
+        return nil;
+    }
+    self = [super init];
+    if (self) {
+        _currentVersion = [currentVersion copy];
+        _availableVersion = [availableVersion copy];
+        _releaseNotes = [releaseNotes copy];
+    }
+    return self;
+}
+
+@end
+
+@implementation PRUpdateCheckResult
+
+- (instancetype)initWithOutcome:(PRUpdateCheckOutcome)outcome
+                           notice:(PRUpdateNotice *)notice
+                  localizationKey:(NSString *)localizationKey
+                   diagnosticText:(NSString *)diagnosticText
+                        retryable:(BOOL)retryable
+{
+    if (outcome < PRUpdateCheckOutcomeNoUpdate || outcome > PRUpdateCheckOutcomeRejected
+        || ![localizationKey isKindOfClass:NSString.class]
+        || ((outcome == PRUpdateCheckOutcomeAvailable) != (notice != nil))) {
+        return nil;
+    }
+    self = [super init];
+    if (self) {
+        _outcome = outcome;
+        _notice = notice;
+        _localizationKey = [localizationKey copy];
+        _diagnosticText = nullableStringCopy(diagnosticText);
+        _retryable = retryable;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRUpdateDecisionResult
+
+- (instancetype)initWithDecision:(PRUpdateDecision)decision
+                           outcome:(PRUpdateDecisionOutcome)outcome
+                  availableVersion:(NSString *)availableVersion
+                  localizationKey:(NSString *)localizationKey
+                   diagnosticText:(NSString *)diagnosticText
+                        retryable:(BOOL)retryable
+{
+    if (decision < PRUpdateDecisionInstall || decision > PRUpdateDecisionSkipVersion
+        || outcome < PRUpdateDecisionOutcomeSucceeded || outcome > PRUpdateDecisionOutcomeRejected
+        || !isNonEmptyString(availableVersion) || ![localizationKey isKindOfClass:NSString.class]) {
+        return nil;
+    }
+    self = [super init];
+    if (self) {
+        _decision = decision;
+        _outcome = outcome;
+        _availableVersion = [availableVersion copy];
+        _localizationKey = [localizationKey copy];
+        _diagnosticText = nullableStringCopy(diagnosticText);
+        _retryable = retryable;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRShortcutCreationRequest
+
+- (instancetype)initWithInstanceIdentifier:(NSString *)instanceIdentifier
+                                        name:(NSString *)name
+                                launchTarget:(PRShortcutLaunchTarget)launchTarget
+                             worldIdentifier:(NSString *)worldIdentifier
+                               serverAddress:(NSString *)serverAddress
+                                 profileName:(NSString *)profileName
+                                 destination:(PRShortcutDestination)destination
+                              destinationURL:(NSURL *)destinationURL
+                                     iconKey:(NSString *)iconKey
+{
+    if (!isNonEmptyString(instanceIdentifier) || !isNonEmptyString(name) || !isNonEmptyString(iconKey)
+        || launchTarget < PRShortcutLaunchTargetInstance || launchTarget > PRShortcutLaunchTargetServer
+        || destination < PRShortcutDestinationDesktop || destination > PRShortcutDestinationOther
+        || (launchTarget == PRShortcutLaunchTargetWorld && !isNonEmptyString(worldIdentifier))
+        || (launchTarget == PRShortcutLaunchTargetServer && !isNonEmptyString(serverAddress))
+        || ((destination == PRShortcutDestinationOther) != (destinationURL != nil))
+        || (destinationURL && (!destinationURL.isFileURL || !destinationURL.path.isAbsolutePath))) {
+        return nil;
+    }
+    self = [super init];
+    if (self) {
+        _instanceIdentifier = [instanceIdentifier copy];
+        _name = [name copy];
+        _launchTarget = launchTarget;
+        _worldIdentifier = nullableStringCopy(worldIdentifier);
+        _serverAddress = nullableStringCopy(serverAddress);
+        _profileName = nullableStringCopy(profileName);
+        _destination = destination;
+        _destinationURL = [destinationURL copy];
+        _iconKey = [iconKey copy];
+    }
+    return self;
+}
+
+@end
+
+@implementation PRShortcutCreationResult
+
+- (instancetype)initWithInstanceIdentifier:(NSString *)instanceIdentifier
+                                      outcome:(PRShortcutCreationOutcome)outcome
+                              localizationKey:(NSString *)localizationKey
+                               diagnosticText:(NSString *)diagnosticText
+                                    retryable:(BOOL)retryable
+{
+    if (!isNonEmptyString(instanceIdentifier)
+        || outcome < PRShortcutCreationOutcomeSucceeded || outcome > PRShortcutCreationOutcomeRejected
+        || ![localizationKey isKindOfClass:NSString.class]) {
+        return nil;
+    }
+    self = [super init];
+    if (self) {
+        _instanceIdentifier = [instanceIdentifier copy];
+        _outcome = outcome;
+        _localizationKey = [localizationKey copy];
+        _diagnosticText = nullableStringCopy(diagnosticText);
+        _retryable = retryable;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRSkinCape
+
+- (instancetype)initWithIdentifier:(NSString *)identifier
+                        displayName:(NSString *)displayName
+                          imageData:(NSData *)imageData
+{
+    if (!isNonEmptyString(identifier) || !isNonEmptyString(displayName)
+        || ![imageData isKindOfClass:NSData.class] || imageData.length == 0) {
+        return nil;
+    }
+    self = [super init];
+    if (self) {
+        _identifier = [identifier copy];
+        _displayName = [displayName copy];
+        _imageData = [imageData copy];
+    }
+    return self;
+}
+
+@end
+
+@implementation PRSkinSnapshot
+
+- (instancetype)initWithIdentifier:(NSString *)identifier
+                                name:(NSString *)name
+                               model:(PRSkinModel)model
+                      capeIdentifier:(NSString *)capeIdentifier
+                         textureData:(NSData *)textureData
+                         previewData:(NSData *)previewData
+                           sourceURL:(NSURL *)sourceURL
+{
+    if (!isNonEmptyString(identifier) || !isNonEmptyString(name)
+        || model < PRSkinModelClassic || model > PRSkinModelSlim
+        || ![textureData isKindOfClass:NSData.class] || textureData.length == 0
+        || ![previewData isKindOfClass:NSData.class] || previewData.length == 0
+        || !sourceURL.isFileURL || !sourceURL.path.isAbsolutePath) {
+        return nil;
+    }
+    self = [super init];
+    if (self) {
+        _identifier = [identifier copy];
+        _name = [name copy];
+        _model = model;
+        _capeIdentifier = nullableStringCopy(capeIdentifier);
+        _textureData = [textureData copy];
+        _previewData = [previewData copy];
+        _sourceURL = [sourceURL copy];
+    }
+    return self;
+}
+
+@end
+
+@implementation PRSkinLoadResult
+
+- (instancetype)initWithOutcome:(PRSkinLoadOutcome)outcome
+                accountIdentifier:(NSString *)accountIdentifier
+                            skins:(NSArray<PRSkinSnapshot *> *)skins
+                            capes:(NSArray<PRSkinCape *> *)capes
+            currentSkinIdentifier:(NSString *)currentSkinIdentifier
+                  localizationKey:(NSString *)localizationKey
+                   diagnosticText:(NSString *)diagnosticText
+                        retryable:(BOOL)retryable
+{
+    if (outcome < PRSkinLoadOutcomeSucceeded || outcome > PRSkinLoadOutcomeRejected
+        || !isNonEmptyString(accountIdentifier) || ![skins isKindOfClass:NSArray.class]
+        || ![capes isKindOfClass:NSArray.class] || ![localizationKey isKindOfClass:NSString.class]) {
+        return nil;
+    }
+    for (id skin in skins) if (![skin isKindOfClass:PRSkinSnapshot.class]) return nil;
+    for (id cape in capes) if (![cape isKindOfClass:PRSkinCape.class]) return nil;
+    self = [super init];
+    if (self) {
+        _outcome = outcome;
+        _accountIdentifier = [accountIdentifier copy];
+        _skins = [skins copy];
+        _capes = [capes copy];
+        _currentSkinIdentifier = nullableStringCopy(currentSkinIdentifier);
+        _localizationKey = [localizationKey copy];
+        _diagnosticText = nullableStringCopy(diagnosticText);
+        _retryable = retryable;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRSkinActionRequest
+
+- (instancetype)initWithOperation:(PRSkinOperation)operation
+                 accountIdentifier:(NSString *)accountIdentifier
+                    skinIdentifier:(NSString *)skinIdentifier
+                             model:(PRSkinModel)model
+                    capeIdentifier:(NSString *)capeIdentifier
+                         sourceURL:(NSURL *)sourceURL
+                    remoteURLString:(NSString *)remoteURLString
+                          username:(NSString *)username
+                   replacementName:(NSString *)replacementName
+                         confirmed:(BOOL)confirmed
+{
+    if (operation < PRSkinOperationImportFile || operation > PRSkinOperationRename
+        || !isNonEmptyString(accountIdentifier) || model < PRSkinModelClassic || model > PRSkinModelSlim
+        || (sourceURL && (!sourceURL.isFileURL || !sourceURL.path.isAbsolutePath))) {
+        return nil;
+    }
+    self = [super init];
+    if (self) {
+        _operation = operation;
+        _accountIdentifier = [accountIdentifier copy];
+        _skinIdentifier = nullableStringCopy(skinIdentifier);
+        _model = model;
+        _capeIdentifier = nullableStringCopy(capeIdentifier);
+        _sourceURL = [sourceURL copy];
+        _remoteURLString = nullableStringCopy(remoteURLString);
+        _username = nullableStringCopy(username);
+        _replacementName = nullableStringCopy(replacementName);
+        _confirmed = confirmed;
+    }
+    return self;
+}
+
+@end
+
+@implementation PRSkinActionResult
+
+- (instancetype)initWithOperation:(PRSkinOperation)operation
+                            outcome:(PRSkinActionOutcome)outcome
+                  accountIdentifier:(NSString *)accountIdentifier
+                              skins:(NSArray<PRSkinSnapshot *> *)skins
+                              capes:(NSArray<PRSkinCape *> *)capes
+              currentSkinIdentifier:(NSString *)currentSkinIdentifier
+             selectedSkinIdentifier:(NSString *)selectedSkinIdentifier
+                    localizationKey:(NSString *)localizationKey
+                     diagnosticText:(NSString *)diagnosticText
+                          retryable:(BOOL)retryable
+{
+    if (operation < PRSkinOperationImportFile || operation > PRSkinOperationRename
+        || outcome < PRSkinActionOutcomeSucceeded || outcome > PRSkinActionOutcomeRejected
+        || !isNonEmptyString(accountIdentifier) || ![skins isKindOfClass:NSArray.class]
+        || ![capes isKindOfClass:NSArray.class] || ![localizationKey isKindOfClass:NSString.class]) {
+        return nil;
+    }
+    for (id skin in skins) if (![skin isKindOfClass:PRSkinSnapshot.class]) return nil;
+    for (id cape in capes) if (![cape isKindOfClass:PRSkinCape.class]) return nil;
+    self = [super init];
+    if (self) {
+        _operation = operation;
+        _outcome = outcome;
+        _accountIdentifier = [accountIdentifier copy];
+        _skins = [skins copy];
+        _capes = [capes copy];
+        _currentSkinIdentifier = nullableStringCopy(currentSkinIdentifier);
+        _selectedSkinIdentifier = nullableStringCopy(selectedSkinIdentifier);
+        _localizationKey = [localizationKey copy];
+        _diagnosticText = nullableStringCopy(diagnosticText);
+        _retryable = retryable;
+    }
+    return self;
+}
+
+@end
+
 @implementation PRBridgeError
 
 - (instancetype)initWithCode:(PRBridgeErrorCode)code
@@ -7626,6 +8361,7 @@ resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentif
         self.providerInstallRequestStates = [NSMutableArray array];
         self.offlineIdentityLoadRequestStates = [NSMutableArray array];
         self.offlineIdentityUpdateRequestStates = [NSMutableArray array];
+        self.utilityRequestStates = [NSMutableArray array];
         self.observationLock = [[NSLock alloc] init];
         _lifecycle = std::make_unique<NativeFacadeLifecycle>();
         _facade = std::move(facade);
@@ -11104,6 +11840,174 @@ resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentif
     return [[PRBridgeObservationToken alloc] initWithState:observation];
 }
 
+- (PRBridgeObservationToken *)enqueueUtilityWork:(PRBridgeUtilityWork)work
+                                        completion:(PRBridgeUtilityCompletion)completion
+{
+    if (!work || !completion || ![self isLifecycleRunning] || !_facade || !_backendQueue) {
+        return nil;
+    }
+
+    PRBridgeUtilityWork workCopy = [work copy];
+    __weak PRPrismBridge *weakBridge = self;
+    __block __weak PRBridgeObservationState *weakRequest = nil;
+    PRBridgeObservationState *request = [[PRBridgeObservationState alloc] initWithHandler:^(id value) {
+        PRBridgeUtilityDelivery *delivery = (PRBridgeUtilityDelivery *)value;
+        [weakRequest cancel];
+        completion(delivery.result, delivery.error);
+    }];
+    weakRequest = request;
+    request.removalHandler = ^{
+        [weakBridge removeUtilityRequest:weakRequest];
+    };
+
+    [self.observationLock lock];
+    if (![self isLifecycleRunning] || !_facade) {
+        [self.observationLock unlock];
+        [request cancel];
+        return nil;
+    }
+    [self.utilityRequestStates addObject:request];
+    [self.observationLock unlock];
+
+    dispatch_async(_backendQueue, ^{
+        PRPrismBridge *bridge = weakBridge;
+        PRBridgeObservationState *state = weakRequest;
+        if (!bridge || !state || state.isCancelled) {
+            return;
+        }
+
+        id result = nil;
+        PRBridgeError *error = nil;
+        {
+            std::lock_guard<std::mutex> facadeLock(bridge->_facadeLock);
+            if (!bridge->_facade || bridge->_facade->lifecycleState() != FrontendLifecycleState::Running) {
+                error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                           diagnosticText:@"Frontend facade is no longer running"
+                                       substitutionValues:@{}];
+            } else {
+                try {
+                    result = workCopy(*bridge->_facade, state);
+                } catch (const std::invalid_argument& exception) {
+                    NSString *diagnostic = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::InvalidInput
+                                               diagnosticText:diagnostic ?: @"Invalid utility request"
+                                           substitutionValues:@{}];
+                } catch (const std::logic_error& exception) {
+                    NSString *diagnostic = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::OperationCancelled
+                                               diagnosticText:diagnostic ?: @"Utility request cancelled"
+                                           substitutionValues:@{}];
+                } catch (const std::exception& exception) {
+                    NSString *diagnostic = [NSString stringWithUTF8String:exception.what()];
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::DataUnavailable
+                                               diagnosticText:diagnostic ?: @"Utility request unavailable"
+                                           substitutionValues:@{}];
+                } catch (...) {
+                    error = [bridge bridgeErrorForFailureKind:(NSInteger)NativeFacadeFailureKind::Unknown
+                                               diagnosticText:@"Unknown utility request failure"
+                                           substitutionValues:@{}];
+                }
+            }
+        }
+
+        if (!state.isCancelled) {
+            [state deliverOnMainActor:[[PRBridgeUtilityDelivery alloc] initWithResult:result error:error]];
+        }
+    });
+    return [[PRBridgeObservationToken alloc] initWithState:request];
+}
+
+- (PRBridgeObservationToken *)loadNewsWithCompletion:(PRNewsLoadCompletionHandler)completion
+{
+    if (!completion) {
+        return nil;
+    }
+    return [self enqueueUtilityWork:^id(FrontendFacade& facade, PRBridgeObservationState *state) {
+        return newsResultFromFacadeResult(facade.news([&] { return state.isCancelled; }));
+    } completion:^(id result, PRBridgeError *error) {
+        completion((PRNewsLoadResult *)result, error);
+    }];
+}
+
+- (PRBridgeObservationToken *)checkForUpdatesWithCurrentVersion:(NSString *)currentVersion
+                                                     completion:(PRUpdateCheckCompletionHandler)completion
+{
+    if (!completion) {
+        return nil;
+    }
+    NSString *versionCopy = [currentVersion copy];
+    return [self enqueueUtilityWork:^id(FrontendFacade& facade, PRBridgeObservationState *state) {
+        return updateCheckResultFromFacadeResult(
+            facade.checkForUpdates(utf8TextFromFoundation(versionCopy), [&] { return state.isCancelled; }));
+    } completion:^(id result, PRBridgeError *error) {
+        completion((PRUpdateCheckResult *)result, error);
+    }];
+}
+
+- (PRBridgeObservationToken *)applyUpdateDecision:(PRUpdateDecision)decision
+                                  availableVersion:(NSString *)availableVersion
+                                        completion:(PRUpdateDecisionCompletionHandler)completion
+{
+    if (!completion) {
+        return nil;
+    }
+    NSString *versionCopy = [availableVersion copy];
+    return [self enqueueUtilityWork:^id(FrontendFacade& facade, PRBridgeObservationState *state) {
+        FrontendUpdateDecisionRequest request;
+        request.decision = updateDecisionFromFoundationDecision(decision);
+        request.availableVersion = utf8TextFromFoundation(versionCopy);
+        return updateDecisionResultFromFacadeResult(
+            facade.applyUpdateDecision(request, [&] { return state.isCancelled; }));
+    } completion:^(id result, PRBridgeError *error) {
+        completion((PRUpdateDecisionResult *)result, error);
+    }];
+}
+
+- (PRBridgeObservationToken *)createShortcutWithRequest:(PRShortcutCreationRequest *)request
+                                              completion:(PRShortcutCreationCompletionHandler)completion
+{
+    if (!request || !completion) {
+        return nil;
+    }
+    PRShortcutCreationRequest *requestCopy = request;
+    return [self enqueueUtilityWork:^id(FrontendFacade& facade, PRBridgeObservationState *state) {
+        return shortcutResultFromFacadeResult(
+            facade.createShortcut(shortcutRequestFromFoundation(requestCopy), [&] { return state.isCancelled; }));
+    } completion:^(id result, PRBridgeError *error) {
+        completion((PRShortcutCreationResult *)result, error);
+    }];
+}
+
+- (PRBridgeObservationToken *)loadSkinsWithAccountIdentifier:(NSString *)accountIdentifier
+                                                   completion:(PRSkinLoadCompletionHandler)completion
+{
+    if (!completion) {
+        return nil;
+    }
+    NSString *identifierCopy = [accountIdentifier copy];
+    return [self enqueueUtilityWork:^id(FrontendFacade& facade, PRBridgeObservationState *state) {
+        return skinLoadResultFromFacadeResult(
+            facade.skins(stableIdentifierFromFoundation(identifierCopy), [&] { return state.isCancelled; }));
+    } completion:^(id result, PRBridgeError *error) {
+        completion((PRSkinLoadResult *)result, error);
+    }];
+}
+
+- (PRBridgeObservationToken *)performSkinActionWithRequest:(PRSkinActionRequest *)request
+                                                 completion:(PRSkinActionCompletionHandler)completion
+{
+    if (!request || !completion) {
+        return nil;
+    }
+    PRSkinActionRequest *requestCopy = request;
+    return [self enqueueUtilityWork:^id(FrontendFacade& facade, PRBridgeObservationState *state) {
+        return skinActionResultFromFacadeResult(
+            facade.performSkinAction(skinActionRequestFromFoundation(requestCopy), [&] { return state.isCancelled; }));
+    } completion:^(id result, PRBridgeError *error) {
+        completion((PRSkinActionResult *)result, error);
+    }];
+}
+
 - (PRBridgeObservationToken *)loadOfflineLaunchIdentityWithMode:(PROfflineLaunchIdentityMode)mode
                                                 accountIdentifier:(NSString *)accountIdentifier
                                                      fallbackName:(NSString *)fallbackName
@@ -11670,6 +12574,16 @@ resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentif
     [self.observationLock unlock];
 }
 
+- (void)removeUtilityRequest:(PRBridgeObservationState *)request
+{
+    [self.observationLock lock];
+    NSUInteger index = [self.utilityRequestStates indexOfObjectIdenticalTo:request];
+    if (index != NSNotFound) {
+        [self.utilityRequestStates removeObjectAtIndex:index];
+    }
+    [self.observationLock unlock];
+}
+
 - (void)cancelAllObservations
 {
     [self.observationLock lock];
@@ -11710,6 +12624,7 @@ resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentif
     [observations addObjectsFromArray:self.providerInstallRequestStates];
     [observations addObjectsFromArray:self.offlineIdentityLoadRequestStates];
     [observations addObjectsFromArray:self.offlineIdentityUpdateRequestStates];
+    [observations addObjectsFromArray:self.utilityRequestStates];
     [self.instanceObservationStates removeAllObjects];
     [self.instanceChangeObservationStates removeAllObjects];
     [self.taskObservationStates removeAllObjects];
@@ -11746,6 +12661,7 @@ resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentif
     [self.providerInstallRequestStates removeAllObjects];
     [self.offlineIdentityLoadRequestStates removeAllObjects];
     [self.offlineIdentityUpdateRequestStates removeAllObjects];
+    [self.utilityRequestStates removeAllObjects];
     [self.observationLock unlock];
 
     for (PRBridgeObservationState *observation in observations) {
