@@ -113,8 +113,7 @@ struct PrismNativeApp: App {
             )
         }
         .defaultSize(width: 920, height: 640)
-        .windowStyle(.hiddenTitleBar)
-        .windowToolbarStyle(.unified(showsTitle: false))
+        .windowToolbarStyle(.unified(showsTitle: true))
 
         Window("About Prism", id: "prism.about") {
             PrismAboutView(metadata: PrismAboutMetadata.fromBundle())

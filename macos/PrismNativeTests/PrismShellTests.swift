@@ -2444,7 +2444,6 @@ final class PrismShellTests: XCTestCase {
             "NavigationSplitView",
             ".listStyle(.sidebar)",
             ".searchable(text: $searchText, placement: .sidebar",
-            ".toolbar(removing: .sidebarToggle)",
             "Form {",
             "Section(\"",
             "Picker(",
@@ -2461,8 +2460,9 @@ final class PrismShellTests: XCTestCase {
             XCTAssertTrue(settingsSource.contains(requiredToken), "Missing Settings contract: \(requiredToken)")
         }
         XCTAssertTrue(appSource.contains("Window(\"Settings\", id: \"prism.settings\")"))
-        XCTAssertTrue(appSource.contains(".windowStyle(.hiddenTitleBar)"))
-        XCTAssertTrue(appSource.contains(".windowToolbarStyle(.unified(showsTitle: false))"))
+        XCTAssertFalse(appSource.contains(".windowStyle(.hiddenTitleBar)"))
+        XCTAssertTrue(appSource.contains(".windowToolbarStyle(.unified(showsTitle: true))"))
+        XCTAssertFalse(settingsSource.contains(".toolbar(removing: .sidebarToggle)"))
         XCTAssertTrue(appSource.contains("PrismSettingsView("))
         XCTAssertTrue(appSource.contains("accountModel: accountModel"))
         XCTAssertTrue(appSource.contains("authenticationModel: authenticationModel"))

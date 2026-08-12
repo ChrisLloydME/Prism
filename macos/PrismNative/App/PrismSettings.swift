@@ -845,7 +845,6 @@ struct PrismSettingsView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
-        .toolbar(removing: .sidebarToggle)
         .accessibilityIdentifier("prism.settings.form")
     }
 
@@ -871,7 +870,6 @@ struct PrismSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .padding()
     }
 
     private var generalForm: some View {
@@ -913,7 +911,6 @@ struct PrismSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .padding()
     }
 
     private var languageForm: some View {
@@ -931,7 +928,6 @@ struct PrismSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .padding()
     }
 
     private var minecraftForm: some View {
@@ -953,7 +949,6 @@ struct PrismSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .padding()
     }
 
     private var servicesForm: some View {
@@ -998,7 +993,6 @@ struct PrismSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .padding()
         .accessibilityIdentifier("prism.settings.services")
     }
 
@@ -1032,7 +1026,6 @@ struct PrismSettingsView: View {
             .disabled(!proxyEnabled)
         }
         .formStyle(.grouped)
-        .padding()
         .accessibilityIdentifier("prism.settings.proxy")
     }
 
