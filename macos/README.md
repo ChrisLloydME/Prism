@@ -18,6 +18,13 @@ It never falls back to a generic `Prism` or upstream `PrismLauncher` path.
 - The native target must remain runnable while backend capabilities are moved
   behind the bridge incrementally.
 
+The final process boundary and UI-independent communication contract are
+specified in [Backend IPC architecture](../docs/backend-ipc/README.md), with
+normative [PBP v1 wire rules](../docs/backend-ipc/PROTOCOL_V1.md) and the
+[v1 method/event catalog](../docs/backend-ipc/METHODS_V1.md). The current
+in-process bridge and one-shot launch helper are migration paths, not the final
+ownership model.
+
 ## Command-line verification
 
 ```sh
