@@ -464,13 +464,36 @@ final class PrismNativeInfrastructureTests: XCTestCase {
         let buildDirectory = fixtureRoot.appendingPathComponent("Build", isDirectory: true)
         let applicationURL = buildDirectory.appendingPathComponent("Prism.app", isDirectory: true)
         let executableDirectory = applicationURL.appendingPathComponent("Contents/MacOS", isDirectory: true)
+        let sourceRoot = fixtureRoot.appendingPathComponent("Source/macos", isDirectory: true)
+        let backendBuildRoot = fixtureRoot.appendingPathComponent("Source/build-native", isDirectory: true)
+        let backendExecutableDirectory = backendBuildRoot.appendingPathComponent("Debug", isDirectory: true)
+        let backendJarDirectory = backendBuildRoot.appendingPathComponent("jars", isDirectory: true)
         let fakeDeployURL = fixtureRoot.appendingPathComponent("fake-macdeployqt.sh")
+        let fakeCMakeURL = fixtureRoot.appendingPathComponent("fake-cmake.sh")
         let argumentLogURL = fixtureRoot.appendingPathComponent("arguments.txt")
+        let cmakeArgumentLogURL = fixtureRoot.appendingPathComponent("cmake-arguments.txt")
         defer { try? FileManager.default.removeItem(at: fixtureRoot) }
 
         try FileManager.default.createDirectory(at: executableDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: sourceRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: backendExecutableDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: backendJarDirectory, withIntermediateDirectories: true)
         try "".write(
             to: executableDirectory.appendingPathComponent("Prism"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "backend".write(
+            to: backendExecutableDirectory.appendingPathComponent("prism_backend"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: backendExecutableDirectory.appendingPathComponent("prism_backend").path
+        )
+        try "jar".write(
+            to: backendJarDirectory.appendingPathComponent("NewLaunch.jar"),
             atomically: true,
             encoding: .utf8
         )
@@ -485,17 +508,33 @@ final class PrismNativeInfrastructureTests: XCTestCase {
         """
         try fakeDeploySource.write(to: fakeDeployURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fakeDeployURL.path)
+        let fakeCMakeSource = """
+        #!/bin/sh
+        set -eu
+        printf '%s\\n' "$@" > "${PRISM_CMAKE_ARGUMENT_LOG:?}"
+        """
+        try fakeCMakeSource.write(to: fakeCMakeURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fakeCMakeURL.path)
+        try "CMAKE_COMMAND:INTERNAL=\(fakeCMakeURL.path)\n".write(
+            to: backendBuildRoot.appendingPathComponent("CMakeCache.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
 
         func runDeployment(codeSigningAllowed: String) throws -> [String] {
             let process = Process()
             process.executableURL = deployURL
             process.environment = [
-                "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin",
+                // Match the restricted PATH used by Xcode launched from Finder.
+                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                "SRCROOT": sourceRoot.path,
+                "CONFIGURATION": "Debug",
                 "TARGET_BUILD_DIR": buildDirectory.path,
                 "WRAPPER_NAME": "Prism.app",
                 "PLATFORM_NAME": "macosx",
                 "PRISM_MACDEPLOYQT": fakeDeployURL.path,
                 "PRISM_ARGUMENT_LOG": argumentLogURL.path,
+                "PRISM_CMAKE_ARGUMENT_LOG": cmakeArgumentLogURL.path,
                 "CODE_SIGNING_ALLOWED": codeSigningAllowed,
                 "EXPANDED_CODE_SIGN_IDENTITY": "-",
             ]
@@ -517,6 +556,14 @@ final class PrismNativeInfrastructureTests: XCTestCase {
         let signedArguments = try runDeployment(codeSigningAllowed: "YES")
         XCTAssertTrue(signedArguments.contains("-codesign=-"))
         XCTAssertFalse(signedArguments.contains("-no-codesign"))
+        let cmakeArguments = try String(contentsOf: cmakeArgumentLogURL, encoding: .utf8)
+        XCTAssertTrue(cmakeArguments.contains("--build\n\(sourceRoot.path)/../build-native"))
+        XCTAssertTrue(cmakeArguments.contains("--target\nPrismBackend\nNewLaunch\nNewLaunchLegacy\nJavaCheck"))
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: applicationURL.appendingPathComponent("Contents/Resources/jars/NewLaunch.jar").path
+            )
+        )
 
         let unsignedArguments = try runDeployment(codeSigningAllowed: "NO")
         XCTAssertTrue(unsignedArguments.contains("-no-codesign"))

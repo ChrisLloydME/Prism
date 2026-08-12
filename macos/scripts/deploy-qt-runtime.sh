@@ -30,10 +30,30 @@ backend_source="${PRISM_BACKEND_EXECUTABLE:-}"
 if [ -z "$backend_source" ] && [ -n "${SRCROOT:-}" ]; then
     backend_build_root="$SRCROOT/../build-native"
     backend_source="$backend_build_root/${CONFIGURATION:-Debug}/prism_backend"
+    cmake_tool="${PRISM_CMAKE:-}"
+    if [ -z "$cmake_tool" ] && [ -f "$backend_build_root/CMakeCache.txt" ]; then
+        cmake_tool="$(sed -n '/^CMAKE_COMMAND:INTERNAL=/{s///;p;q;}' "$backend_build_root/CMakeCache.txt")"
+    fi
+    if [ -z "$cmake_tool" ]; then
+        cmake_tool="$(command -v cmake 2>/dev/null || true)"
+    fi
+    if [ -z "$cmake_tool" ]; then
+        for candidate in /opt/homebrew/bin/cmake /usr/local/bin/cmake; do
+            if [ -x "$candidate" ]; then
+                cmake_tool="$candidate"
+                break
+            fi
+        done
+    fi
+    if [ ! -x "$cmake_tool" ]; then
+        echo "error: CMake is unavailable. Set PRISM_CMAKE or configure $backend_build_root first." >&2
+        exit 1
+    fi
     # Always ask the incremental build graph to refresh the helper. Merely
     # checking for an existing executable can silently package stale backend
-    # code after a launcher source edit.
-    cmake --build "$backend_build_root" --config "${CONFIGURATION:-Debug}" \
+    # code after a launcher source edit. Xcode launched from Finder does not
+    # inherit Homebrew's PATH, so use the CMake recorded by this build tree.
+    "$cmake_tool" --build "$backend_build_root" --config "${CONFIGURATION:-Debug}" \
         --target PrismBackend NewLaunch NewLaunchLegacy JavaCheck --parallel 2
 fi
 
