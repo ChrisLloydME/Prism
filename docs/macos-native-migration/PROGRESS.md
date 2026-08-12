@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: 11. Production backend adapters and complete launcher composition
 
-Active work unit: none (M11-W8 complete)
+Active work unit: M11-W9 Utilities, skins, updates, and supporting services
 
-Next ready work unit: M11-W9 Utilities, skins, updates, and supporting services
+Next ready work unit: none (M11-W9 active; M11-W10 remains queued)
 
 Goal correction added 2026-08-09: this project must deliver a complete Minecraft launcher, not only native surfaces and fixture contracts. Historical M4-M9 `complete` labels mean surface/contract completion unless a later M11 unit proves production adapter and default-composition wiring. M10-W1 identified this gap; M10-W2 packaging and M10-W3 clean builds are complete infrastructure, not launcher parity. Qt retirement is moved to M12 and is forbidden until M11-W10 proves production parity.
 
@@ -2588,6 +2588,18 @@ Commit: `9da86886b` (provider implementation); `3a700c21d` (reopened startup cha
 
 Next ready work unit: `M11-W9`, connect news/update metadata, shortcuts, skin persistence/authenticated actions through fake external ports, clipboard/file-panel results, and remaining utilities without exercising privileged PATH changes, real credentials, live services, signing, publishing, or installation.
 
+### M11-W9: Utilities, skins, updates, and supporting services
+
+Status: active
+
+Prerequisite: M11-W8 is complete. Connect news/update metadata, shortcuts, skin persistence and authenticated actions, clipboard/file-panel results, and remaining utility commands through production adapters and default native composition. Production implementations may own real external-effect contracts, but verification must inject fake network, browser, credential, clipboard, file-panel, and other effect ports; privileged PATH changes, real credentials or Keychain, live services, certificate-backed signing, publishing, notarization, and installation remain outside this work unit.
+
+Activation baseline: the worktree was clean at `7d0906578`; the last five commit bodies, PLAN M11-W9 contract, current progress state, shared build inventory, and resolved M11-W8 blocker were reviewed. The sole shared Xcode root is `.deriveddata-prism-native` (759M), the shared frontend CMake root is `.deriveddata-prism-native-backend` (145M), and the pre-existing full-root Qt cache is `build-native` (2.3G). The two retained Xcode results are `Test-PrismNative-2026.08.12_11-12-52-+0800.xcresult` (Debug 189/189) and `Test-PrismNative-2026.08.12_11-13-37-+0800.xcresult` (Release 189/189); no task-owned `/private/tmp/prism-*` path exists.
+
+Safety and architecture contract: retain `~/Library/Application Support/com.lloydME.Prism` as the normal independent product root and use disposable synthetic roots only in tests. Swift remains limited to Foundation values and main-actor presentation; Objective-C++ remains the sole ownership and conversion boundary; QWidget-free C++ production adapters own persistence and external-effect orchestration. Do not launch Prism for this unit, inspect upstream Prism Launcher data, use real accounts or secrets, access Keychain, contact live services, mutate privileged PATH state, sign for distribution, install, publish, notarize, push, screenshot, record, or add visual snapshot tests. Preserve the M11-W8 ad-hoc runtime entitlement evidence without broadening it.
+
+Next ready work unit: none while M11-W9 is active; M11-W10 remains queued.
+
 ## Completed commit index
 
 | Commit | Outcome | Verification |
@@ -2779,4 +2791,4 @@ No resolved blocker authorizes upstream data, credentials, Keychain, live servic
 
 ## Resume instructions
 
-Read PLAN.md and PROGRESS.md, run `git status --short --branch -uall`, and inspect the last five commits. M11-W8 is complete; activate only `M11-W9 Utilities, skins, updates, and supporting services`. Connect news/update metadata, shortcuts, skin persistence and authenticated actions, clipboard/file-panel results, and remaining utility commands through production adapters with synthetic roots and fake network/browser/credential/clipboard/external-effect ports. Privileged PATH changes, real credentials, real Keychain, live services, certificate-backed signing, notarization, publishing, installation, push, screenshots, and destructive actions remain forbidden. Preserve the independent normal product root `~/Library/Application Support/com.lloydME.Prism`, Objective-C++ boundary, shared build paths, current ad-hoc runtime entitlement evidence, and no-upstream-data rule. The residual vanilla artifact-download and future Team-ID entitlement-removal limits must be reconciled by M11-W10 or an explicitly authorized follow-up before final acceptance. Do not reopen completed M6, M7, M8, M9 contract units, S0-W1, M10, or M11-W1 through M11-W8 evidence.
+Read PLAN.md and PROGRESS.md, run `git status --short --branch -uall`, and inspect the last five commits. Continue only active `M11-W9 Utilities, skins, updates, and supporting services`; do not activate M11-W10. Connect news/update metadata, shortcuts, skin persistence and authenticated actions, clipboard/file-panel results, and remaining utility commands through production adapters with synthetic roots and fake network/browser/credential/clipboard/external-effect ports. Privileged PATH changes, real credentials, real Keychain, live services, certificate-backed signing, notarization, publishing, installation, push, application launches, screenshots, and destructive actions remain forbidden. Preserve the independent normal product root `~/Library/Application Support/com.lloydME.Prism`, Objective-C++ boundary, shared build paths, current ad-hoc runtime entitlement evidence, and no-upstream-data rule. The residual vanilla artifact-download and future Team-ID entitlement-removal limits must be reconciled by M11-W10 or an explicitly authorized follow-up before final acceptance. Do not reopen completed M6, M7, M8, M9 contract units, S0-W1, M10, or M11-W1 through M11-W8 evidence.
