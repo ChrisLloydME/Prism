@@ -8,9 +8,9 @@ Plan: `docs/macos-native-migration/PLAN.md`
 
 Current milestone: 11. Production backend adapters and complete launcher composition
 
-Active work unit: M11-W9 Utilities, skins, updates, and supporting services
+Active work unit: none
 
-Next ready work unit: none (M11-W9 active; M11-W10 remains queued)
+Next ready work unit: M11-W10 Production parity audit
 
 Goal correction added 2026-08-09: this project must deliver a complete Minecraft launcher, not only native surfaces and fixture contracts. Historical M4-M9 `complete` labels mean surface/contract completion unless a later M11 unit proves production adapter and default-composition wiring. M10-W1 identified this gap; M10-W2 packaging and M10-W3 clean builds are complete infrastructure, not launcher parity. Qt retirement is moved to M12 and is forbidden until M11-W10 proves production parity.
 
@@ -45,7 +45,7 @@ Build-storage constraint added 2026-08-09: all future work must reuse `.derivedd
 | 7. Settings, Java, and accounts | contract complete, production pending | Fixture/fake contracts exist; M11-W2 through M11-W4 must connect persistence, Java, and authentication owners |
 | 8. Creation, discovery, and installation | contract complete, production pending | Provider/import contracts exist; M11-W7 and M11-W8 must connect staging, archive, network, and install owners |
 | Safety remediation. Storage namespace isolation | complete | Production storage is bundle-scoped and every upstream/generic persistence path is rejected by the native composition contract |
-| 9. Utilities and rendering exceptions | contract complete, production pending | Native utilities/renderers exist; M11-W9 must connect supporting production services |
+| 9. Utilities and rendering exceptions | production connected, audit pending | Native utilities/renderers and supporting production services are connected; M11-W10 must prove final composition parity |
 | 10. Native packaging and build foundation | complete | Parity audit, resources/metadata, and clean Debug/Release evidence are complete; no launcher parity claimed |
 | 11. Production backend adapters and launcher composition | active | Every core workflow uses existing Prism domain logic through bundle-rooted production composition |
 | 12. Native cutover and Qt Widgets retirement | queued | Starts only after M11-W10 production parity passes |
@@ -2590,7 +2590,7 @@ Next ready work unit: `M11-W9`, connect news/update metadata, shortcuts, skin pe
 
 ### M11-W9: Utilities, skins, updates, and supporting services
 
-Status: active
+Status: complete
 
 Prerequisite: M11-W8 is complete. Connect news/update metadata, shortcuts, skin persistence and authenticated actions, clipboard/file-panel results, and remaining utility commands through production adapters and default native composition. Production implementations may own real external-effect contracts, but verification must inject fake network, browser, credential, clipboard, file-panel, and other effect ports; privileged PATH changes, real credentials or Keychain, live services, certificate-backed signing, publishing, notarization, and installation remain outside this work unit.
 
@@ -2617,7 +2617,9 @@ Final verification gate: PLAN §9 unsigned Debug and Release `xcodebuild -quiet 
 
 Final storage: retained roots are `.deriveddata-prism-native` 906M, `.deriveddata-prism-native-backend` 151M, and pre-existing `build-native` 2.3G. Exactly the two final Xcode result bundles named above are retained, the shared roots were reused, no per-unit build tree or task-owned `/private/tmp/prism-*` root was created, and no cache cleanup is required.
 
-Next ready work unit: none while M11-W9 is active; M11-W10 remains queued.
+Commit: `88e378934` (implementation); this entry is finalized in this progress-ledger commit.
+
+Next ready work unit: `M11-W10`, reconstruct the full application runtime against synthetic isolated state, audit every facade port and native model for production ownership, reconcile retained Qt callers and the vanilla Minecraft artifact-download gap, and prove no core workflow falls back to fixture, no-op, or unavailable composition.
 
 ## Completed commit index
 
@@ -2694,6 +2696,7 @@ Next ready work unit: none while M11-W9 is active; M11-W10 remains queued.
 | `9da86886b` | Connected production provider discovery and installation, synthetic protocol transport, cache/staging/recovery, all nine install kinds, native composition, and deterministic Qt deployment verification; M11-W8 remains incomplete because the reopened startup abort requires a separately authorized signing-configuration fix | Shared arm64 CMake Debug/Release CTest 13/13; focused provider CTest 2/2; native focused 8/8; unsigned Debug/Release builds and XCTest 189/189; Bundle ID `com.lloydME.Prism`; bundled Qt closure, fake deployment, provider accessibility/localization/keyboard/boundary/no-drawing checks; `git diff --check` |
 | `3a700c21d` | Recorded the exact reopened Xcode startup abort, dyld different-Team-ID library-validation root cause, exhausted one-time launch authorization, isolated diagnostic cleanup, rejected alternatives, and the narrow Debug-only authorization boundary | Read-only product/log/signature/closure inspection; one isolated LLDB launch stopped before Qt/application code; source plist/entitlement lint; Debug/Release Bundle ID `com.lloydME.Prism`; `git diff --check`; no product or build-setting change |
 | `5313eadd6` | Closed the Xcode startup SIGABRT for both ad-hoc configurations with the shared Apple library-validation exception while retaining Hardened Runtime, exact entitlement guards, and the independent Prism product identity; completed M11-W8 | Backend Debug/Release CTest 13/13; focused native entitlement/closure XCTest 2/2; unsigned Debug/Release build and XCTest 189/189; signed Debug/Release deep verification, entitlement inspection, Qt closure, Bundle ID `com.lloydME.Prism`, and authorized ten-second runtime checks; boundary/UI/data/process scans; `git diff --check` |
+| `88e378934` | Connected production news, updates, macOS shortcuts, skin persistence/import/mutation, authenticated skin actions, Objective-C++ bridge conversion, and bridge-backed native utility composition; completed M11-W9 | Backend Debug/Release CTest 14/14; unsigned native Debug/Release builds and XCTest 192/192; Bundle ID `com.lloydME.Prism`; Qt runtime closure; reconstruction, cancellation, accessibility, localization, credential-boundary, no-drawing, and storage checks; `git diff --check` |
 
 ## Current architecture findings
 
