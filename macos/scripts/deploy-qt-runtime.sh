@@ -7,7 +7,14 @@ if [ "${PLATFORM_NAME:-macosx}" != "macosx" ]; then
 fi
 
 app_bundle="${TARGET_BUILD_DIR:?}/${WRAPPER_NAME:?}"
-deploy_tool="${PRISM_MACDEPLOYQT:-/opt/homebrew/opt/qtbase/bin/macdeployqt}"
+deploy_tool="${PRISM_MACDEPLOYQT:-}"
+if [ -z "$deploy_tool" ] && [ -n "${SRCROOT:-}" ]; then
+    local_deploy_tool="$SRCROOT/../.deps/qt-macos14/bin/macdeployqt"
+    if [ -x "$local_deploy_tool" ]; then
+        deploy_tool="$local_deploy_tool"
+    fi
+fi
+deploy_tool="${deploy_tool:-/opt/homebrew/opt/qtbase/bin/macdeployqt}"
 
 case "$app_bundle" in
     "${TARGET_BUILD_DIR}/"*.app) ;;

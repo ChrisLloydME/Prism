@@ -1,5 +1,12 @@
 cmake_minimum_required(VERSION 3.25) # Required for features like `CMAKE_MSVC_DEBUG_INFORMATION_FORMAT`
 
+# Keep the native launcher, its Qt modules, and vcpkg ports on the same
+# deployment contract. This must be set before project() so the vcpkg
+# toolchain also sees it while computing package ABIs.
+if(APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum supported macOS version")
+endif()
+
 project(Launcher LANGUAGES C CXX)
 if(APPLE)
     enable_language(OBJC OBJCXX)
@@ -310,8 +317,12 @@ if(Launcher_QT_VERSION_MAJOR EQUAL 6)
             /opt/qt/*/*/lib/cmake
             $ENV{MINGW_PREFIX}/opt/qt/*/*/li/cmake
     )
-    find_package(Qt6 COMPONENTS DBus HINTS /opt/qt/*/*/lib/cmake)
-    list(APPEND Launcher_QT_DBUS Qt6::DBus)
+    if(UNIX AND NOT APPLE)
+        find_package(Qt6DBus QUIET CONFIG HINTS /opt/qt/*/*/lib/cmake)
+        if(TARGET Qt6::DBus)
+            list(APPEND Launcher_QT_DBUS Qt6::DBus)
+        endif()
+    endif()
 else()
     message(FATAL_ERROR "Qt version ${Launcher_QT_VERSION_MAJOR} is not supported")
 endif()

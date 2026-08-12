@@ -43,7 +43,11 @@
                 "rhs": "Darwin"
             },
             "cacheVariables": {
-                "CMAKE_TOOLCHAIN_FILE": "$penv{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+                "CMAKE_TOOLCHAIN_FILE": "$penv{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+                "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0",
+                "CMAKE_PREFIX_PATH": "${sourceDir}/.deps/qt-macos14",
+                "Qt6_DIR": "${sourceDir}/.deps/qt-macos14/lib/cmake/Qt6",
+                "Qt6NetworkAuth_DIR": "${sourceDir}/.deps/qt-macos14/lib/cmake/Qt6NetworkAuth"
             }
         },
         {

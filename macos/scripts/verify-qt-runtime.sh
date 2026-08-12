@@ -5,6 +5,7 @@ set -eu
 app_bundle="${1:?usage: verify-qt-runtime.sh /path/to/Prism.app}"
 executable="$app_bundle/Contents/MacOS/Prism"
 frameworks="$app_bundle/Contents/Frameworks"
+maximum_deployment_target="${PRISM_MACOS_DEPLOYMENT_TARGET:-14.0}"
 
 if [ ! -x "$executable" ] || [ ! -d "$frameworks" ]; then
     echo "error: Prism runtime bundle is incomplete: $app_bundle" >&2
@@ -15,6 +16,17 @@ scan_file() {
     binary="$1"
     if ! file "$binary" | grep -q 'Mach-O'; then
         return
+    fi
+    minimum_os="$(otool -l "$binary" | awk '$1 == "minos" { print $2; exit }')"
+    if [ -n "$minimum_os" ] && ! awk -v actual="$minimum_os" -v maximum="$maximum_deployment_target" '
+        function version_number(version, parts) {
+            split(version, parts, ".")
+            return (parts[1] * 1000000) + (parts[2] * 1000) + parts[3]
+        }
+        BEGIN { exit(version_number(actual) <= version_number(maximum) ? 0 : 1) }
+    '; then
+        echo "error: $binary requires macOS $minimum_os (maximum allowed: $maximum_deployment_target)" >&2
+        exit 1
     fi
     forbidden="$(otool -l "$binary" | awk '
         $1 == "cmd" {
@@ -40,7 +52,7 @@ if [ -e "$backend" ]; then
     fi
     scan_file "$backend"
 fi
-find "$frameworks" -type f -print | while IFS= read -r candidate; do
+find "$app_bundle/Contents" -type f -print | while IFS= read -r candidate; do
     scan_file "$candidate"
 done
 

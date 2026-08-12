@@ -1371,7 +1371,7 @@ target_link_libraries(Launcher_logic
     LocalPeer
     Launcher_rainbow
 )
-if (TARGET ${Launcher_QT_DBUS})
+if (UNIX AND NOT APPLE AND TARGET Qt6::DBus)
     add_compile_definitions(WITH_QTDBUS)
 endif()
 

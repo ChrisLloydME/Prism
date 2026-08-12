@@ -1,5 +1,10 @@
 # This directory is both a standalone contract build and a launcher subdirectory.
 cmake_minimum_required(VERSION 3.25)
+
+if(APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum supported macOS version")
+endif()
+
 project(Launcher_frontend LANGUAGES CXX)
 include(CTest)
 
