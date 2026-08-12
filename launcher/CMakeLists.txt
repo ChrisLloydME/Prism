@@ -1400,8 +1400,16 @@ endif()
 
 add_executable(${Launcher_Name} MACOSX_BUNDLE WIN32 ${LAUNCHER_EXECUTABLE_SOURCES})
 
+# Native macOS backend helper. This first extraction deliberately reuses the
+# proven Prism domain/launch graph in a separate offscreen process. It never
+# enters the Qt window composition; the native application owns presentation.
+add_executable(PrismBackend backend_main.cpp)
+target_link_libraries(PrismBackend PRIVATE Launcher_logic)
+set_target_properties(PrismBackend PROPERTIES OUTPUT_NAME "prism_backend")
+
 if(${Launcher_USE_PCH})
     target_precompile_headers(${Launcher_Name} REUSE_FROM Launcher_logic)
+    target_precompile_headers(PrismBackend REUSE_FROM Launcher_logic)
 endif()
 
 target_link_libraries(${Launcher_Name} Launcher_logic)

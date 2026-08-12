@@ -313,6 +313,9 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(
     std::filesystem::path launcherIconPath)
 {
     const auto normalizedDataRoot = dataRoot.lexically_normal();
+    const auto backendExecutablePath = launcherExecutablePath.empty()
+        ? std::filesystem::path()
+        : launcherExecutablePath.parent_path() / "prism_backend";
     auto runtime = makeProductionInstanceRuntime(normalizedDataRoot);
     auto settingsRuntime = makeProductionSettingsRuntime(normalizedDataRoot);
     auto javaRuntime = makeProductionJavaRuntime(normalizedDataRoot);
@@ -337,7 +340,8 @@ FrontendRuntimeDependencies productionInstanceRuntimeDependencies(
         {},
         [accountRuntime](const std::string& instanceIdentifier) {
             return accountRuntime->launchSessionForInstance(instanceIdentifier);
-        });
+        },
+        backendExecutablePath);
     FrontendRuntimeDependencies dependencies;
     dependencies.dispatch = [](FrontendRuntimeDependencies::Work work) {
         if (work) {

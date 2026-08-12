@@ -26,7 +26,46 @@ if [ ! -x "$deploy_tool" ]; then
     exit 1
 fi
 
-common_arguments="-no-plugins -no-strip -always-overwrite"
+backend_source="${PRISM_BACKEND_EXECUTABLE:-}"
+if [ -z "$backend_source" ] && [ -n "${SRCROOT:-}" ]; then
+    backend_build_root="$SRCROOT/../build-native"
+    backend_source="$backend_build_root/${CONFIGURATION:-Debug}/prism_backend"
+    if [ ! -x "$backend_source" ] || [ ! -f "$backend_build_root/jars/NewLaunch.jar" ]; then
+        cmake --build "$backend_build_root" --config "${CONFIGURATION:-Debug}" \
+            --target PrismBackend NewLaunch NewLaunchLegacy JavaCheck --parallel 2
+    fi
+fi
+
+backend_destination="$app_bundle/Contents/MacOS/prism_backend"
+if [ -n "$backend_source" ]; then
+    if [ ! -x "$backend_source" ]; then
+        echo "error: Native Prism backend helper is unavailable: $backend_source" >&2
+        exit 1
+    fi
+    cp "$backend_source" "$backend_destination"
+    chmod 755 "$backend_destination"
+
+    backend_jars="$(dirname "$(dirname "$backend_source")")/jars"
+    if [ ! -f "$backend_jars/NewLaunch.jar" ]; then
+        echo "error: Native Prism backend launch jars are unavailable: $backend_jars" >&2
+        exit 1
+    fi
+    mkdir -p "$app_bundle/Contents/MacOS/jars"
+    find "$backend_jars" -maxdepth 1 -type f -name '*.jar' -exec cp '{}' "$app_bundle/Contents/MacOS/jars/" ';'
+
+    sparkle_source="$(dirname "$(dirname "$backend_source")")/frameworks/Sparkle/Sparkle.framework"
+    if [ -d "$sparkle_source" ]; then
+        mkdir -p "$app_bundle/Contents/Frameworks"
+        cp -R "$sparkle_source" "$app_bundle/Contents/Frameworks/"
+    fi
+fi
+
+# The helper currently hosts the extracted legacy domain graph and therefore
+# needs the Cocoa platform plugin in addition to its framework closure.
+common_arguments="-no-strip -always-overwrite"
+if [ -x "$backend_destination" ]; then
+    common_arguments="$common_arguments -executable=$backend_destination"
+fi
 if [ "${CODE_SIGNING_ALLOWED:-YES}" = "NO" ]; then
     "$deploy_tool" "$app_bundle" $common_arguments -no-codesign
 else

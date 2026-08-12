@@ -60,6 +60,8 @@ class LaunchController : public Task {
 
     void setOfflineName(const QString& offlineName) { m_offlineName = offlineName; }
 
+    void setHeadless(bool headless) { m_headless = headless; }
+
     void setProfiler(BaseProfilerFactory* profiler) { m_profiler = profiler; }
 
     void setParentWidget(QWidget* widget) { m_parentWidget = widget; }
@@ -100,4 +102,5 @@ class LaunchController : public Task {
     AuthSessionPtr m_session = nullptr;
     LaunchTask* m_launcher = nullptr;
     MinecraftTarget::Ptr m_targetToJoin = nullptr;
+    bool m_headless = false;
 };

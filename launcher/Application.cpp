@@ -317,6 +317,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
           { { "w", "world" }, "Join the specified world on launch (only valid in combination with --launch)", "world" },
           { { "a", "profile" }, "Use the account specified by its profile name (only valid in combination with --launch)", "profile" },
           { { "o", "offline" }, "Launch offline, with given player name (only valid in combination with --launch)", "offline" },
+          { "native-backend", "Run without Qt presentation as the native macOS backend helper" },
           { "alive", "Write a small '" + liveCheckFile + "' file after the launcher starts" },
           { "show-window", "Show the main launcher window (useful in combination with --launch)" },
           { { "I", "import" }, "Import instance or resource from specified local path or URL", "url" },
@@ -341,6 +342,13 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
 
     m_instanceIdToShowWindowOf = parser.value("show");
     m_showMainWindow = parser.isSet("show-window");
+    m_nativeBackend = parser.isSet("native-backend");
+
+    if (m_nativeBackend && m_instanceIdToLaunch.isEmpty()) {
+        std::cerr << "--native-backend currently requires --launch" << std::endl;
+        m_status = Application::Failed;
+        return;
+    }
 
     for (auto url : parser.values("import")) {
         m_urlsToImport.append(normalizeImportUrl(url));
@@ -446,7 +454,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
      * We want to initialize this before logging to avoid messing with the log of a potential already running copy.
      */
     auto appID = ApplicationId::fromPathAndVersion(QDir::currentPath(), BuildConfig.printableVersionString());
-    {
+    if (!m_nativeBackend) {
         // FIXME: you can run the same binaries with multiple data dirs and they won't clash. This could cause issues for updates.
         m_peerInstance = new LocalPeer(this, appID);
         connect(m_peerInstance, &LocalPeer::messageReceived, this, &Application::messageReceived);
@@ -955,7 +963,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
     // this facilitates a smooth transition from a non-sandboxed version of the launcher, that likely can access the directory,
     // and a sandboxed version that can't access the directory without a bookmark
     // this section can likely be removed once the sandboxed version has been released for a while and migrations aren't done anymore
-    {
+    if (!m_nativeBackend) {
         m_settings->get("InstanceDir");
         m_settings->get("CentralModsDir");
         m_settings->get("IconsDir");
@@ -1025,7 +1033,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
     }
 
     // load translations
-    {
+    if (!m_nativeBackend) {
         m_translations.reset(new TranslationsModel("translations"));
         m_translations->downloadIndex();
         qInfo() << "Your language is" << m_translations->selectedLanguage();
@@ -1064,8 +1072,9 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
 
     detectLibraries();
 
-    // check update locks
-    {
+    // Update recovery is an interactive launcher concern. The native backend
+    // must never block on a modal dialog while servicing a launch request.
+    if (!m_nativeBackend) {
         auto update_log_path = FS::PathCombine(m_dataPath, "logs", "prism_launcher_update.log");
 
         auto update_lock = QFileInfo(FS::PathCombine(m_dataPath, ".prism_launcher_update.lock"));
@@ -1207,12 +1216,17 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         return;
     }
 
-    m_themeManager->applyCurrentlySelectedTheme(true);
+    if (!m_nativeBackend) {
+        m_themeManager->applyCurrentlySelectedTheme(true);
+    }
     performMainStartupAction();
 }
 
 bool Application::createSetupWizard()
 {
+    if (m_nativeBackend) {
+        return false;
+    }
     bool javaRequired = [this]() {
         if (BuildConfig.JAVA_DOWNLOADER_ENABLED && settings()->get("AutomaticJavaDownload").toBool()) {
             return false;
@@ -1358,16 +1372,35 @@ void Application::performMainStartupAction()
             if (!m_profileToUse.isEmpty()) {
                 accountToUse = accounts()->getAccountByProfileName(m_profileToUse);
                 if (!accountToUse) {
+                    if (m_nativeBackend) {
+                        qCritical() << "Native backend could not resolve account profile" << m_profileToUse;
+                        m_status = Application::Failed;
+                        QMetaObject::invokeMethod(this, [] { exit(4); }, Qt::QueuedConnection);
+                    }
                     return;
                 }
                 qDebug() << "   Launching with account" << m_profileToUse;
             }
 
-            launch(inst, m_launchOffline ? LaunchMode::Offline : LaunchMode::Normal, targetToJoin, accountToUse, m_offlineName);
+            const bool launchAccepted =
+                launch(inst, m_launchOffline ? LaunchMode::Offline : LaunchMode::Normal, targetToJoin, accountToUse, m_offlineName);
+
+            if (m_nativeBackend && !launchAccepted) {
+                qCritical() << "Native backend rejected launch for instance" << m_instanceIdToLaunch;
+                m_status = Application::Failed;
+                QMetaObject::invokeMethod(this, [] { exit(3); }, Qt::QueuedConnection);
+                return;
+            }
 
             if (!m_showMainWindow) {
                 return;
             }
+        }
+        if (m_nativeBackend) {
+            qCritical() << "Native backend could not resolve instance" << m_instanceIdToLaunch;
+            m_status = Application::Failed;
+            QMetaObject::invokeMethod(this, [] { exit(2); }, Qt::QueuedConnection);
+            return;
         }
     }
     if (!m_instanceIdToShowWindowOf.isEmpty()) {
@@ -1378,7 +1411,7 @@ void Application::performMainStartupAction()
             return;
         }
     }
-    if (!m_mainWindow) {
+    if (!m_mainWindow && !m_nativeBackend) {
         // normal main window
         showMainWindow(false);
         qDebug() << "<> Main window shown.";
@@ -1412,6 +1445,10 @@ void Application::performMainStartupAction()
 void Application::showFatalErrorMessage(const QString& title, const QString& content)
 {
     m_status = Application::Failed;
+    if (m_nativeBackend) {
+        qCritical().noquote() << title << content;
+        return;
+    }
     auto dialog = CustomMessageBox::selectable(nullptr, title, content, QMessageBox::Critical);
     dialog->exec();
 }
@@ -1545,10 +1582,12 @@ bool Application::launch(BaseInstance* instance,
         controller.reset(new LaunchController());
         controller->setInstance(instance);
         controller->setLaunchMode(mode);
-        controller->setProfiler(profilers().value(instance->settings()->get("Profiler").toString(), nullptr).get());
+        controller->setProfiler(m_nativeBackend ? nullptr
+                                                : profilers().value(instance->settings()->get("Profiler").toString(), nullptr).get());
         controller->setTargetToJoin(targetToJoin);
         controller->setAccountToUse(accountToUse);
         controller->setOfflineName(offlineName);
+        controller->setHeadless(m_nativeBackend);
         if (window) {
             controller->setParentWidget(window);
         } else if (m_mainWindow) {
@@ -1558,10 +1597,10 @@ bool Application::launch(BaseInstance* instance,
         addRunningInstance();
         QMetaObject::invokeMethod(controller.get(), &Task::start, Qt::QueuedConnection);
         return true;
-    } else if (instance->isRunning()) {
+    } else if (!m_nativeBackend && instance->isRunning()) {
         showInstanceWindow(instance, "console");
         return true;
-    } else if (instance->canEdit()) {
+    } else if (!m_nativeBackend && instance->canEdit()) {
         showInstanceWindow(instance);
         return true;
     }

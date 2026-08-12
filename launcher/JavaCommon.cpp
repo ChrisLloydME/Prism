@@ -39,7 +39,7 @@
 
 #include <QRegularExpression>
 
-bool JavaCommon::checkJVMArgs(QString jvmargs, QWidget* parent)
+bool JavaCommon::checkJVMArgs(QString jvmargs, QWidget* parent, bool showWarning)
 {
     static const QRegularExpression s_memRegex("-Xm[sx]");
     static const QRegularExpression s_versionRegex("-version:.*");
@@ -50,7 +50,9 @@ bool JavaCommon::checkJVMArgs(QString jvmargs, QWidget* parent)
             "or \"-Xms\").\n"
             "There are dedicated boxes for these in the settings (Java tab, in the Memory group at the top).\n"
             "This message will be displayed until you remove them from the JVM arguments.");
-        CustomMessageBox::selectable(parent, QObject::tr("JVM arguments warning"), warnStr, QMessageBox::Warning)->exec();
+        if (showWarning) {
+            CustomMessageBox::selectable(parent, QObject::tr("JVM arguments warning"), warnStr, QMessageBox::Warning)->exec();
+        }
         return false;
     }
     // block lunacy with passing required version to the JVM
@@ -59,7 +61,9 @@ bool JavaCommon::checkJVMArgs(QString jvmargs, QWidget* parent)
             "You tried to pass required Java version argument to the JVM (using \"-version:xxx\"). This is not safe and will not be "
             "allowed.\n"
             "This message will be displayed until you remove this from the JVM arguments.");
-        CustomMessageBox::selectable(parent, QObject::tr("JVM arguments warning"), warnStr, QMessageBox::Warning)->exec();
+        if (showWarning) {
+            CustomMessageBox::selectable(parent, QObject::tr("JVM arguments warning"), warnStr, QMessageBox::Warning)->exec();
+        }
         return false;
     }
     return true;

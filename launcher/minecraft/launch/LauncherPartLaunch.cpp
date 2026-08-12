@@ -52,7 +52,7 @@ LauncherPartLaunch::LauncherPartLaunch(LaunchTask* parent)
     : LaunchStep(parent)
     , m_process(parent->instance()->getJavaVersion().defaultsToUtf8() ? QStringConverter::Utf8 : QStringConverter::System)
 {
-    if (parent->instance()->settings()->get("CloseAfterLaunch").toBool()) {
+    if (!APPLICATION->isNativeBackend() && parent->instance()->settings()->get("CloseAfterLaunch").toBool()) {
         static const QRegularExpression s_settingUser(".*Setting user.+", QRegularExpression::CaseInsensitiveOption);
         std::shared_ptr<QMetaObject::Connection> connection{ new QMetaObject::Connection };
         *connection =
@@ -178,7 +178,7 @@ void LauncherPartLaunch::on_state(LoggedProcess::State state)
         }
         case LoggedProcess::Finished: {
             auto instance = m_parent->instance();
-            if (instance->settings()->get("CloseAfterLaunch").toBool())
+            if (!APPLICATION->isNativeBackend() && instance->settings()->get("CloseAfterLaunch").toBool())
                 APPLICATION->showMainWindow();
 
             m_parent->setPid(-1);

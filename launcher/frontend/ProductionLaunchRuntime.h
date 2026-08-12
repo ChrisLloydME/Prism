@@ -52,7 +52,10 @@ class ProductionLaunchRuntime final {
     using LaunchSessionProvider = std::function<std::optional<ProductionLaunchSession>(const std::string&)>;
 
     explicit ProductionLaunchRuntime(
-        std::filesystem::path dataRoot, ProcessExecutor executor = {}, LaunchSessionProvider sessionProvider = {});
+        std::filesystem::path dataRoot,
+        ProcessExecutor executor = {},
+        LaunchSessionProvider sessionProvider = {},
+        std::filesystem::path backendExecutable = {});
     ~ProductionLaunchRuntime() noexcept;
 
     ProductionLaunchRuntime(const ProductionLaunchRuntime&) = delete;
@@ -89,6 +92,7 @@ class ProductionLaunchRuntime final {
     std::filesystem::path m_tasksRoot;
     ProcessExecutor m_executor;
     LaunchSessionProvider m_sessionProvider;
+    std::filesystem::path m_backendExecutable;
 
     mutable std::mutex m_runtimeMutex;
     std::map<std::string, std::shared_ptr<TaskRecord>> m_records;
@@ -99,7 +103,8 @@ class ProductionLaunchRuntime final {
 std::shared_ptr<ProductionLaunchRuntime> makeProductionLaunchRuntime(
     std::filesystem::path dataRoot,
     ProductionLaunchRuntime::ProcessExecutor executor = {},
-    ProductionLaunchRuntime::LaunchSessionProvider sessionProvider = {});
+    ProductionLaunchRuntime::LaunchSessionProvider sessionProvider = {},
+    std::filesystem::path backendExecutable = {});
 
 FrontendRuntimeDependencies productionLaunchRuntimeDependencies(
     std::shared_ptr<ProductionLaunchRuntime> runtime,

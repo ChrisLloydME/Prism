@@ -49,6 +49,7 @@
 #include "ui/dialogs/ProgressDialog.h"
 
 #include <QInputDialog>
+#include <QEventLoop>
 #include <QList>
 #include <QPushButton>
 #include <utility>
@@ -68,7 +69,7 @@ void LaunchController::executeTask()
         return;
     }
 
-    if (!JavaCommon::checkJVMArgs(m_instance->settings()->get("JvmArgs").toString(), m_parentWidget)) {
+    if (!JavaCommon::checkJVMArgs(m_instance->settings()->get("JvmArgs").toString(), m_headless ? nullptr : m_parentWidget, !m_headless)) {
         emitFailed(tr("Invalid Java arguments specified. Please fix this first."));
         return;
     }
@@ -165,14 +166,21 @@ LaunchDecision LaunchController::decideLaunchMode()
 
     if (state == AccountState::Working) {
         // refresh is in progress, we need to wait for it to finish to proceed.
-        ProgressDialog progDialog(m_parentWidget);
-        progDialog.setSkipButton(true, tr("Abort"));
-
         // TODO: this relies on tasks' synchronous signal dispatching nature
         // TODO: meaning currentTask can't complete and become null while this code is running
         // TODO: this code will produce a race condition when tasks become fully async
         auto task = accountToCheck->currentTask();
-        progDialog.execWithTask(task.get());
+        if (m_headless) {
+            QEventLoop loop;
+            connect(task.get(), &Task::finished, &loop, &QEventLoop::quit);
+            if (!task->isFinished()) {
+                loop.exec();
+            }
+        } else {
+            ProgressDialog progDialog(m_parentWidget);
+            progDialog.setSkipButton(true, tr("Abort"));
+            progDialog.execWithTask(task.get());
+        }
 
         if (task->getState() == State::AbortedByUser) {
             return LaunchDecision::Abort;
@@ -210,6 +218,9 @@ LaunchDecision LaunchController::decideLaunchMode()
 
 bool LaunchController::askPlayDemo() const
 {
+    if (m_headless) {
+        return false;
+    }
     QMessageBox box(m_parentWidget);
     box.setWindowTitle(tr("Play demo?"));
     QString text = m_accountToUse
@@ -277,6 +288,13 @@ QString LaunchController::askOfflineName(const QString& playerName, bool* ok)
 
 void LaunchController::login()
 {
+    if (m_headless && m_wantedLaunchMode == LaunchMode::Offline && !m_offlineName.trimmed().isEmpty()) {
+        m_actualLaunchMode = LaunchMode::Offline;
+        m_session = std::make_shared<AuthSession>();
+        m_session->MakeOffline(m_offlineName.trimmed());
+        launchInstance();
+        return;
+    }
     decideAccount();
 
     LaunchDecision decision = decideLaunchMode();
@@ -310,6 +328,10 @@ void LaunchController::login()
 
     if (m_accountToUse->accountType() != AccountType::Offline) {
         if (m_actualLaunchMode == LaunchMode::Normal && !m_accountToUse->hasProfile()) {
+            if (m_headless) {
+                emitFailed(tr("The selected account does not have a Minecraft profile."));
+                return;
+            }
             // Now handle setting up a profile name here...
             if (ProfileSetupDialog dialog(m_accountToUse, m_parentWidget); dialog.exec() != QDialog::Accepted) {
                 emitAborted();
@@ -336,6 +358,10 @@ void LaunchController::login()
 
 bool LaunchController::reauthenticateAccount(const MinecraftAccountPtr& account, const QString& reason)
 {
+    if (m_headless) {
+        qWarning().noquote() << reason;
+        return false;
+    }
     auto button = QMessageBox::warning(
         m_parentWidget, tr("Account refresh failed"), tr("%1. Do you want to reauthenticate this account?").arg(reason),
         QMessageBox::StandardButton::Yes | QMessageBox::StandardButton::No, QMessageBox::StandardButton::Yes);
@@ -371,7 +397,9 @@ void LaunchController::launchInstance()
     Q_ASSERT(m_session.get() != nullptr);
 
     if (!m_instance->reloadSettings()) {
-        QMessageBox::critical(m_parentWidget, tr("Error!"), tr("Couldn't load the instance profile."));
+        if (!m_headless) {
+            QMessageBox::critical(m_parentWidget, tr("Error!"), tr("Couldn't load the instance profile."));
+        }
         emitFailed(tr("Couldn't load the instance profile."));
         return;
     }
@@ -384,7 +412,7 @@ void LaunchController::launchInstance()
 
     const auto* console = qobject_cast<InstanceWindow*>(m_parentWidget);
     const auto showConsole = m_instance->settings()->get("ShowConsole").toBool();
-    if (!console && showConsole) {
+    if (!m_headless && !console && showConsole) {
         APPLICATION->showInstanceWindow(m_instance);
     }
     connect(m_launcher, &LaunchTask::readyForLaunch, this, &LaunchController::readyForLaunch);
@@ -465,7 +493,7 @@ void LaunchController::onSucceeded()
 
 void LaunchController::onFailed(QString reason)
 {
-    if (m_instance->settings()->get("ShowConsoleOnError").toBool()) {
+    if (!m_headless && m_instance->settings()->get("ShowConsoleOnError").toBool()) {
         APPLICATION->showInstanceWindow(m_instance, "console");
     }
     emitFailed(std::move(reason));
@@ -473,6 +501,10 @@ void LaunchController::onFailed(QString reason)
 
 void LaunchController::onProgressRequested(Task* task) const
 {
+    if (m_headless) {
+        m_launcher->proceed();
+        return;
+    }
     ProgressDialog progDialog(m_parentWidget);
     progDialog.setSkipButton(true, tr("Abort"));
     m_launcher->proceed();
@@ -486,6 +518,9 @@ bool LaunchController::abort()
     }
     if (!m_launcher->canAbort()) {
         return false;
+    }
+    if (m_headless) {
+        return m_launcher->abort();
     }
     auto response = CustomMessageBox::selectable(m_parentWidget, tr("Kill Minecraft?"),
                                                  tr("This can cause the instance to get corrupted and should only be used if Minecraft "

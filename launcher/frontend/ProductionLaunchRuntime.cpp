@@ -343,12 +343,16 @@ struct ProductionLaunchRuntime::TaskRecord final {
 };
 
 ProductionLaunchRuntime::ProductionLaunchRuntime(
-    std::filesystem::path dataRoot, ProcessExecutor executor, LaunchSessionProvider sessionProvider)
+    std::filesystem::path dataRoot,
+    ProcessExecutor executor,
+    LaunchSessionProvider sessionProvider,
+    std::filesystem::path backendExecutable)
     : m_dataRoot(normalizeRoot(std::move(dataRoot))),
       m_instancesRoot(m_dataRoot / "instances"),
       m_tasksRoot(m_dataRoot / "tasks"),
       m_executor(executor ? std::move(executor) : defaultProcessExecutor),
-      m_sessionProvider(std::move(sessionProvider))
+      m_sessionProvider(std::move(sessionProvider)),
+      m_backendExecutable(std::move(backendExecutable).lexically_normal())
 {
     std::error_code error;
     if (std::filesystem::exists(m_dataRoot, error)
@@ -417,6 +421,32 @@ std::optional<ProductionLaunchRuntime::ProcessSpec> ProductionLaunchRuntime::rea
     if (!session.has_value()) {
         diagnostic = "A usable launch identity is unavailable";
         return std::nullopt;
+    }
+    if (!m_backendExecutable.empty() && m_backendExecutable.is_absolute()
+        && std::filesystem::is_regular_file(m_backendExecutable, error) && !error
+        && !std::filesystem::is_symlink(m_backendExecutable, error) && !error) {
+        ProcessSpec process;
+        process.program = m_backendExecutable.string();
+        process.arguments = {
+            "--native-backend",
+            "--dir",
+            m_dataRoot.string(),
+            "--launch",
+            instanceIdentifier,
+        };
+        if (session->mode == ProductionLaunchMode::Offline) {
+            process.arguments.push_back("--offline");
+            process.arguments.push_back(session->playerName);
+        } else if (!session->playerName.empty()) {
+            process.arguments.push_back("--profile");
+            process.arguments.push_back(session->playerName);
+        }
+        process.environment["QT_QPA_PLATFORM"] = "cocoa";
+        process.environment["QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM"] = "1";
+        process.environment["NO_COLOR"] = "1";
+        process.workingDirectory = m_dataRoot;
+        record->secrets = session->secrets;
+        return process;
     }
     auto build = buildProductionMinecraftLaunch(m_dataRoot, instancePath, instanceIdentifier, *session);
     if (!build.process.has_value()) {
@@ -839,10 +869,11 @@ void ProductionLaunchRuntime::loadPersistedRecords()
 std::shared_ptr<ProductionLaunchRuntime> makeProductionLaunchRuntime(
     std::filesystem::path dataRoot,
     ProductionLaunchRuntime::ProcessExecutor executor,
-    ProductionLaunchRuntime::LaunchSessionProvider sessionProvider)
+    ProductionLaunchRuntime::LaunchSessionProvider sessionProvider,
+    std::filesystem::path backendExecutable)
 {
     return std::make_shared<ProductionLaunchRuntime>(
-        std::move(dataRoot), std::move(executor), std::move(sessionProvider));
+        std::move(dataRoot), std::move(executor), std::move(sessionProvider), std::move(backendExecutable));
 }
 
 FrontendRuntimeDependencies productionLaunchRuntimeDependencies(

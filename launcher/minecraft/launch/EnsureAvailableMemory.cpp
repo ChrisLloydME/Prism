@@ -18,6 +18,7 @@
 
 #include "EnsureAvailableMemory.h"
 
+#include "Application.h"
 #include "HardwareInfo.h"
 #include "ui/dialogs/CustomMessageBox.h"
 
@@ -25,6 +26,10 @@ EnsureAvailableMemory::EnsureAvailableMemory(LaunchTask* parent, MinecraftInstan
 
 void EnsureAvailableMemory::executeTask()
 {
+    if (APPLICATION->isNativeBackend()) {
+        emitSucceeded();
+        return;
+    }
 #ifdef Q_OS_MACOS
     QString text;
     switch (MacOSHardwareInfo::memoryPressureLevel()) {

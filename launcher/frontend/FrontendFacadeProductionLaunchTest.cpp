@@ -199,6 +199,53 @@ int main()
         writeInstanceFixture(root, "launch.fixture", true);
 
         auto accountRuntime = makeProductionAccountRuntime(root, ProductionAccountRuntime::defaultDependencies());
+        const auto backendExecutable = root / "prism_backend";
+        {
+            std::ofstream backend(backendExecutable);
+            backend << "synthetic backend executable";
+            require(backend.good(), "synthetic backend executable could not be written");
+        }
+        writeInstanceFixture(root, "launch.backend", false);
+        auto backendFake = std::make_shared<FakeProcess>();
+        backendFake->setSucceedAutomatically(true);
+        auto backendRuntime = makeProductionLaunchRuntime(
+            root,
+            [backendFake](const ProductionLaunchRuntime::ProcessSpec& spec,
+                          const ProductionLaunchRuntime::ProcessLogHandler& log,
+                          const ProductionLaunchRuntime::CancellationCheck& cancelled) {
+                return backendFake->run(spec, log, cancelled);
+            },
+            [accountRuntime](const std::string& instanceIdentifier) {
+                return accountRuntime->launchSessionForInstance(instanceIdentifier);
+            },
+            backendExecutable);
+        FrontendFacade backendFacade(root, dependenciesFor(backendRuntime));
+        require(backendFacade.launchInstance("launch.backend") == FrontendInstanceCommandResult::Succeeded,
+                "headless backend launch was rejected");
+        {
+            std::unique_lock<std::mutex> lock(backendFake->mutex);
+            require(backendFake->condition.wait_for(lock, std::chrono::seconds(3), [&] { return backendFake->started; }),
+                    "headless backend process was not invoked");
+            require(backendFake->capturedSpec.program == backendExecutable.string(),
+                    "headless backend executable was not selected");
+            require(
+                backendFake->capturedSpec.arguments
+                    == std::vector<std::string>{
+                        "--native-backend",
+                        "--dir",
+                        root.string(),
+                        "--launch",
+                        "launch.backend",
+                        "--offline",
+                        "Fixture_Player",
+                    },
+                "headless backend did not receive the exact isolated launch request");
+            require(backendFake->capturedSpec.environment.at("QT_QPA_PLATFORM") == "cocoa"
+                        && backendFake->capturedSpec.environment.at("QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM") == "1",
+                    "headless backend presentation was not disabled");
+        }
+        backendFacade.shutdown();
+
         auto fake = std::make_shared<FakeProcess>();
         auto runtime = makeProductionLaunchRuntime(
             root,

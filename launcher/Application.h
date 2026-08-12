@@ -179,6 +179,11 @@ class Application : public QApplication {
 
     bool isPortable() { return m_portable; }
 
+    /// True when the legacy domain runtime is hosted as the native macOS
+    /// backend helper. In this mode no Qt window or modal decision may be
+    /// created; presentation and user decisions belong to the native app.
+    bool isNativeBackend() const { return m_nativeBackend; }
+
     const Capabilities capabilities() { return m_capabilities; }
 
     /*!
@@ -273,6 +278,7 @@ class Application : public QApplication {
     Status m_status = Application::StartingUp;
     Capabilities m_capabilities;
     bool m_portable = false;
+    bool m_nativeBackend = false;
 
 #ifdef Q_OS_MACOS
     Qt::ApplicationState m_prevAppState = Qt::ApplicationInactive;

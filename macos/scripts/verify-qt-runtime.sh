@@ -32,14 +32,38 @@ scan_file() {
 }
 
 scan_file "$executable"
+backend="$app_bundle/Contents/MacOS/prism_backend"
+if [ -e "$backend" ]; then
+    if [ ! -x "$backend" ]; then
+        echo "error: Prism backend helper is not executable: $backend" >&2
+        exit 1
+    fi
+    scan_file "$backend"
+fi
 find "$frameworks" -type f -print | while IFS= read -r candidate; do
     scan_file "$candidate"
 done
 
-if ! otool -L "$executable" | grep -Eq '@(rpath|executable_path/\.\./Frameworks)/QtCore\.framework/Versions/A/QtCore' \
-    || ! otool -L "$executable" | grep -Eq '@(rpath|executable_path/\.\./Frameworks)/QtNetwork\.framework/Versions/A/QtNetwork'; then
+if ! otool -L "$executable" | grep -Eq '@(rpath|loader_path/\.\./Frameworks|executable_path/\.\./Frameworks)/QtCore\.framework/Versions/A/QtCore' \
+    || ! otool -L "$executable" | grep -Eq '@(rpath|loader_path/\.\./Frameworks|executable_path/\.\./Frameworks)/QtNetwork\.framework/Versions/A/QtNetwork'; then
     echo "error: Prism executable does not reference bundled Qt frameworks" >&2
     exit 1
+fi
+
+if [ -x "$backend" ]; then
+    if ! otool -L "$backend" | grep -Eq '@(rpath|loader_path/\.\./Frameworks|executable_path/\.\./Frameworks)/QtCore\.framework/Versions/A/QtCore' \
+        || ! otool -L "$backend" | grep -Eq '@(rpath|loader_path/\.\./Frameworks|executable_path/\.\./Frameworks)/QtNetwork\.framework/Versions/A/QtNetwork'; then
+        echo "error: Prism backend helper does not reference bundled Qt frameworks" >&2
+        exit 1
+    fi
+    if [ ! -f "$app_bundle/Contents/MacOS/jars/NewLaunch.jar" ]; then
+        echo "error: Prism backend helper is missing NewLaunch.jar" >&2
+        exit 1
+    fi
+    if [ ! -f "$app_bundle/Contents/PlugIns/platforms/libqcocoa.dylib" ]; then
+        echo "error: Prism backend helper is missing the Cocoa platform plugin" >&2
+        exit 1
+    fi
 fi
 
 echo "Qt runtime closure verified: $app_bundle"
