@@ -26,6 +26,23 @@ struct PrismGlobalSettings: Equatable, Sendable {
     var autoCloseConsole: Bool
     var showConsoleOnError: Bool
     var logPrePostOutput: Bool
+    var pasteType: Int
+    var pasteCustomAPIBase: String
+    var metadataURLOverride: String
+    var refreshMetadataOnLaunch: Bool
+    var assetsURLOverride: String
+    var legacyFMLLibrariesURLOverride: String
+    var fallbackForBlockedModrinthProjects: Bool
+    var userAgentOverride: String
+    var microsoftClientIDOverride: String
+    var curseForgeAPIKey: String
+    var modrinthToken: String
+    var technicClientID: String
+    var proxyType: String
+    var proxyAddress: String
+    var proxyPort: Int
+    var proxyUsername: String
+    var proxyPassword: String
 
     init?(bridgeSettings: PRGlobalSettings) {
         self.init(
@@ -51,7 +68,24 @@ struct PrismGlobalSettings: Equatable, Sendable {
             showConsole: bridgeSettings.showConsole,
             autoCloseConsole: bridgeSettings.autoCloseConsole,
             showConsoleOnError: bridgeSettings.showConsoleOnError,
-            logPrePostOutput: bridgeSettings.logPrePostOutput
+            logPrePostOutput: bridgeSettings.logPrePostOutput,
+            pasteType: bridgeSettings.pasteType,
+            pasteCustomAPIBase: bridgeSettings.pasteCustomAPIBase,
+            metadataURLOverride: bridgeSettings.metadataURLOverride,
+            refreshMetadataOnLaunch: bridgeSettings.refreshMetadataOnLaunch,
+            assetsURLOverride: bridgeSettings.assetsURLOverride,
+            legacyFMLLibrariesURLOverride: bridgeSettings.legacyFMLLibrariesURLOverride,
+            fallbackForBlockedModrinthProjects: bridgeSettings.fallbackForBlockedModrinthProjects,
+            userAgentOverride: bridgeSettings.userAgentOverride,
+            microsoftClientIDOverride: bridgeSettings.microsoftClientIDOverride,
+            curseForgeAPIKey: bridgeSettings.curseForgeAPIKey,
+            modrinthToken: bridgeSettings.modrinthToken,
+            technicClientID: bridgeSettings.technicClientID,
+            proxyType: bridgeSettings.proxyType,
+            proxyAddress: bridgeSettings.proxyAddress,
+            proxyPort: bridgeSettings.proxyPort,
+            proxyUsername: bridgeSettings.proxyUsername,
+            proxyPassword: bridgeSettings.proxyPassword
         )
     }
 
@@ -78,7 +112,24 @@ struct PrismGlobalSettings: Equatable, Sendable {
         showConsole: Bool,
         autoCloseConsole: Bool,
         showConsoleOnError: Bool,
-        logPrePostOutput: Bool
+        logPrePostOutput: Bool,
+        pasteType: Int = 3,
+        pasteCustomAPIBase: String = "",
+        metadataURLOverride: String = "",
+        refreshMetadataOnLaunch: Bool = true,
+        assetsURLOverride: String = "",
+        legacyFMLLibrariesURLOverride: String = "",
+        fallbackForBlockedModrinthProjects: Bool = true,
+        userAgentOverride: String = "",
+        microsoftClientIDOverride: String = "",
+        curseForgeAPIKey: String = "",
+        modrinthToken: String = "",
+        technicClientID: String = "",
+        proxyType: String = "None",
+        proxyAddress: String = "127.0.0.1",
+        proxyPort: Int = 8080,
+        proxyUsername: String = "",
+        proxyPassword: String = ""
     ) {
         guard instanceDirectoryURL.isFileURL,
               !instanceDirectoryURL.path.isEmpty,
@@ -90,7 +141,15 @@ struct PrismGlobalSettings: Equatable, Sendable {
               numberOfManualRetries >= 0,
               requestTimeoutSeconds >= 0,
               (5...16).contains(consoleFontSize),
-              (10_000...1_000_000).contains(consoleMaxLines) else {
+              (10_000...1_000_000).contains(consoleMaxLines),
+              (0...3).contains(pasteType),
+              ["Default", "None", "SOCKS5", "HTTP"].contains(proxyType),
+              (1...65_535).contains(proxyPort),
+              !(["SOCKS5", "HTTP"].contains(proxyType) && proxyAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty),
+              Self.isValidServiceURL(pasteCustomAPIBase),
+              Self.isValidServiceURL(metadataURLOverride),
+              Self.isValidServiceURL(assetsURLOverride),
+              Self.isValidServiceURL(legacyFMLLibrariesURLOverride) else {
             return nil
         }
 
@@ -117,6 +176,30 @@ struct PrismGlobalSettings: Equatable, Sendable {
         self.autoCloseConsole = autoCloseConsole
         self.showConsoleOnError = showConsoleOnError
         self.logPrePostOutput = logPrePostOutput
+        self.pasteType = pasteType
+        self.pasteCustomAPIBase = pasteCustomAPIBase
+        self.metadataURLOverride = metadataURLOverride
+        self.refreshMetadataOnLaunch = refreshMetadataOnLaunch
+        self.assetsURLOverride = assetsURLOverride
+        self.legacyFMLLibrariesURLOverride = legacyFMLLibrariesURLOverride
+        self.fallbackForBlockedModrinthProjects = fallbackForBlockedModrinthProjects
+        self.userAgentOverride = userAgentOverride
+        self.microsoftClientIDOverride = microsoftClientIDOverride
+        self.curseForgeAPIKey = curseForgeAPIKey
+        self.modrinthToken = modrinthToken
+        self.technicClientID = technicClientID
+        self.proxyType = proxyType
+        self.proxyAddress = proxyAddress
+        self.proxyPort = proxyPort
+        self.proxyUsername = proxyUsername
+        self.proxyPassword = proxyPassword
+    }
+
+    private static func isValidServiceURL(_ value: String) -> Bool {
+        if value.isEmpty { return true }
+        guard let components = URLComponents(string: value), let scheme = components.scheme?.lowercased(),
+              let host = components.host, !host.isEmpty else { return false }
+        return scheme == "https" || (scheme == "http" && ["localhost", "127.0.0.1", "::1"].contains(host))
     }
 
     static func fixture() -> PrismGlobalSettings {
@@ -171,6 +254,18 @@ struct PrismGlobalSettings: Equatable, Sendable {
         guard (10_000...1_000_000).contains(consoleMaxLines) else {
             return "Console lines must be between 10,000 and 1,000,000."
         }
+        guard (0...3).contains(pasteType) else { return "Choose a supported paste service." }
+        guard ["Default", "None", "SOCKS5", "HTTP"].contains(proxyType), (1...65_535).contains(proxyPort) else {
+            return "Choose a valid proxy type and port."
+        }
+        guard !(["SOCKS5", "HTTP"].contains(proxyType)
+                && proxyAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) else {
+            return "Enter a proxy server address."
+        }
+        for value in [pasteCustomAPIBase, metadataURLOverride, assetsURLOverride, legacyFMLLibrariesURLOverride]
+        where !Self.isValidServiceURL(value) {
+            return "Service URLs must use HTTPS. HTTP is allowed only for local development servers."
+        }
         return nil
     }
 
@@ -198,7 +293,24 @@ struct PrismGlobalSettings: Equatable, Sendable {
             showConsole: showConsole,
             autoCloseConsole: autoCloseConsole,
             showConsoleOnError: showConsoleOnError,
-            logPrePostOutput: logPrePostOutput
+            logPrePostOutput: logPrePostOutput,
+            pasteType: pasteType,
+            pasteCustomAPIBase: pasteCustomAPIBase,
+            metadataURLOverride: metadataURLOverride,
+            refreshMetadataOnLaunch: refreshMetadataOnLaunch,
+            assetsURLOverride: assetsURLOverride,
+            legacyFMLLibrariesURLOverride: legacyFMLLibrariesURLOverride,
+            fallbackForBlockedModrinthProjects: fallbackForBlockedModrinthProjects,
+            userAgentOverride: userAgentOverride,
+            microsoftClientIDOverride: microsoftClientIDOverride,
+            curseForgeAPIKey: curseForgeAPIKey,
+            modrinthToken: modrinthToken,
+            technicClientID: technicClientID,
+            proxyType: proxyType,
+            proxyAddress: proxyAddress,
+            proxyPort: proxyPort,
+            proxyUsername: proxyUsername,
+            proxyPassword: proxyPassword
         )
     }
 }
@@ -565,13 +677,66 @@ struct PrismSettingsView: View {
     @ObservedObject var offlineIdentityModel: PrismOfflineLaunchIdentityModel
     @ObservedObject var skinModel: PrismSkinManagementModel
     @State private var isDirectoryImporterPresented = false
-    @State private var selectedTab: SettingsTab = .appearance
+    @State private var selectedTab: SettingsTab? = .general
+    @State private var searchText = ""
 
-    private enum SettingsTab: Hashable {
-        case appearance
+    private enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
         case general
+        case appearance
+        case language
+        case minecraft
         case java
         case accounts
+        case services
+        case proxy
+
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .general: "General"
+            case .appearance: "Appearance"
+            case .language: "Language"
+            case .minecraft: "Minecraft"
+            case .java: "Java"
+            case .accounts: "Accounts"
+            case .services: "Services"
+            case .proxy: "Proxy"
+            }
+        }
+        var systemImage: String {
+            switch self {
+            case .general: "gearshape"
+            case .appearance: "paintbrush"
+            case .language: "globe"
+            case .minecraft: "gamecontroller"
+            case .java: "cup.and.saucer"
+            case .accounts: "person.crop.circle"
+            case .services: "network"
+            case .proxy: "point.3.connected.trianglepath.dotted"
+            }
+        }
+        var description: String {
+            switch self {
+            case .general: "Manage instance storage and download behavior."
+            case .appearance: "Choose how Prism and its console are presented."
+            case .language: "Set the language and regional behavior used by Prism."
+            case .minecraft: "Configure the Minecraft console and its history."
+            case .java: "Discover and select Java installations."
+            case .accounts: "Manage Minecraft accounts and authentication."
+            case .services: "Configure metadata, downloads, and service credentials."
+            case .proxy: "Control how Prism's backend connects to the network."
+            }
+        }
+        var usesGlobalDraft: Bool { self != .java && self != .accounts }
+    }
+
+    private var visibleTabs: [SettingsTab] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return SettingsTab.allCases }
+        return SettingsTab.allCases.filter {
+            $0.title.localizedCaseInsensitiveContains(query)
+                || $0.description.localizedCaseInsensitiveContains(query)
+        }
     }
 
     var body: some View {
@@ -599,7 +764,7 @@ struct PrismSettingsView: View {
                     .accessibilityIdentifier("prism.settings.empty")
             }
         }
-        .frame(minWidth: 560, minHeight: 460)
+        .frame(minWidth: 820, minHeight: 560)
         .onAppear {
             if case .empty = model.state {
                 _ = model.beginLoading()
@@ -608,128 +773,91 @@ struct PrismSettingsView: View {
     }
 
     private var settingsTabs: some View {
-        VStack(spacing: 0) {
-            TabView(selection: $selectedTab) {
-                appearanceForm
-                    .tabItem { Label("Appearance", systemImage: "paintbrush") }
-                    .tag(SettingsTab.appearance)
-                generalForm
-                    .tabItem { Label("General", systemImage: "gearshape") }
-                    .tag(SettingsTab.general)
-                PrismJavaSettingsView(model: javaModel)
-                    .tabItem { Label("Java", systemImage: "cup.and.saucer") }
-                    .tag(SettingsTab.java)
-                PrismAccountSettingsView(
-                    model: accountModel,
-                    authenticationModel: authenticationModel,
-                    offlineIdentityModel: offlineIdentityModel,
-                    onManageSkins: { accountIdentifier in
-                        skinModel.setAccountContext(identifier: accountIdentifier)
-                        _ = skinModel.beginLoad()
-                        openWindow(id: "prism.skin-management")
-                    }
-                )
-                    .tabItem { Label("Accounts", systemImage: "person.crop.circle") }
-                    .tag(SettingsTab.accounts)
+        NavigationSplitView {
+            List(visibleTabs, selection: $selectedTab) { tab in
+                Label(tab.title, systemImage: tab.systemImage)
+                    .tag(tab)
+                    .accessibilityIdentifier("prism.settings.sidebar.\(tab.id)")
             }
-
-            if selectedTab != .java && selectedTab != .accounts {
-                Divider()
-                HStack {
-                    if let message = model.validationMessage ?? model.directorySelectionError {
-                        Text(message)
-                            .foregroundStyle(.secondary)
-                            .accessibilityValue(Text(message))
-                    } else if let failure = model.saveFailure {
-                        Text(failure.diagnosticText ?? "Settings could not be saved.")
-                            .foregroundStyle(.secondary)
-                            .accessibilityValue(Text(failure.diagnosticText ?? "Settings could not be saved."))
-                    }
-                    Spacer()
-                    Button("Revert") {
-                        _ = model.cancelDraft()
-                    }
-                    .disabled(!model.hasChanges || model.isSaving)
-                    .accessibilityIdentifier("prism.settings.revert")
-                    Button("Save") {
-                        _ = model.save()
-                    }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!model.isSaveAvailable)
-                    .accessibilityIdentifier("prism.settings.save")
-                    if model.isSaving {
-                        ProgressView()
-                            .controlSize(.small)
-                            .accessibilityLabel("Saving Settings")
+            .listStyle(.sidebar)
+            .searchable(text: $searchText, placement: .sidebar, prompt: "Search")
+            .navigationSplitViewColumnWidth(min: 210, ideal: 220, max: 260)
+        } detail: {
+            VStack(spacing: 0) {
+                Group {
+                    switch selectedTab ?? .general {
+                    case .general: generalForm
+                    case .appearance: appearanceForm
+                    case .language: languageForm
+                    case .minecraft: minecraftForm
+                    case .java: PrismJavaSettingsView(model: javaModel)
+                    case .accounts:
+                        PrismAccountSettingsView(
+                            model: accountModel,
+                            authenticationModel: authenticationModel,
+                            offlineIdentityModel: offlineIdentityModel,
+                            onManageSkins: { accountIdentifier in
+                                skinModel.setAccountContext(identifier: accountIdentifier)
+                                _ = skinModel.beginLoad()
+                                openWindow(id: "prism.skin-management")
+                            }
+                        )
+                    case .services: servicesForm
+                    case .proxy: proxyForm
                     }
                 }
-                .padding()
+                .navigationTitle((selectedTab ?? .general).title)
+
+                if selectedTab?.usesGlobalDraft != false {
+                    Divider()
+                    HStack {
+                        if let message = model.validationMessage ?? model.directorySelectionError {
+                            Text(message)
+                                .foregroundStyle(.secondary)
+                                .accessibilityValue(Text(message))
+                        } else if let failure = model.saveFailure {
+                            Text(failure.diagnosticText ?? "Settings could not be saved.")
+                                .foregroundStyle(.secondary)
+                                .accessibilityValue(Text(failure.diagnosticText ?? "Settings could not be saved."))
+                        }
+                        Spacer()
+                        Button("Revert") {
+                            _ = model.cancelDraft()
+                        }
+                        .disabled(!model.hasChanges || model.isSaving)
+                        .accessibilityIdentifier("prism.settings.revert")
+                        Button("Save") {
+                            _ = model.save()
+                        }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(!model.isSaveAvailable)
+                        .accessibilityIdentifier("prism.settings.save")
+                        if model.isSaving {
+                            ProgressView()
+                                .controlSize(.small)
+                                .accessibilityLabel("Saving Settings")
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(.bar)
+                }
             }
         }
+        .navigationSplitViewStyle(.balanced)
+        .toolbar(removing: .sidebarToggle)
         .accessibilityIdentifier("prism.settings.form")
     }
 
     private var appearanceForm: some View {
         Form {
-            Section("Directories") {
-                HStack {
-                    Text("Instance directory")
-                    Spacer()
-                    Text(model.draft?.instanceDirectoryURL.path ?? "Not selected")
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .foregroundStyle(.secondary)
-                }
-                Button("Choose Instance Directory…") {
-                    isDirectoryImporterPresented = true
-                }
-                .fileImporter(
-                    isPresented: $isDirectoryImporterPresented,
-                    allowedContentTypes: [.folder],
-                    allowsMultipleSelection: false
-                ) { result in
-                    switch result {
-                    case .success(let urls):
-                        if let url = urls.first {
-                            _ = model.applyDirectorySelection(filePanelResult: .success(url))
-                        }
-                    case .failure(let error):
-                        _ = model.applyDirectorySelection(filePanelResult: .failure(error))
-                    }
-                }
-                .help("Choose an existing directory. Cancel leaves the current directory unchanged.")
-                .accessibilityIdentifier("prism.settings.instance-directory")
-            }
-
-            Section("Themes and Language") {
+            Section("Launcher Appearance") {
                 TextField("Icon theme identifier", text: binding(\.iconTheme, defaultValue: ""))
                     .help("The adapter validates discovered icon theme identifiers.")
                     .accessibilityIdentifier("prism.settings.icon-theme")
                 TextField("Application theme identifier", text: binding(\.applicationTheme, defaultValue: ""))
                     .help("Theme changes apply to the native shell after a confirmed save.")
                     .accessibilityIdentifier("prism.settings.application-theme")
-                TextField("Background cat identifier", text: binding(\.backgroundCat, defaultValue: ""))
-                    .accessibilityIdentifier("prism.settings.background-cat")
-                Picker("Cat presentation", selection: binding(\.catFit, defaultValue: "fit")) {
-                    Text("Fit").tag("fit")
-                    Text("Fill").tag("fill")
-                    Text("Stretch (legacy)").tag("strech")
-                }
-                .accessibilityIdentifier("prism.settings.cat-fit")
-                Slider(value: doubleBinding(\.catOpacity, defaultValue: 100), in: 0...100, step: 1) {
-                    Text("Cat opacity")
-                } minimumValueLabel: {
-                    Text("0")
-                } maximumValueLabel: {
-                    Text("100")
-                }
-                .accessibilityValue(Text("\(model.draft?.catOpacity ?? 100) percent"))
-                .accessibilityIdentifier("prism.settings.cat-opacity")
-                TextField("Language identifier", text: binding(\.language, defaultValue: ""))
-                    .accessibilityIdentifier("prism.settings.language")
-                Toggle("Use system locale", isOn: binding(\.useSystemLocale, defaultValue: false))
-                    .help("Use the system locale for native localization.")
-                    .accessibilityIdentifier("prism.settings.system-locale")
             }
 
             Section("Console Appearance") {
@@ -748,7 +876,31 @@ struct PrismSettingsView: View {
 
     private var generalForm: some View {
         Form {
-            Section("Launcher") {
+            Section("Instances") {
+                LabeledContent("Instance directory") {
+                    Text(model.draft?.instanceDirectoryURL.path ?? "Not selected")
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .foregroundStyle(.secondary)
+                }
+                Button("Choose…") { isDirectoryImporterPresented = true }
+                    .fileImporter(
+                        isPresented: $isDirectoryImporterPresented,
+                        allowedContentTypes: [.folder],
+                        allowsMultipleSelection: false
+                    ) { result in
+                        switch result {
+                        case .success(let urls):
+                            if let url = urls.first { _ = model.applyDirectorySelection(filePanelResult: .success(url)) }
+                        case .failure(let error):
+                            _ = model.applyDirectorySelection(filePanelResult: .failure(error))
+                        }
+                    }
+                    .help("Choose an existing directory. Cancel leaves the current directory unchanged.")
+                    .accessibilityIdentifier("prism.settings.instance-directory")
+            }
+
+            Section("Downloads") {
                 TextField("Concurrent tasks", value: intBinding(\.numberOfConcurrentTasks, defaultValue: 10), format: .number)
                     .accessibilityIdentifier("prism.settings.concurrent-tasks")
                 TextField("Concurrent downloads", value: intBinding(\.numberOfConcurrentDownloads, defaultValue: 6), format: .number)
@@ -758,26 +910,130 @@ struct PrismSettingsView: View {
                 TextField("Request timeout (seconds)", value: intBinding(\.requestTimeoutSeconds, defaultValue: 60), format: .number)
                     .help("No undocumented upper bound is imposed; this applies to the next operation.")
                     .accessibilityIdentifier("prism.settings.request-timeout")
-                Toggle("Menu bar instead of toolbar", isOn: binding(\.menuBarInsteadOfToolBar, defaultValue: false))
-                    .help("Applies when the native shell is rebuilt.")
-                Toggle("Show status bar", isOn: binding(\.statusBarVisible, defaultValue: true))
-                Toggle("Lock toolbars", isOn: binding(\.toolbarsLocked, defaultValue: false))
-            }
-
-            Section("Console Behavior") {
-                TextField("Maximum console lines", value: intBinding(\.consoleMaxLines, defaultValue: 100_000), format: .number)
-                    .help("Allowed range: 10,000 to 1,000,000 lines; applies to the next log view or launch.")
-                    .accessibilityIdentifier("prism.settings.console-max-lines")
-                Toggle("Stop when console overflows", isOn: binding(\.consoleOverflowStop, defaultValue: true))
-                Toggle("Show console", isOn: binding(\.showConsole, defaultValue: false))
-                Toggle("Close console automatically", isOn: binding(\.autoCloseConsole, defaultValue: false))
-                Toggle("Show console on error", isOn: binding(\.showConsoleOnError, defaultValue: true))
-                Toggle("Log pre- and post-launch output", isOn: binding(\.logPrePostOutput, defaultValue: true))
-                    .help("Applies to the next Minecraft launch or console flow.")
             }
         }
         .formStyle(.grouped)
         .padding()
+    }
+
+    private var languageForm: some View {
+        Form {
+            Section {
+                Toggle("Use system language and region", isOn: binding(\.useSystemLocale, defaultValue: false))
+                    .accessibilityIdentifier("prism.settings.system-locale")
+                TextField("Language identifier", text: binding(\.language, defaultValue: ""))
+                    .disabled(model.draft?.useSystemLocale == true)
+                    .accessibilityIdentifier("prism.settings.language")
+            } header: {
+                Text("Language and Region")
+            } footer: {
+                Text("Restart Prism after changing the launcher language.")
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+    }
+
+    private var minecraftForm: some View {
+        Form {
+            Section("Console Window") {
+                Toggle("Show console when Minecraft launches", isOn: binding(\.showConsole, defaultValue: false))
+                Toggle("Show console when Minecraft exits with an error", isOn: binding(\.showConsoleOnError, defaultValue: true))
+                Toggle("Hide console when Minecraft exits", isOn: binding(\.autoCloseConsole, defaultValue: false))
+                Toggle("Include pre-launch and post-exit output", isOn: binding(\.logPrePostOutput, defaultValue: true))
+            }
+            Section {
+                TextField("Maximum lines", value: intBinding(\.consoleMaxLines, defaultValue: 100_000), format: .number)
+                    .accessibilityIdentifier("prism.settings.console-max-lines")
+                Toggle("Stop Minecraft if the console limit is exceeded", isOn: binding(\.consoleOverflowStop, defaultValue: true))
+            } header: {
+                Text("Console History")
+            } footer: {
+                Text("These changes apply to the next Minecraft launch.")
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+    }
+
+    private var servicesForm: some View {
+        Form {
+            Section("Log Uploads") {
+                Picker("Paste service", selection: intBinding(\.pasteType, defaultValue: 3)) {
+                    Text("0x0.st").tag(0)
+                    Text("Hastebin").tag(1)
+                    Text("paste.gg").tag(2)
+                    Text("mclo.gs").tag(3)
+                }
+                TextField("Custom API base URL", text: binding(\.pasteCustomAPIBase, defaultValue: ""))
+                    .textContentType(.URL)
+                    .accessibilityIdentifier("prism.settings.services.paste-url")
+            }
+
+            Section {
+                TextField("Metadata server", text: binding(\.metadataURLOverride, defaultValue: ""))
+                    .textContentType(.URL)
+                Toggle("Refresh metadata when Prism launches", isOn: binding(\.refreshMetadataOnLaunch, defaultValue: true))
+                TextField("Assets server", text: binding(\.assetsURLOverride, defaultValue: ""))
+                    .textContentType(.URL)
+                TextField("Legacy FML libraries server", text: binding(\.legacyFMLLibrariesURLOverride, defaultValue: ""))
+                    .textContentType(.URL)
+                Toggle("Use fallback downloads for blocked Modrinth projects", isOn: binding(\.fallbackForBlockedModrinthProjects, defaultValue: true))
+            } header: {
+                Text("Minecraft Services")
+            } footer: {
+                Text("Leave an address empty to use Prism's default service. Remote overrides must use HTTPS.")
+            }
+
+            Section {
+                TextField("Microsoft client ID", text: binding(\.microsoftClientIDOverride, defaultValue: ""))
+                SecureField("CurseForge API key", text: binding(\.curseForgeAPIKey, defaultValue: ""))
+                SecureField("Modrinth token", text: binding(\.modrinthToken, defaultValue: ""))
+                TextField("Technic client ID", text: binding(\.technicClientID, defaultValue: ""))
+                TextField("Custom user agent", text: binding(\.userAgentOverride, defaultValue: ""))
+            } header: {
+                Text("Service Credentials")
+            } footer: {
+                Text("Credentials stay in the local Prism backend and are never included in UI logs. For Prism Launcher compatibility, they are stored in its local configuration file.")
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+        .accessibilityIdentifier("prism.settings.services")
+    }
+
+    private var proxyForm: some View {
+        let proxyEnabled = model.draft?.proxyType == "HTTP" || model.draft?.proxyType == "SOCKS5"
+        return Form {
+            Section("Proxy") {
+                Picker("Configuration", selection: binding(\.proxyType, defaultValue: "None")) {
+                    Text("Use System Settings").tag("Default")
+                    Text("No Proxy").tag("None")
+                    Text("HTTP").tag("HTTP")
+                    Text("SOCKS5").tag("SOCKS5")
+                }
+                .pickerStyle(.radioGroup)
+            }
+
+            Section("Server") {
+                TextField("Address", text: binding(\.proxyAddress, defaultValue: "127.0.0.1"))
+                TextField("Port", value: intBinding(\.proxyPort, defaultValue: 8080), format: .number)
+            }
+            .disabled(!proxyEnabled)
+
+            Section {
+                TextField("Username", text: binding(\.proxyUsername, defaultValue: ""))
+                SecureField("Password", text: binding(\.proxyPassword, defaultValue: ""))
+            } header: {
+                Text("Authentication")
+            } footer: {
+                Text("Proxy settings apply to Prism's backend requests, not Minecraft. For Prism Launcher compatibility, credentials are stored in its local configuration file.")
+            }
+            .disabled(!proxyEnabled)
+        }
+        .formStyle(.grouped)
+        .padding()
+        .accessibilityIdentifier("prism.settings.proxy")
     }
 
     private func binding<Value>(_ keyPath: WritableKeyPath<PrismGlobalSettings, Value>, defaultValue: Value) -> Binding<Value> {
@@ -796,15 +1052,4 @@ struct PrismSettingsView: View {
         binding(keyPath, defaultValue: defaultValue)
     }
 
-    private func doubleBinding(
-        _ keyPath: WritableKeyPath<PrismGlobalSettings, Int>,
-        defaultValue: Int
-    ) -> Binding<Double> {
-        Binding(
-            get: { Double(model.draft?[keyPath: keyPath] ?? defaultValue) },
-            set: { newValue in
-                model.updateDraft { $0[keyPath: keyPath] = Int(newValue.rounded()) }
-            }
-        )
-    }
 }

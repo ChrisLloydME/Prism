@@ -8,7 +8,10 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonParseError>
+#include <QNetworkProxy>
+#include <QNetworkProxyFactory>
 #include <QString>
+#include <QUrl>
 #include <QVariant>
 
 #include <algorithm>
@@ -49,6 +52,23 @@ struct DomainSettings final {
     bool autoCloseConsole = false;
     bool showConsoleOnError = true;
     bool logPrePostOutput = true;
+    int pasteType = 3;
+    QString pasteCustomAPIBase;
+    QString metadataURLOverride;
+    bool refreshMetadataOnLaunch = true;
+    QString assetsURLOverride;
+    QString legacyFMLLibrariesURLOverride;
+    bool fallbackForBlockedModrinthProjects = true;
+    QString userAgentOverride;
+    QString microsoftClientIDOverride;
+    QString curseForgeAPIKey;
+    QString modrinthToken;
+    QString technicClientID;
+    QString proxyType = QStringLiteral("None");
+    QString proxyAddress = QStringLiteral("127.0.0.1");
+    int proxyPort = 8080;
+    QString proxyUsername;
+    QString proxyPassword;
 
     bool launchMaximized = false;
     int windowWidth = 854;
@@ -198,6 +218,47 @@ void removeValues(INIFile& settings, std::initializer_list<const char*> keys)
     }
 }
 
+void applyProxySettings(const DomainSettings& settings)
+{
+    if (settings.proxyType == QStringLiteral("Default")) {
+        QNetworkProxyFactory::setUseSystemConfiguration(true);
+        return;
+    }
+
+    QNetworkProxyFactory::setUseSystemConfiguration(false);
+    if (settings.proxyType == QStringLiteral("SOCKS5")) {
+        QNetworkProxy::setApplicationProxy(QNetworkProxy(
+            QNetworkProxy::Socks5Proxy, settings.proxyAddress, settings.proxyPort,
+            settings.proxyUsername, settings.proxyPassword));
+    } else if (settings.proxyType == QStringLiteral("HTTP")) {
+        QNetworkProxy::setApplicationProxy(QNetworkProxy(
+            QNetworkProxy::HttpProxy, settings.proxyAddress, settings.proxyPort,
+            settings.proxyUsername, settings.proxyPassword));
+    } else {
+        QNetworkProxy::setApplicationProxy(QNetworkProxy(QNetworkProxy::NoProxy));
+    }
+}
+
+QString normalizedServiceURL(QString value, bool requiresTrailingSlash)
+{
+    if (value.trimmed().isEmpty()) {
+        return {};
+    }
+    QUrl url(value.trimmed());
+    if (!url.isValid() || (url.scheme() != QStringLiteral("http") && url.scheme() != QStringLiteral("https"))) {
+        return value;
+    }
+    const bool localhost = url.host() == QStringLiteral("localhost") || url.host() == QStringLiteral("127.0.0.1")
+        || url.host() == QStringLiteral("::1");
+    if (url.scheme() == QStringLiteral("http") && !localhost) {
+        url.setScheme(QStringLiteral("https"));
+    }
+    if (requiresTrailingSlash && !url.path().endsWith(QLatin1Char('/'))) {
+        url.setPath(url.path() + QLatin1Char('/'));
+    }
+    return url.toString();
+}
+
 std::optional<INIFile> loadINI(const std::filesystem::path& path)
 {
     if (isSymlink(path)) {
@@ -282,6 +343,23 @@ std::optional<DomainSettings> loadDomain(const INIFile& settings)
     result.postExitCommand = readString(settings, { "PostExitCommand", "PostExitCmd" }, result.postExitCommand);
     result.customGLFWPath = readString(settings, { "CustomGLFWPath" }, result.customGLFWPath);
     result.customOpenALPath = readString(settings, { "CustomOpenALPath" }, result.customOpenALPath);
+    result.pasteCustomAPIBase = readString(settings, { "PastebinCustomAPIBase" }, result.pasteCustomAPIBase);
+    result.metadataURLOverride = readString(settings, { "MetaURLOverride" }, result.metadataURLOverride);
+    result.assetsURLOverride = readString(settings, { "ResourceURLOverride", "ResourceURL" }, result.assetsURLOverride);
+    result.legacyFMLLibrariesURLOverride = readString(settings, { "LegacyFMLLibsURLOverride" }, result.legacyFMLLibrariesURLOverride);
+    result.userAgentOverride = readString(settings, { "UserAgentOverride" }, result.userAgentOverride);
+    result.microsoftClientIDOverride = readString(settings, { "MSAClientIDOverride" }, result.microsoftClientIDOverride);
+    result.curseForgeAPIKey = readString(settings, { "FlameKeyOverride" }, result.curseForgeAPIKey);
+    result.modrinthToken = readString(settings, { "ModrinthToken" }, result.modrinthToken);
+    result.technicClientID = readString(settings, { "TechnicClientID" }, result.technicClientID);
+    result.proxyType = readString(settings, { "ProxyType" }, result.proxyType);
+    result.proxyAddress = readString(settings, { "ProxyAddr", "ProxyHostName" }, result.proxyAddress);
+    result.proxyUsername = readString(settings, { "ProxyUser", "ProxyUsername" }, result.proxyUsername);
+    result.proxyPassword = readString(settings, { "ProxyPass", "ProxyPassword" }, result.proxyPassword);
+    result.pasteCustomAPIBase = normalizedServiceURL(result.pasteCustomAPIBase, false);
+    result.metadataURLOverride = normalizedServiceURL(result.metadataURLOverride, true);
+    result.assetsURLOverride = normalizedServiceURL(result.assetsURLOverride, true);
+    result.legacyFMLLibrariesURLOverride = normalizedServiceURL(result.legacyFMLLibrariesURLOverride, true);
 
     const auto catOpacity = readInt(settings, { "CatOpacity" }, result.catOpacity);
     const auto numberOfConcurrentTasks = readInt(settings, { "NumberOfConcurrentTasks" }, result.numberOfConcurrentTasks);
@@ -295,6 +373,8 @@ std::optional<DomainSettings> loadDomain(const INIFile& settings)
     const auto minMemory = readInt(settings, { "MinMemAlloc", "MinMemoryAlloc" }, result.minMemoryMiB);
     const auto maxMemory = readInt(settings, { "MaxMemAlloc", "MaxMemoryAlloc" }, result.maxMemoryMiB);
     const auto permGen = readInt(settings, { "PermGen" }, result.permGenMiB);
+    const auto pasteType = readInt(settings, { "PastebinType" }, result.pasteType);
+    const auto proxyPort = readInt(settings, { "ProxyPort" }, result.proxyPort);
 
     const auto useSystemLocale = readBool(settings, { "UseSystemLocale" }, result.useSystemLocale);
     const auto menuBarInsteadOfToolBar = readBool(settings, { "MenuBarInsteadOfToolBar" }, result.menuBarInsteadOfToolBar);
@@ -315,13 +395,17 @@ std::optional<DomainSettings> loadDomain(const INIFile& settings)
     const auto onlineFixes = readBool(settings, { "OnlineFixes" }, result.onlineFixes);
     const auto useNativeGLFW = readBool(settings, { "UseNativeGLFW" }, result.useNativeGLFW);
     const auto useNativeOpenAL = readBool(settings, { "UseNativeOpenAL" }, result.useNativeOpenAL);
+    const auto refreshMetadataOnLaunch = readBool(settings, { "MetaRefreshOnLaunch" }, result.refreshMetadataOnLaunch);
+    const auto fallbackForBlockedModrinthProjects = readBool(
+        settings, { "FallbackMRBlockedMods" }, result.fallbackForBlockedModrinthProjects);
 
     if (!catOpacity || !numberOfConcurrentTasks || !numberOfConcurrentDownloads || !numberOfManualRetries
         || !requestTimeoutSeconds || !consoleFontSize || !consoleMaxLines || !windowWidth || !windowHeight || !minMemory
         || !maxMemory || !permGen || !useSystemLocale || !menuBarInsteadOfToolBar || !statusBarVisible || !toolbarsLocked
         || !consoleOverflowStop || !showConsole || !autoCloseConsole || !showConsoleOnError || !logPrePostOutput
         || !launchMaximized || !closeAfterLaunch || !quitAfterGameStop || !showGameTime || !recordGameTime
-        || !ignoreJavaCompatibility || !lowMemoryWarning || !onlineFixes || !useNativeGLFW || !useNativeOpenAL) {
+        || !ignoreJavaCompatibility || !lowMemoryWarning || !onlineFixes || !useNativeGLFW || !useNativeOpenAL
+        || !pasteType || !proxyPort || !refreshMetadataOnLaunch || !fallbackForBlockedModrinthProjects) {
         return std::nullopt;
     }
 
@@ -356,6 +440,10 @@ std::optional<DomainSettings> loadDomain(const INIFile& settings)
     result.onlineFixes = *onlineFixes;
     result.useNativeGLFW = *useNativeGLFW;
     result.useNativeOpenAL = *useNativeOpenAL;
+    result.pasteType = *pasteType;
+    result.proxyPort = *proxyPort;
+    result.refreshMetadataOnLaunch = *refreshMetadataOnLaunch;
+    result.fallbackForBlockedModrinthProjects = *fallbackForBlockedModrinthProjects;
 
     if (result.catFit != QStringLiteral("fit") && result.catFit != QStringLiteral("fill")
         && result.catFit != QStringLiteral("strech")) {
@@ -366,8 +454,24 @@ std::optional<DomainSettings> loadDomain(const INIFile& settings)
         || result.consoleFontSize < 5 || result.consoleFontSize > 16 || result.consoleMaxLines < 10000
         || result.consoleMaxLines > 1000000 || result.windowWidth < 1 || result.windowHeight < 1
         || result.minMemoryMiB < 8 || result.maxMemoryMiB < 8 || result.minMemoryMiB > result.maxMemoryMiB
-        || result.permGenMiB < 4) {
+        || result.permGenMiB < 4 || result.pasteType < 0 || result.pasteType > 3
+        || result.proxyPort < 1 || result.proxyPort > 65535
+        || (result.proxyType != QStringLiteral("Default") && result.proxyType != QStringLiteral("None")
+            && result.proxyType != QStringLiteral("SOCKS5") && result.proxyType != QStringLiteral("HTTP"))) {
         return std::nullopt;
+    }
+    for (const QString& url : { result.pasteCustomAPIBase, result.metadataURLOverride, result.assetsURLOverride,
+                                result.legacyFMLLibrariesURLOverride }) {
+        if (!url.isEmpty()) {
+            const QUrl parsed(url);
+            if (!parsed.isValid() || (parsed.scheme() != QStringLiteral("https")
+                                      && !(parsed.scheme() == QStringLiteral("http")
+                                           && (parsed.host() == QStringLiteral("localhost")
+                                               || parsed.host() == QStringLiteral("127.0.0.1")
+                                               || parsed.host() == QStringLiteral("::1"))))) {
+                return std::nullopt;
+            }
+        }
     }
     return result;
 }
@@ -440,6 +544,23 @@ FrontendGlobalSettingsSnapshot globalSnapshot(
     snapshot.autoCloseConsole = domain.autoCloseConsole;
     snapshot.showConsoleOnError = domain.showConsoleOnError;
     snapshot.logPrePostOutput = domain.logPrePostOutput;
+    snapshot.pasteType = domain.pasteType;
+    snapshot.pasteCustomAPIBase = domain.pasteCustomAPIBase.toStdString();
+    snapshot.metadataURLOverride = domain.metadataURLOverride.toStdString();
+    snapshot.refreshMetadataOnLaunch = domain.refreshMetadataOnLaunch;
+    snapshot.assetsURLOverride = domain.assetsURLOverride.toStdString();
+    snapshot.legacyFMLLibrariesURLOverride = domain.legacyFMLLibrariesURLOverride.toStdString();
+    snapshot.fallbackForBlockedModrinthProjects = domain.fallbackForBlockedModrinthProjects;
+    snapshot.userAgentOverride = domain.userAgentOverride.toStdString();
+    snapshot.microsoftClientIDOverride = domain.microsoftClientIDOverride.toStdString();
+    snapshot.curseForgeAPIKey = domain.curseForgeAPIKey.toStdString();
+    snapshot.modrinthToken = domain.modrinthToken.toStdString();
+    snapshot.technicClientID = domain.technicClientID.toStdString();
+    snapshot.proxyType = domain.proxyType.toStdString();
+    snapshot.proxyAddress = domain.proxyAddress.toStdString();
+    snapshot.proxyPort = domain.proxyPort;
+    snapshot.proxyUsername = domain.proxyUsername.toStdString();
+    snapshot.proxyPassword = domain.proxyPassword.toStdString();
     return snapshot;
 }
 
@@ -784,6 +905,23 @@ void writeGlobalSnapshot(INIFile& settings, const FrontendGlobalSettingsSnapshot
     setValue(settings, "AutoCloseConsole", { "AutoCloseConsole" }, snapshot.autoCloseConsole);
     setValue(settings, "ShowConsoleOnError", { "ShowConsoleOnError" }, snapshot.showConsoleOnError);
     setValue(settings, "LogPrePostOutput", { "LogPrePostOutput" }, snapshot.logPrePostOutput);
+    setValue(settings, "PastebinType", { "PastebinType" }, snapshot.pasteType);
+    setValue(settings, "PastebinCustomAPIBase", { "PastebinCustomAPIBase" }, QString::fromStdString(snapshot.pasteCustomAPIBase));
+    setValue(settings, "MetaURLOverride", { "MetaURLOverride" }, QString::fromStdString(snapshot.metadataURLOverride));
+    setValue(settings, "MetaRefreshOnLaunch", { "MetaRefreshOnLaunch" }, snapshot.refreshMetadataOnLaunch);
+    setValue(settings, "ResourceURLOverride", { "ResourceURLOverride", "ResourceURL" }, QString::fromStdString(snapshot.assetsURLOverride));
+    setValue(settings, "LegacyFMLLibsURLOverride", { "LegacyFMLLibsURLOverride" }, QString::fromStdString(snapshot.legacyFMLLibrariesURLOverride));
+    setValue(settings, "FallbackMRBlockedMods", { "FallbackMRBlockedMods" }, snapshot.fallbackForBlockedModrinthProjects);
+    setValue(settings, "UserAgentOverride", { "UserAgentOverride" }, QString::fromStdString(snapshot.userAgentOverride));
+    setValue(settings, "MSAClientIDOverride", { "MSAClientIDOverride" }, QString::fromStdString(snapshot.microsoftClientIDOverride));
+    setValue(settings, "FlameKeyOverride", { "FlameKeyOverride" }, QString::fromStdString(snapshot.curseForgeAPIKey));
+    setValue(settings, "ModrinthToken", { "ModrinthToken" }, QString::fromStdString(snapshot.modrinthToken));
+    setValue(settings, "TechnicClientID", { "TechnicClientID" }, QString::fromStdString(snapshot.technicClientID));
+    setValue(settings, "ProxyType", { "ProxyType" }, QString::fromStdString(snapshot.proxyType));
+    setValue(settings, "ProxyAddr", { "ProxyAddr", "ProxyHostName" }, QString::fromStdString(snapshot.proxyAddress));
+    setValue(settings, "ProxyPort", { "ProxyPort" }, snapshot.proxyPort);
+    setValue(settings, "ProxyUser", { "ProxyUser", "ProxyUsername" }, QString::fromStdString(snapshot.proxyUsername));
+    setValue(settings, "ProxyPass", { "ProxyPass", "ProxyPassword" }, QString::fromStdString(snapshot.proxyPassword));
 }
 
 }  // namespace
@@ -815,7 +953,11 @@ std::optional<FrontendGlobalSettingsSnapshot> ProductionSettingsRuntime::globalS
         return std::nullopt;
     }
     const auto domain = loadDomainFromRoot(m_dataRoot, m_instancesRoot, m_globalSettingsPath);
-    return domain ? std::optional<FrontendGlobalSettingsSnapshot>(globalSnapshot(m_instancesRoot, *domain)) : std::nullopt;
+    if (!domain) {
+        return std::nullopt;
+    }
+    applyProxySettings(*domain);
+    return globalSnapshot(m_instancesRoot, *domain);
 }
 
 FrontendGlobalSettingsUpdateResult ProductionSettingsRuntime::updateGlobalSettings(
@@ -842,6 +984,7 @@ FrontendGlobalSettingsUpdateResult ProductionSettingsRuntime::updateGlobalSettin
         static_cast<void>(saveINI(m_globalSettingsPath, original));
         return {};
     }
+    applyProxySettings(*domain);
     return { FrontendGlobalSettingsUpdateOutcome::Succeeded, globalSnapshot(m_instancesRoot, *domain) };
 }
 

@@ -376,6 +376,20 @@ bool isKnownGlobalSettingsCatFit(const std::string& catFit) noexcept
     return catFit == "fit" || catFit == "fill" || catFit == "strech";
 }
 
+bool isKnownProxyType(const std::string& proxyType) noexcept
+{
+    return proxyType == "Default" || proxyType == "None" || proxyType == "SOCKS5" || proxyType == "HTTP";
+}
+
+bool isSecureServiceURL(const std::string& value) noexcept
+{
+    if (value.empty() || value.rfind("https://", 0) == 0) {
+        return true;
+    }
+    return value.rfind("http://localhost", 0) == 0 || value.rfind("http://127.0.0.1", 0) == 0
+        || value.rfind("http://[::1]", 0) == 0;
+}
+
 void validateGlobalSettingsSnapshot(const FrontendGlobalSettingsSnapshot& settings)
 {
     if (settings.instanceDirectory.empty() || !settings.instanceDirectory.is_absolute()
@@ -383,7 +397,14 @@ void validateGlobalSettingsSnapshot(const FrontendGlobalSettingsSnapshot& settin
         || settings.numberOfConcurrentTasks < 1 || settings.numberOfConcurrentDownloads < 1
         || settings.numberOfManualRetries < 0 || settings.requestTimeoutSeconds < 0
         || settings.consoleFontSize < 5 || settings.consoleFontSize > 16
-        || settings.consoleMaxLines < 10000 || settings.consoleMaxLines > 1000000) {
+        || settings.consoleMaxLines < 10000 || settings.consoleMaxLines > 1000000
+        || settings.pasteType < 0 || settings.pasteType > 3 || !isKnownProxyType(settings.proxyType)
+        || settings.proxyPort < 1 || settings.proxyPort > 65535
+        || ((settings.proxyType == "SOCKS5" || settings.proxyType == "HTTP") && settings.proxyAddress.empty())
+        || !isSecureServiceURL(settings.pasteCustomAPIBase)
+        || !isSecureServiceURL(settings.metadataURLOverride)
+        || !isSecureServiceURL(settings.assetsURLOverride)
+        || !isSecureServiceURL(settings.legacyFMLLibrariesURLOverride)) {
         throw std::invalid_argument("Global settings require valid directory, enum, and numeric values");
     }
 }

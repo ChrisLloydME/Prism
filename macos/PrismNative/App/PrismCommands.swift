@@ -3,7 +3,6 @@ import SwiftUI
 @MainActor
 struct PrismCommands: Commands {
     @ObservedObject private var model: PrismCommandModel
-    @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
     private let onPrepareShortcut: ((String) -> Void)?
 
@@ -37,9 +36,10 @@ struct PrismCommands: Commands {
         }
 
         CommandGroup(replacing: .appSettings) {
-            PrismCommandButton(model: model, command: .settings, usesKeyboardShortcut: true) {
-                openSettings()
+            Button("Settings…") {
+                openWindow(id: "prism.settings")
             }
+            .keyboardShortcut(",", modifiers: .command)
         }
 
         CommandGroup(replacing: .appInfo) {
@@ -49,9 +49,6 @@ struct PrismCommands: Commands {
         }
 
         CommandGroup(after: .appInfo) {
-            PrismCommandButton(model: model, command: .news, usesKeyboardShortcut: true) {
-                openWindow(id: "prism.news")
-            }
             PrismCommandButton(model: model, command: .checkForUpdates, usesKeyboardShortcut: true) {
                 openWindow(id: "prism.updates")
             }

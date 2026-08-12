@@ -238,7 +238,6 @@ final class PrismUtilitySurfacesTests: XCTestCase {
         )
         for requiredToken in [
             "openWindow(id: \"prism.about\")",
-            "openWindow(id: \"prism.news\")",
             "openWindow(id: \"prism.updates\")",
             "openWindow(id: \"prism.create-shortcut\")",
             "CommandGroup(replacing: .appInfo)"
@@ -253,7 +252,6 @@ final class PrismUtilitySurfacesTests: XCTestCase {
         )
         for requiredToken in [
             "Window(\"About Prism\", id: \"prism.about\")",
-            "Window(\"News\", id: \"prism.news\")",
             "Window(\"Check for Updates\", id: \"prism.updates\")",
             "Window(\"Create Shortcut\", id: \"prism.create-shortcut\")",
             "PrismShortcutCreationModel"
@@ -261,7 +259,6 @@ final class PrismUtilitySurfacesTests: XCTestCase {
             XCTAssertTrue(appSource.contains(requiredToken), "Missing utility window registration: \(requiredToken)")
         }
         for requiredToken in [
-            "PrismNewsModel(bridge: runtime.bridge)",
             "PrismUpdateModel(bridge: runtime.bridge)",
             "bridge: runtime.bridge"
         ] {
@@ -272,8 +269,13 @@ final class PrismUtilitySurfacesTests: XCTestCase {
             contentsOf: root.appendingPathComponent("PrismNative/App/PrismCommandModel.swift"),
             encoding: .utf8
         )
-        for requiredToken in ["case news", "case checkForUpdates", "case createShortcut", "requiresSelection: true"] {
+        for requiredToken in ["case checkForUpdates", "case createShortcut", "requiresSelection: true"] {
             XCTAssertTrue(commandModelSource.contains(requiredToken), "Missing utility command contract: \(requiredToken)")
         }
+        XCTAssertFalse(commandSource.contains("prism.news"))
+        XCTAssertTrue(commandSource.contains("CommandGroup(replacing: .appSettings)"))
+        XCTAssertTrue(commandSource.contains("openWindow(id: \"prism.settings\")"))
+        XCTAssertFalse(appSource.contains("Window(\"News\""))
+        XCTAssertFalse(commandModelSource.contains("case news"))
     }
 }

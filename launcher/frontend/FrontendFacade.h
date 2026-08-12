@@ -359,10 +359,11 @@ struct FrontendInstanceSettingsUpdateResult final {
     std::optional<FrontendInstanceSettingsSnapshot> settings;
 };
 
-/// Confirmed, non-secret global settings for the native macOS Settings scene.
+/// Confirmed global settings for the native macOS Settings scene.
 /// Directory access is represented by one normalized absolute path owned by an
 /// injected adapter; bookmark bytes, account state, environment values,
-/// commands, and provider credentials are deliberately absent.
+/// commands are deliberately absent. Credential values remain confined to
+/// the local typed bridge and are never emitted through logs or task events.
 struct FrontendGlobalSettingsSnapshot final {
     std::filesystem::path instanceDirectory;
     std::string iconTheme;
@@ -387,6 +388,23 @@ struct FrontendGlobalSettingsSnapshot final {
     bool autoCloseConsole = false;
     bool showConsoleOnError = true;
     bool logPrePostOutput = true;
+    int pasteType = 3;
+    std::string pasteCustomAPIBase;
+    std::string metadataURLOverride;
+    bool refreshMetadataOnLaunch = true;
+    std::string assetsURLOverride;
+    std::string legacyFMLLibrariesURLOverride;
+    bool fallbackForBlockedModrinthProjects = true;
+    std::string userAgentOverride;
+    std::string microsoftClientIDOverride;
+    std::string curseForgeAPIKey;
+    std::string modrinthToken;
+    std::string technicClientID;
+    std::string proxyType = "None";
+    std::string proxyAddress = "127.0.0.1";
+    int proxyPort = 8080;
+    std::string proxyUsername;
+    std::string proxyPassword;
 };
 
 enum class FrontendGlobalSettingsUpdateOutcome : std::uint8_t { Succeeded, Rejected };

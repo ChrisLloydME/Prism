@@ -8,10 +8,8 @@ enum PrismCommandID: String, CaseIterable, Hashable, Sendable {
     case editSelected
     case deleteSelected
     case undoDelete
-    case settings
     case closeWindow
     case about
-    case news
     case checkForUpdates
     case createShortcut
 }
@@ -183,16 +181,6 @@ struct PrismCommandDescriptor: Identifiable, Equatable, Sendable {
             requiresSelection: false
         ),
         Self(
-            id: .settings,
-            menu: .app,
-            titleKey: "Settings…",
-            accessibilityLabelKey: "Settings",
-            helpKey: "Open Prism settings.",
-            systemImage: "gearshape",
-            shortcut: .command(","),
-            requiresSelection: false
-        ),
-        Self(
             id: .closeWindow,
             menu: .window,
             titleKey: "Close Window",
@@ -209,16 +197,6 @@ struct PrismCommandDescriptor: Identifiable, Equatable, Sendable {
             accessibilityLabelKey: "About Prism",
             helpKey: "Show information about Prism.",
             systemImage: "info.circle",
-            shortcut: nil,
-            requiresSelection: false
-        ),
-        Self(
-            id: .news,
-            menu: .app,
-            titleKey: "News…",
-            accessibilityLabelKey: "News",
-            helpKey: "Show Prism news.",
-            systemImage: "newspaper",
             shortcut: nil,
             requiresSelection: false
         ),
@@ -305,7 +283,7 @@ final class PrismCommandModel: ObservableObject {
 
     func isEnabled(_ command: PrismCommandID) -> Bool {
         switch command {
-        case .newInstance, .importInstance, .settings, .closeWindow, .about, .news, .checkForUpdates:
+        case .newInstance, .importInstance, .closeWindow, .about, .checkForUpdates:
             return true
         case .launchSelected, .editSelected, .deleteSelected, .createShortcut:
             return selectedInstanceID != nil

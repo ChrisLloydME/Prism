@@ -31,10 +31,6 @@ final class PrismCommandTests: XCTestCase {
             .command("n")
         )
         XCTAssertEqual(
-            PrismCommandDescriptor.descriptor(for: .settings).shortcut,
-            .command(",")
-        )
-        XCTAssertEqual(
             PrismCommandDescriptor.descriptor(for: .closeWindow).shortcut,
             .command("w")
         )
@@ -49,7 +45,6 @@ final class PrismCommandTests: XCTestCase {
         let model = PrismCommandModel()
 
         XCTAssertTrue(model.isEnabled(.newInstance))
-        XCTAssertTrue(model.isEnabled(.settings))
         XCTAssertFalse(model.isEnabled(.launchSelected))
         XCTAssertFalse(model.isEnabled(.deleteSelected))
         XCTAssertFalse(model.isEnabled(.stopSelected))
@@ -88,8 +83,6 @@ final class PrismCommandTests: XCTestCase {
         XCTAssertEqual(model.lastInvokedCommand, .launchSelected)
         XCTAssertEqual(invoked, [.launchSelected])
 
-        XCTAssertTrue(model.invoke(.settings))
-        XCTAssertEqual(invoked, [.launchSelected, .settings])
     }
 
     func testCommandModelRoutesCreationAndImportToNativeAcquisitionBoundary() {

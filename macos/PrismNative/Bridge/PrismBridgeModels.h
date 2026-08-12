@@ -1247,7 +1247,8 @@ typedef NS_ENUM(NSInteger, PRInstanceSettingsUpdateOutcome) {
 
 @end
 
-/// Immutable, non-secret global settings for the native Settings scene.
+/// Immutable global settings for the native Settings scene. Service and proxy
+/// credentials remain local to this typed request and must never be logged.
 /// The directory URL is a scoped system-panel result; bookmark bytes and
 /// their persistence remain inside the adapter and never enter this model.
 @interface PRGlobalSettings : NSObject
@@ -1275,7 +1276,47 @@ typedef NS_ENUM(NSInteger, PRInstanceSettingsUpdateOutcome) {
                                           showConsole:(BOOL)showConsole
                                        autoCloseConsole:(BOOL)autoCloseConsole
                                      showConsoleOnError:(BOOL)showConsoleOnError
-                                      logPrePostOutput:(BOOL)logPrePostOutput NS_DESIGNATED_INITIALIZER;
+                                      logPrePostOutput:(BOOL)logPrePostOutput;
+- (nullable instancetype)initWithInstanceDirectoryURL:(NSURL *)instanceDirectoryURL
+                                             iconTheme:(NSString *)iconTheme
+                                     applicationTheme:(NSString *)applicationTheme
+                                       backgroundCat:(NSString *)backgroundCat
+                                         catOpacity:(NSInteger)catOpacity
+                                             catFit:(NSString *)catFit
+                                           language:(NSString *)language
+                                   useSystemLocale:(BOOL)useSystemLocale
+                            menuBarInsteadOfToolBar:(BOOL)menuBarInsteadOfToolBar
+                                  statusBarVisible:(BOOL)statusBarVisible
+                                    toolbarsLocked:(BOOL)toolbarsLocked
+                         numberOfConcurrentTasks:(NSInteger)numberOfConcurrentTasks
+                     numberOfConcurrentDownloads:(NSInteger)numberOfConcurrentDownloads
+                           numberOfManualRetries:(NSInteger)numberOfManualRetries
+                               requestTimeoutSeconds:(NSInteger)requestTimeoutSeconds
+                                        consoleFont:(NSString *)consoleFont
+                                    consoleFontSize:(NSInteger)consoleFontSize
+                                     consoleMaxLines:(NSInteger)consoleMaxLines
+                                  consoleOverflowStop:(BOOL)consoleOverflowStop
+                                          showConsole:(BOOL)showConsole
+                                       autoCloseConsole:(BOOL)autoCloseConsole
+                                     showConsoleOnError:(BOOL)showConsoleOnError
+                                      logPrePostOutput:(BOOL)logPrePostOutput
+                                               pasteType:(NSInteger)pasteType
+                                      pasteCustomAPIBase:(NSString *)pasteCustomAPIBase
+                                     metadataURLOverride:(NSString *)metadataURLOverride
+                                refreshMetadataOnLaunch:(BOOL)refreshMetadataOnLaunch
+                                       assetsURLOverride:(NSString *)assetsURLOverride
+                          legacyFMLLibrariesURLOverride:(NSString *)legacyFMLLibrariesURLOverride
+                     fallbackForBlockedModrinthProjects:(BOOL)fallbackForBlockedModrinthProjects
+                                        userAgentOverride:(NSString *)userAgentOverride
+                                 microsoftClientIDOverride:(NSString *)microsoftClientIDOverride
+                                         curseForgeAPIKey:(NSString *)curseForgeAPIKey
+                                            modrinthToken:(NSString *)modrinthToken
+                                           technicClientID:(NSString *)technicClientID
+                                                proxyType:(NSString *)proxyType
+                                             proxyAddress:(NSString *)proxyAddress
+                                                proxyPort:(NSInteger)proxyPort
+                                            proxyUsername:(NSString *)proxyUsername
+                                            proxyPassword:(NSString *)proxyPassword NS_DESIGNATED_INITIALIZER;
 
 @property(nonatomic, copy, readonly) NSURL *instanceDirectoryURL;
 @property(nonatomic, copy, readonly) NSString *iconTheme;
@@ -1300,6 +1341,23 @@ typedef NS_ENUM(NSInteger, PRInstanceSettingsUpdateOutcome) {
 @property(nonatomic, assign, readonly) BOOL autoCloseConsole;
 @property(nonatomic, assign, readonly) BOOL showConsoleOnError;
 @property(nonatomic, assign, readonly) BOOL logPrePostOutput;
+@property(nonatomic, assign, readonly) NSInteger pasteType;
+@property(nonatomic, copy, readonly) NSString *pasteCustomAPIBase;
+@property(nonatomic, copy, readonly) NSString *metadataURLOverride;
+@property(nonatomic, assign, readonly) BOOL refreshMetadataOnLaunch;
+@property(nonatomic, copy, readonly) NSString *assetsURLOverride;
+@property(nonatomic, copy, readonly) NSString *legacyFMLLibrariesURLOverride;
+@property(nonatomic, assign, readonly) BOOL fallbackForBlockedModrinthProjects;
+@property(nonatomic, copy, readonly) NSString *userAgentOverride;
+@property(nonatomic, copy, readonly) NSString *microsoftClientIDOverride;
+@property(nonatomic, copy, readonly) NSString *curseForgeAPIKey;
+@property(nonatomic, copy, readonly) NSString *modrinthToken;
+@property(nonatomic, copy, readonly) NSString *technicClientID;
+@property(nonatomic, copy, readonly) NSString *proxyType;
+@property(nonatomic, copy, readonly) NSString *proxyAddress;
+@property(nonatomic, assign, readonly) NSInteger proxyPort;
+@property(nonatomic, copy, readonly) NSString *proxyUsername;
+@property(nonatomic, copy, readonly) NSString *proxyPassword;
 
 @end
 

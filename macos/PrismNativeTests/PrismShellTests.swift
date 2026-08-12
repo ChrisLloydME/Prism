@@ -2441,7 +2441,10 @@ final class PrismShellTests: XCTestCase {
         let javaSource = try javaSource()
         let appSource = try appSource()
         for requiredToken in [
-            "Settings {",
+            "NavigationSplitView",
+            ".listStyle(.sidebar)",
+            ".searchable(text: $searchText, placement: .sidebar",
+            ".toolbar(removing: .sidebarToggle)",
             "Form {",
             "Section(\"",
             "Picker(",
@@ -2457,10 +2460,20 @@ final class PrismShellTests: XCTestCase {
         ] {
             XCTAssertTrue(settingsSource.contains(requiredToken), "Missing Settings contract: \(requiredToken)")
         }
-        XCTAssertTrue(appSource.contains("Settings {"))
+        XCTAssertTrue(appSource.contains("Window(\"Settings\", id: \"prism.settings\")"))
+        XCTAssertTrue(appSource.contains(".windowStyle(.hiddenTitleBar)"))
+        XCTAssertTrue(appSource.contains(".windowToolbarStyle(.unified(showsTitle: false))"))
         XCTAssertTrue(appSource.contains("PrismSettingsView("))
         XCTAssertTrue(appSource.contains("accountModel: accountModel"))
         XCTAssertTrue(appSource.contains("authenticationModel: authenticationModel"))
+        XCTAssertTrue(settingsSource.contains("case services"))
+        XCTAssertTrue(settingsSource.contains("case proxy"))
+        XCTAssertTrue(settingsSource.contains("prism.settings.services"))
+        XCTAssertTrue(settingsSource.contains("prism.settings.proxy"))
+        XCTAssertFalse(settingsSource.contains("RoundedRectangle"))
+        XCTAssertFalse(settingsSource.contains("settingsHeader"))
+        XCTAssertFalse(settingsSource.contains("Background cat identifier"))
+        XCTAssertFalse(settingsSource.contains("Cat presentation"))
         for forbiddenToken in [
             "QWidget", "QDialog", "Qt", "Unmanaged", "UnsafeMutable", "UnsafeRaw", "Canvas(",
             "draw(", "Path(", "CGContext", "NSBezierPath", "[String: Any]", "Keychain", "Process("

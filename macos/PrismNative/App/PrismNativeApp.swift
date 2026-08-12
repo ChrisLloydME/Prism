@@ -32,7 +32,6 @@ struct PrismNativeApp: App {
     @StateObject private var accountModel: PrismAccountModel
     @StateObject private var authenticationModel: PrismAccountAuthenticationModel
     @StateObject private var offlineIdentityModel: PrismOfflineLaunchIdentityModel
-    @StateObject private var newsModel: PrismNewsModel
     @StateObject private var updateModel: PrismUpdateModel
     @StateObject private var skinModel: PrismSkinManagementModel
     @StateObject private var shortcutModel: PrismShortcutCreationModel
@@ -65,7 +64,6 @@ struct PrismNativeApp: App {
         _offlineIdentityModel = StateObject(
             wrappedValue: PrismOfflineLaunchIdentityModel(bridge: runtime.bridge)
         )
-        _newsModel = StateObject(wrappedValue: PrismNewsModel(bridge: runtime.bridge))
         _updateModel = StateObject(wrappedValue: PrismUpdateModel(bridge: runtime.bridge))
         _skinModel = StateObject(
             wrappedValue: PrismSkinManagementModel(
@@ -104,7 +102,7 @@ struct PrismNativeApp: App {
             }
         }
 
-        Settings {
+        Window("Settings", id: "prism.settings") {
             PrismSettingsView(
                 model: globalSettingsModel,
                 javaModel: javaDiscoveryModel,
@@ -114,16 +112,14 @@ struct PrismNativeApp: App {
                 skinModel: skinModel
             )
         }
+        .defaultSize(width: 920, height: 640)
+        .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unified(showsTitle: false))
 
         Window("About Prism", id: "prism.about") {
             PrismAboutView(metadata: PrismAboutMetadata.fromBundle())
         }
         .defaultSize(width: 520, height: 460)
-
-        Window("News", id: "prism.news") {
-            PrismNewsWindow(model: newsModel)
-        }
-        .defaultSize(width: 760, height: 520)
 
         Window("Check for Updates", id: "prism.updates") {
             PrismUpdateWindow(model: updateModel)

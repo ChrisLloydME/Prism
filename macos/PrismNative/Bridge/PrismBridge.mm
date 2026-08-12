@@ -1987,7 +1987,24 @@ PRGlobalSettings *globalSettingsFromFacadeSnapshot(const FrontendGlobalSettingsS
                                  showConsole:snapshot.showConsole
                               autoCloseConsole:snapshot.autoCloseConsole
                             showConsoleOnError:snapshot.showConsoleOnError
-                             logPrePostOutput:snapshot.logPrePostOutput];
+                             logPrePostOutput:snapshot.logPrePostOutput
+                                      pasteType:snapshot.pasteType
+                             pasteCustomAPIBase:foundationStringFromUTF8AllowEmpty(snapshot.pasteCustomAPIBase)
+                            metadataURLOverride:foundationStringFromUTF8AllowEmpty(snapshot.metadataURLOverride)
+                       refreshMetadataOnLaunch:snapshot.refreshMetadataOnLaunch
+                              assetsURLOverride:foundationStringFromUTF8AllowEmpty(snapshot.assetsURLOverride)
+                 legacyFMLLibrariesURLOverride:foundationStringFromUTF8AllowEmpty(snapshot.legacyFMLLibrariesURLOverride)
+            fallbackForBlockedModrinthProjects:snapshot.fallbackForBlockedModrinthProjects
+                               userAgentOverride:foundationStringFromUTF8AllowEmpty(snapshot.userAgentOverride)
+                        microsoftClientIDOverride:foundationStringFromUTF8AllowEmpty(snapshot.microsoftClientIDOverride)
+                                curseForgeAPIKey:foundationStringFromUTF8AllowEmpty(snapshot.curseForgeAPIKey)
+                                   modrinthToken:foundationStringFromUTF8AllowEmpty(snapshot.modrinthToken)
+                                  technicClientID:foundationStringFromUTF8AllowEmpty(snapshot.technicClientID)
+                                       proxyType:foundationStringFromUTF8AllowEmpty(snapshot.proxyType)
+                                    proxyAddress:foundationStringFromUTF8AllowEmpty(snapshot.proxyAddress)
+                                       proxyPort:snapshot.proxyPort
+                                   proxyUsername:foundationStringFromUTF8AllowEmpty(snapshot.proxyUsername)
+                                   proxyPassword:foundationStringFromUTF8AllowEmpty(snapshot.proxyPassword)];
     if (!settings) {
         throw std::invalid_argument("Facade returned invalid global settings");
     }
@@ -2024,6 +2041,23 @@ FrontendGlobalSettingsSnapshot globalSettingsFromFoundationObject(PRGlobalSettin
     converted.autoCloseConsole = settings.autoCloseConsole;
     converted.showConsoleOnError = settings.showConsoleOnError;
     converted.logPrePostOutput = settings.logPrePostOutput;
+    converted.pasteType = static_cast<int>(settings.pasteType);
+    converted.pasteCustomAPIBase = utf8TextFromFoundation(settings.pasteCustomAPIBase);
+    converted.metadataURLOverride = utf8TextFromFoundation(settings.metadataURLOverride);
+    converted.refreshMetadataOnLaunch = settings.refreshMetadataOnLaunch;
+    converted.assetsURLOverride = utf8TextFromFoundation(settings.assetsURLOverride);
+    converted.legacyFMLLibrariesURLOverride = utf8TextFromFoundation(settings.legacyFMLLibrariesURLOverride);
+    converted.fallbackForBlockedModrinthProjects = settings.fallbackForBlockedModrinthProjects;
+    converted.userAgentOverride = utf8TextFromFoundation(settings.userAgentOverride);
+    converted.microsoftClientIDOverride = utf8TextFromFoundation(settings.microsoftClientIDOverride);
+    converted.curseForgeAPIKey = utf8TextFromFoundation(settings.curseForgeAPIKey);
+    converted.modrinthToken = utf8TextFromFoundation(settings.modrinthToken);
+    converted.technicClientID = utf8TextFromFoundation(settings.technicClientID);
+    converted.proxyType = utf8TextFromFoundation(settings.proxyType);
+    converted.proxyAddress = utf8TextFromFoundation(settings.proxyAddress);
+    converted.proxyPort = static_cast<int>(settings.proxyPort);
+    converted.proxyUsername = utf8TextFromFoundation(settings.proxyUsername);
+    converted.proxyPassword = utf8TextFromFoundation(settings.proxyPassword);
     return converted;
 }
 
@@ -5223,6 +5257,23 @@ typedef void (^PRBridgeUtilityCompletion)(id _Nullable result, PRBridgeError * _
 @property(nonatomic, assign, readwrite) BOOL autoCloseConsole;
 @property(nonatomic, assign, readwrite) BOOL showConsoleOnError;
 @property(nonatomic, assign, readwrite) BOOL logPrePostOutput;
+@property(nonatomic, assign, readwrite) NSInteger pasteType;
+@property(nonatomic, copy, readwrite) NSString *pasteCustomAPIBase;
+@property(nonatomic, copy, readwrite) NSString *metadataURLOverride;
+@property(nonatomic, assign, readwrite) BOOL refreshMetadataOnLaunch;
+@property(nonatomic, copy, readwrite) NSString *assetsURLOverride;
+@property(nonatomic, copy, readwrite) NSString *legacyFMLLibrariesURLOverride;
+@property(nonatomic, assign, readwrite) BOOL fallbackForBlockedModrinthProjects;
+@property(nonatomic, copy, readwrite) NSString *userAgentOverride;
+@property(nonatomic, copy, readwrite) NSString *microsoftClientIDOverride;
+@property(nonatomic, copy, readwrite) NSString *curseForgeAPIKey;
+@property(nonatomic, copy, readwrite) NSString *modrinthToken;
+@property(nonatomic, copy, readwrite) NSString *technicClientID;
+@property(nonatomic, copy, readwrite) NSString *proxyType;
+@property(nonatomic, copy, readwrite) NSString *proxyAddress;
+@property(nonatomic, assign, readwrite) NSInteger proxyPort;
+@property(nonatomic, copy, readwrite) NSString *proxyUsername;
+@property(nonatomic, copy, readwrite) NSString *proxyPassword;
 
 @end
 
@@ -7109,6 +7160,89 @@ resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentif
                              showConsoleOnError:(BOOL)showConsoleOnError
                               logPrePostOutput:(BOOL)logPrePostOutput
 {
+    return [self initWithInstanceDirectoryURL:instanceDirectoryURL
+                                     iconTheme:iconTheme
+                             applicationTheme:applicationTheme
+                               backgroundCat:backgroundCat
+                                 catOpacity:catOpacity
+                                     catFit:catFit
+                                   language:language
+                           useSystemLocale:useSystemLocale
+                    menuBarInsteadOfToolBar:menuBarInsteadOfToolBar
+                          statusBarVisible:statusBarVisible
+                            toolbarsLocked:toolbarsLocked
+                 numberOfConcurrentTasks:numberOfConcurrentTasks
+             numberOfConcurrentDownloads:numberOfConcurrentDownloads
+                   numberOfManualRetries:numberOfManualRetries
+                       requestTimeoutSeconds:requestTimeoutSeconds
+                                consoleFont:consoleFont
+                            consoleFontSize:consoleFontSize
+                             consoleMaxLines:consoleMaxLines
+                          consoleOverflowStop:consoleOverflowStop
+                                  showConsole:showConsole
+                               autoCloseConsole:autoCloseConsole
+                             showConsoleOnError:showConsoleOnError
+                              logPrePostOutput:logPrePostOutput
+                                      pasteType:3
+                             pasteCustomAPIBase:@""
+                            metadataURLOverride:@""
+                       refreshMetadataOnLaunch:YES
+                              assetsURLOverride:@""
+                 legacyFMLLibrariesURLOverride:@""
+            fallbackForBlockedModrinthProjects:YES
+                               userAgentOverride:@""
+                        microsoftClientIDOverride:@""
+                                curseForgeAPIKey:@""
+                                   modrinthToken:@""
+                                  technicClientID:@""
+                                       proxyType:@"None"
+                                    proxyAddress:@"127.0.0.1"
+                                       proxyPort:8080
+                                   proxyUsername:@""
+                                   proxyPassword:@""];
+}
+
+- (instancetype)initWithInstanceDirectoryURL:(NSURL *)instanceDirectoryURL
+                                     iconTheme:(NSString *)iconTheme
+                             applicationTheme:(NSString *)applicationTheme
+                               backgroundCat:(NSString *)backgroundCat
+                                 catOpacity:(NSInteger)catOpacity
+                                     catFit:(NSString *)catFit
+                                   language:(NSString *)language
+                           useSystemLocale:(BOOL)useSystemLocale
+                    menuBarInsteadOfToolBar:(BOOL)menuBarInsteadOfToolBar
+                          statusBarVisible:(BOOL)statusBarVisible
+                            toolbarsLocked:(BOOL)toolbarsLocked
+                 numberOfConcurrentTasks:(NSInteger)numberOfConcurrentTasks
+             numberOfConcurrentDownloads:(NSInteger)numberOfConcurrentDownloads
+                   numberOfManualRetries:(NSInteger)numberOfManualRetries
+                       requestTimeoutSeconds:(NSInteger)requestTimeoutSeconds
+                                consoleFont:(NSString *)consoleFont
+                            consoleFontSize:(NSInteger)consoleFontSize
+                             consoleMaxLines:(NSInteger)consoleMaxLines
+                          consoleOverflowStop:(BOOL)consoleOverflowStop
+                                  showConsole:(BOOL)showConsole
+                               autoCloseConsole:(BOOL)autoCloseConsole
+                             showConsoleOnError:(BOOL)showConsoleOnError
+                              logPrePostOutput:(BOOL)logPrePostOutput
+                                      pasteType:(NSInteger)pasteType
+                             pasteCustomAPIBase:(NSString *)pasteCustomAPIBase
+                            metadataURLOverride:(NSString *)metadataURLOverride
+                       refreshMetadataOnLaunch:(BOOL)refreshMetadataOnLaunch
+                              assetsURLOverride:(NSString *)assetsURLOverride
+                 legacyFMLLibrariesURLOverride:(NSString *)legacyFMLLibrariesURLOverride
+            fallbackForBlockedModrinthProjects:(BOOL)fallbackForBlockedModrinthProjects
+                               userAgentOverride:(NSString *)userAgentOverride
+                        microsoftClientIDOverride:(NSString *)microsoftClientIDOverride
+                                curseForgeAPIKey:(NSString *)curseForgeAPIKey
+                                   modrinthToken:(NSString *)modrinthToken
+                                  technicClientID:(NSString *)technicClientID
+                                       proxyType:(NSString *)proxyType
+                                    proxyAddress:(NSString *)proxyAddress
+                                       proxyPort:(NSInteger)proxyPort
+                                   proxyUsername:(NSString *)proxyUsername
+                                   proxyPassword:(NSString *)proxyPassword
+{
     if (!instanceDirectoryURL.isFileURL || instanceDirectoryURL.path.length == 0
         || !instanceDirectoryURL.path.isAbsolutePath || ![iconTheme isKindOfClass:NSString.class]
         || ![applicationTheme isKindOfClass:NSString.class] || ![backgroundCat isKindOfClass:NSString.class]
@@ -7117,7 +7251,21 @@ resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentif
         || catOpacity < 0 || catOpacity > 100 || numberOfConcurrentTasks < 1
         || numberOfConcurrentDownloads < 1 || numberOfManualRetries < 0 || requestTimeoutSeconds < 0
         || consoleFontSize < 5 || consoleFontSize > 16 || consoleMaxLines < 10000
-        || consoleMaxLines > 1000000) {
+        || consoleMaxLines > 1000000 || pasteType < 0 || pasteType > 3 || proxyPort < 1 || proxyPort > 65535
+        || ![pasteCustomAPIBase isKindOfClass:NSString.class]
+        || ![metadataURLOverride isKindOfClass:NSString.class]
+        || ![assetsURLOverride isKindOfClass:NSString.class]
+        || ![legacyFMLLibrariesURLOverride isKindOfClass:NSString.class]
+        || ![userAgentOverride isKindOfClass:NSString.class]
+        || ![microsoftClientIDOverride isKindOfClass:NSString.class]
+        || ![curseForgeAPIKey isKindOfClass:NSString.class]
+        || ![modrinthToken isKindOfClass:NSString.class]
+        || ![technicClientID isKindOfClass:NSString.class]
+        || ![proxyType isKindOfClass:NSString.class]
+        || ![@[ @"Default", @"None", @"SOCKS5", @"HTTP" ] containsObject:proxyType]
+        || ![proxyAddress isKindOfClass:NSString.class]
+        || ![proxyUsername isKindOfClass:NSString.class]
+        || ![proxyPassword isKindOfClass:NSString.class]) {
         return nil;
     }
 
@@ -7146,6 +7294,23 @@ resolvedBlockedFileIdentifiers:(NSArray<NSString *> *)resolvedBlockedFileIdentif
         self.autoCloseConsole = autoCloseConsole;
         self.showConsoleOnError = showConsoleOnError;
         self.logPrePostOutput = logPrePostOutput;
+        self.pasteType = pasteType;
+        self.pasteCustomAPIBase = [pasteCustomAPIBase copy];
+        self.metadataURLOverride = [metadataURLOverride copy];
+        self.refreshMetadataOnLaunch = refreshMetadataOnLaunch;
+        self.assetsURLOverride = [assetsURLOverride copy];
+        self.legacyFMLLibrariesURLOverride = [legacyFMLLibrariesURLOverride copy];
+        self.fallbackForBlockedModrinthProjects = fallbackForBlockedModrinthProjects;
+        self.userAgentOverride = [userAgentOverride copy];
+        self.microsoftClientIDOverride = [microsoftClientIDOverride copy];
+        self.curseForgeAPIKey = [curseForgeAPIKey copy];
+        self.modrinthToken = [modrinthToken copy];
+        self.technicClientID = [technicClientID copy];
+        self.proxyType = [proxyType copy];
+        self.proxyAddress = [proxyAddress copy];
+        self.proxyPort = proxyPort;
+        self.proxyUsername = [proxyUsername copy];
+        self.proxyPassword = [proxyPassword copy];
     }
     return self;
 }

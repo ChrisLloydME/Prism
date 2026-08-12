@@ -5,6 +5,8 @@
 #include "SysInfo.h"
 #include "settings/INIFile.h"
 
+#include <QNetworkProxy>
+
 #include <chrono>
 #include <filesystem>
 #include <iostream>
@@ -76,19 +78,56 @@ int main()
         auto requestedGlobal = *aliasedGlobal;
         requestedGlobal.catOpacity = 81;
         requestedGlobal.catFit = "fill";
+        requestedGlobal.pasteType = 2;
+        requestedGlobal.pasteCustomAPIBase = "https://paste.example/api";
+        requestedGlobal.metadataURLOverride = "https://meta.example/v1/";
+        requestedGlobal.refreshMetadataOnLaunch = false;
+        requestedGlobal.assetsURLOverride = "https://assets.example/";
+        requestedGlobal.legacyFMLLibrariesURLOverride = "https://legacy.example/";
+        requestedGlobal.fallbackForBlockedModrinthProjects = false;
+        requestedGlobal.userAgentOverride = "PrismNativeFixture/1";
+        requestedGlobal.microsoftClientIDOverride = "fixture-client";
+        requestedGlobal.curseForgeAPIKey = "fixture-curseforge";
+        requestedGlobal.modrinthToken = "fixture-modrinth";
+        requestedGlobal.technicClientID = "fixture-technic";
+        requestedGlobal.proxyType = "SOCKS5";
+        requestedGlobal.proxyAddress = "proxy.example";
+        requestedGlobal.proxyPort = 1080;
+        requestedGlobal.proxyUsername = "fixture-user";
+        requestedGlobal.proxyPassword = "fixture-password";
         const auto globalUpdate = facade.updateGlobalSettings(requestedGlobal);
         require(globalUpdate.outcome == FrontendGlobalSettingsUpdateOutcome::Succeeded
                     && globalUpdate.settings.has_value() && globalUpdate.settings->catOpacity == 81
-                    && globalUpdate.settings->catFit == "fill",
+                    && globalUpdate.settings->catFit == "fill"
+                    && globalUpdate.settings->pasteType == 2
+                    && globalUpdate.settings->proxyType == "SOCKS5"
+                    && globalUpdate.settings->proxyPort == 1080,
                 "global settings update was not confirmed");
+        const auto activeProxy = QNetworkProxy::applicationProxy();
+        require(activeProxy.type() == QNetworkProxy::Socks5Proxy
+                    && activeProxy.hostName() == QStringLiteral("proxy.example")
+                    && activeProxy.port() == 1080
+                    && activeProxy.user() == QStringLiteral("fixture-user")
+                    && activeProxy.password() == QStringLiteral("fixture-password"),
+                "confirmed proxy settings were not applied to the backend network stack");
 
         INIFile persistedGlobal;
         require(persistedGlobal.loadFile(QString::fromStdString((root / "prismlauncher.cfg").string())),
                 "persisted global settings could not be read");
         require(persistedGlobal.value("FutureGlobalSetting").toString() == "preserve-me",
                 "unknown global settings were not preserved");
+        require(persistedGlobal.value("PastebinType").toInt() == 2
+                    && persistedGlobal.value("MetaURLOverride").toString() == "https://meta.example/v1/"
+                    && persistedGlobal.value("ProxyType").toString() == "SOCKS5"
+                    && persistedGlobal.value("ProxyAddr").toString() == "proxy.example"
+                    && persistedGlobal.value("ProxyPort").toInt() == 1080,
+                "service or proxy settings were not persisted using canonical Prism keys");
         const auto reloadedGlobal = facade.globalSettings();
-        require(reloadedGlobal.has_value() && reloadedGlobal->catOpacity == 81 && reloadedGlobal->catFit == "fill",
+        require(reloadedGlobal.has_value() && reloadedGlobal->catOpacity == 81 && reloadedGlobal->catFit == "fill"
+                    && reloadedGlobal->pasteCustomAPIBase == "https://paste.example/api"
+                    && reloadedGlobal->metadataURLOverride == "https://meta.example/v1/"
+                    && reloadedGlobal->proxyAddress == "proxy.example"
+                    && reloadedGlobal->proxyUsername == "fixture-user",
                 "global settings did not reload after a confirmed update");
 
         const auto created = facade.createMetadataInstance({ "settings.one", "Settings One", "default" });
